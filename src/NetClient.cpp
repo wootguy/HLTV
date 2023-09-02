@@ -141,10 +141,11 @@ void netedict::load(const edict_t& ed) {
 	angles[1] = normalizeRangef(vars.angles.y, 0, 360) * (65535.0f/360.0f);
 	angles[2] = normalizeRangef(vars.angles.z, 0, 360) * (65535.0f/360.0f);
 
-	// TODO: special player handeling
-	angles[0] = normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f);
-	angles[1] = normalizeRangef(vars.v_angle.y, 0, 360) * (65535.0f / 360.0f);
-	angles[2] = normalizeRangef(vars.v_angle.z, 0, 360) * (65535.0f / 360.0f);
+	if (ed.v.flags & FL_CLIENT) {
+		angles[0] = normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f);
+		angles[1] = normalizeRangef(vars.v_angle.y, 0, 360) * (65535.0f / 360.0f);
+		angles[2] = normalizeRangef(vars.v_angle.z, 0, 360) * (65535.0f / 360.0f);
+	}
 
 	modelindex = vars.modelindex;
 	skin = vars.skin;

@@ -3,6 +3,11 @@
 #include "IPV4.h"
 #include "main.h"
 
+// convert floats to/from fixed-point integers with the given amount of fractional bits
+// TODO: does not protect against overflow/underflow
+#define FLOAT_TO_FIXED(v, fractional_bits) (v * (1 << fractional_bits) + 0.5f)
+#define FIXED_TO_FLOAT(v, fractional_bits) ((float)v / (float)(1 << fractional_bits))
+
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
 	bool		isValid;		// true if edict is rendered and sent to clients
@@ -84,7 +89,7 @@ public:
 	uint64_t nextUpdateTime = 0;
 
 	// max bytes that can be sent per second.
-	// If an entity update requires more bytes, packets will be throttled and sent in order
+	// If an entity update requires more bytes, the update will be throttled and sent in order
 	// until the update is complete. This slows the update rate down substantially.
 	uint64_t maxBytesPerSecond = 50 * 1000;
 

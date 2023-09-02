@@ -1,6 +1,8 @@
 #include "SvenTV.h"
 #include "meta_utils.h"
 #include "mstream.h"
+#include <iostream>
+#include <ctime>
 
 SvenTV::SvenTV(bool singleThreadMode) {
 	threadShouldExit = false;
@@ -9,14 +11,35 @@ SvenTV::SvenTV(bool singleThreadMode) {
 
 	netedicts = new netedict[MAX_EDICTS];
 	debugEdict = new netedict[MAX_EDICTS];
-	
-	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
-	// + final byte for packet type
-	//deltaPacketBufferSz = 2048;
+	fileedicts = new netedict[MAX_EDICTS];
+
+	playerinfos = new DemoPlayer[32];
+	fileplayerinfos = new DemoPlayer[32];
+	netmessages = new NetMessageData[MAX_NETMSG_FRAME];
+	cmds = new CommandData[MAX_CMD_FRAME];
+
+	memset(playerinfos, 0, 32 * sizeof(DemoPlayer));
+	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayer));
 
 	deltaPacketBufferSz = 508; // max UDP payload before possible fragmentation
-
 	deltaPacketBuffer = new char[deltaPacketBufferSz];
+
+	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
+	int fullDeltaMaxSize = 50;
+	int indexBytes = 1; // 2 for full index writes but on a max size update there will be no 255+ edict gaps
+	int headerBytes = 1; // 1 for first full index
+	fileDeltaBufferSize = headerBytes + (fullDeltaMaxSize + indexBytes) * MAX_EDICTS;
+	fileDeltaBuffer = new char[fileDeltaBufferSize];
+
+	// size of full delta on every player info
+	filePlayerInfoBufferSize = 70 * 32;
+	filePlayerInfoBuffer = new char[filePlayerInfoBufferSize];
+
+	netmessagesBufferSize = sizeof(NetMessageData) * MAX_NETMSG_FRAME;
+	netmessagesBuffer = new char[netmessagesBufferSize];
+
+	cmdsBufferSize = sizeof(CommandData) * MAX_CMD_FRAME;
+	cmdsBuffer = new char[cmdsBufferSize];
 
 	if (!singleThreadMode) {
 		edicts = new edict_t[MAX_EDICTS];
@@ -43,13 +66,18 @@ SvenTV::~SvenTV() {
 	}
 
 	delete[] deltaPacketBuffer;
+	delete[] fileDeltaBuffer;
 	delete[] netedicts;
 	delete[] debugEdict;
+	delete[] playerinfos;
+	delete[] fileplayerinfos;
+	delete[] netmessages;
+	delete[] netmessagesBuffer;
+	delete[] cmds;
+	delete[] cmdsBuffer;
 }
 
 void SvenTV::think_mainThread() {
-	int copySz = sizeof(edict_t) * MAX_EDICTS;
-
 	uint64_t startMillis = getEpochMillis();
 
 	if (singleThreadMode) {
@@ -66,13 +94,25 @@ void SvenTV::think_mainThread() {
 			updateId++;
 		}
 	}
-	else {
+	else { // multi-threaded mode. Main thread only needs to copy current edict states
 		if (edictCopyState.getValue() == EDICT_COPY_REQUESTED) {
-			memcpy(edicts, INDEXENT(0), copySz);
+			memcpy(edicts, INDEXENT(0), sizeof(edict_t) * MAX_EDICTS);
+			memcpy(playerinfos, g_demoplayers, gpGlobals->maxClients*sizeof(DemoPlayer));
+			memcpy(netmessages, g_netmessages, g_netmessage_count*sizeof(NetMessageData));
+			memcpy(cmds, g_cmds, g_command_count*sizeof(CommandData));
+			netmessage_count = g_netmessage_count;
+			cmds_count = g_command_count;
+			serverFrameCount = g_server_frame_count;
 
-			uint32_t diff = getEpochMillis() - startMillis;
-			//println("Copy time %lums", diff);
+			// clear the main thread buffers
+			g_netmessage_count = 0;
+			g_command_count = 0;
+
+			int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayer)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);
+
+			copyTime = getEpochMillis() - startMillis;
+			//println("Copy %.1fKB in %lums", copySz / 1024.0f, copyTime);
 		}
 	}
 }
@@ -215,6 +255,7 @@ int SvenTV::writeEdictDelta(mstream& writer, const netedict& old, const netedict
 		deltaBits |= FL_DELTA_AIMENT;
 		writer.write((void*)&now.aiment, 1);
 	}
+	// 46 + 4 possible bytes
 
 	if (writer.eom()) {
 		writer.seek(startOffset);
@@ -229,6 +270,74 @@ int SvenTV::writeEdictDelta(mstream& writer, const netedict& old, const netedict
 	}
 
 	writer.write((void*)&deltaBits, 4);
+	writer.seek(currentOffset);
+
+	return EDELTA_WRITE;
+}
+
+int SvenTV::writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlayer& old, const DemoPlayer& now) {
+	uint64_t startOffset = writer.tell();
+
+	DemoPlayerDelta deltaBits; // flags which fields were changed
+	memset(&deltaBits, 0, sizeof(DemoPlayerDelta));
+	deltaBits.idx = playerIdx;
+
+	writer.skip(sizeof(DemoPlayerDelta)); // write delta bits later
+	uint64_t deltaStartOffset = writer.tell();
+
+	if (old.isConnected != now.isConnected) {
+		deltaBits.isConnectedChanged = 1;
+		writer.write((void*)&now.isConnected, 1);
+	}
+	if (now.isConnected) {
+		if (strcmp(old.name, now.name) != 0) {
+			deltaBits.nameChanged = 1;
+			uint8_t len = strlen(now.name);
+			writer.write((void*)&len, 1);
+			writer.write((void*)&now.name, len);
+		}
+		if (strcmp(old.model, now.model) != 0) {
+			deltaBits.nameChanged = 1;
+			uint8_t len = strlen(now.model);
+			writer.write((void*)&len, 1);
+			writer.write((void*)&now.model, len);
+		}
+		if (old.steamid64 != now.steamid64) {
+			deltaBits.steamIdChanged = 1;
+			writer.write((void*)&now.steamid64, 8);
+		}
+		if (old.topColor != now.topColor) {
+			deltaBits.topColorChanged = 1;
+			writer.write((void*)&now.topColor, 1);
+		}
+		if (old.bottomColor != now.bottomColor) {
+			deltaBits.bottomColorChanged = 1;
+			writer.write((void*)&now.bottomColor, 1);
+		}
+		if (old.ping != now.ping) {
+			deltaBits.pingChanged = 1;
+			writer.write((void*)&now.ping, 2);
+		}
+		if (old.pmMoveCounter != now.pmMoveCounter) {
+			deltaBits.pmMoveChanged = 1;
+			uint8_t delta = clamp(now.pmMoveCounter - old.pmMoveCounter, 0, 255);
+			writer.write((void*)&delta, 1);
+		}
+	}
+
+	if (writer.eom()) {
+		writer.seek(startOffset);
+		return EDELTA_OVERFLOW;
+	}
+
+	uint64_t currentOffset = writer.tell();
+	writer.seek(startOffset);
+
+	if (currentOffset == deltaStartOffset) {
+		return EDELTA_NONE;
+	}
+
+	writer.write((void*)&deltaBits, sizeof(DemoPlayerDelta));
 	writer.seek(currentOffset);
 
 	return EDELTA_WRITE;
@@ -462,8 +571,7 @@ void SvenTV::broadcastEntityStates() {
 					println("Wrote ent idx %d (%d bytes) offset %d, bits %lu", (int)i, (int)(buffer.tell() - datOffset), (int)initialOffset, bits);
 				}
 				if (fragmentId - 1 == debugFrag && debugFrag != -1) {
-					totalEnts--;
-					totalEnts++;
+					totalEnts--; totalEnts++; // set breakpoint here
 				}
 				//println("Write %d bytes for edict %d (%d total)", writeSz, i, totalBytes);
 				//println("Write %d bytes for edict %s (%d total)", writeSz, STRING(edicts[i].v.classname), totalBytes);
@@ -471,6 +579,10 @@ void SvenTV::broadcastEntityStates() {
 		}
 
 		if (buffer.tell() > 7) { // more than just the header written
+			deltaPackets.push_back(Packet(clients[k].addr, deltaPacketBuffer, buffer.tell()));
+		}
+		else {
+			// TODO: Don't send empty updates (only here because clients get disconnected for lack of acks)
 			deltaPackets.push_back(Packet(clients[k].addr, deltaPacketBuffer, buffer.tell()));
 		}
 
@@ -557,21 +669,259 @@ void SvenTV::broadcastEntityStates() {
 	//println("Send %d ents to %d clients (%d bytes each)", totalEnts, clientCount, sizeof(netedict));
 }
 
+void SvenTV::initDemoFile() {
+	time_t rawtime;
+	struct tm* timeinfo;
+	char buffer[80];
+
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
+
+	strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H-%M-%S", timeinfo);
+	std::string fname(buffer);
+	fname = fname + "_" + STRING(gpGlobals->mapname) + ".demo";
+	string fpath = "svencoop_addon/scripts/plugins/metamod/SvenTV/" + fname;
+	println("Open demo file: %s", fpath.c_str());
+
+	demoFile = fopen(fpath.c_str(), "wb");
+	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayer));
+
+	fileDeltaBuffer = new char[fileDeltaBufferSize];
+	numFileDeltas = 0;
+
+	uint64_t now = getEpochMillis();
+
+	DemoHeader header;
+	strncpy(header.mapname, STRING(gpGlobals->mapname), 64);
+	header.maxPlayers = gpGlobals->maxClients;
+	header.serverTime = now;
+	header.version = 1;
+
+	nextDemoKeyframe = 0;
+	demoStartTime = now;
+
+	fwrite(&header, sizeof(DemoHeader), 1, demoFile);
+}
+
+bool SvenTV::writeDemoFile() {
+	uint64_t now = getEpochMillis();
+
+	if (now < nextDemoUpdate) {
+		return false;
+	}
+	uint64_t updateDelay = (1.0f / demoFileFps) * 1000;
+	nextDemoUpdate = now + updateDelay;
+
+	if (!demoFile) {
+		initDemoFile();
+	}
+
+	bool isKeyframe = now >= nextDemoKeyframe;
+
+	if (isKeyframe) {
+		nextDemoKeyframe = now + (1000ULL * KEYFRAME_INTERVAL);
+		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayer));
+	}
+
+	mstream entbuffer(fileDeltaBuffer, fileDeltaBufferSize);
+
+	uint8_t offset = 0; // always write full index for first entity delta
+
+	uint16_t numEntDeltas = 0;
+	for (uint16_t i = 0; i < MAX_EDICTS; i++) {
+		netedict& now = netedicts[i];
+
+		uint64_t startOffset = entbuffer.tell();
+		uint8_t initialOffset = offset;
+
+		entbuffer.write(&offset, 1); // entity index the delta is for (offset from previous)
+		if (offset == 0) {
+			// last edict was 256+ slots away. Write full index.
+			entbuffer.write(&i, 2);
+		}
+
+		uint64_t datOffset = entbuffer.tell();
+
+		int ret = writeEdictDelta(entbuffer, fileedicts[i], now);
+
+		if (ret == EDELTA_OVERFLOW) {
+			println("ERROR: Demo file entity delta buffer overflowed. Use a bigger buffer! The demo file is now broken");
+			break;
+		}
+		else if (ret == EDELTA_NONE) {
+			// no differences
+			entbuffer.seek(startOffset); // undo index write
+			if (offset != 0) {
+				offset += 1;
+			}
+		}
+		else {
+			// delta written
+			offset = 1;
+			numEntDeltas++;
+		}
+	}
+
+	uint8_t numPlrDeltas = 0;
+	mstream plrbuffer(fileDeltaBuffer, fileDeltaBufferSize);
+	for (int i = 0; i < gpGlobals->maxClients; i++) {
+		uint64_t startOffset = entbuffer.tell();
+
+		int ret = writePlayerDelta(plrbuffer, i, fileplayerinfos[i], playerinfos[i]);
+
+		if (ret == EDELTA_OVERFLOW) {
+			println("ERROR: Demo file player delta buffer overflowed. Use a bigger buffer! The demo file is now broken");
+			break;
+		}
+		else if (ret == EDELTA_NONE) {
+			// no differences
+		}
+		else {
+			// delta written
+			offset = 1;
+			numPlrDeltas++;
+		}
+	}
+
+	mstream msgbuffer(netmessagesBuffer, netmessagesBufferSize);
+	for (int i = 0; i < netmessage_count; i++) {
+		NetMessageData& dat = netmessages[i];
+		DemoNetMessage msg;
+
+		msg.type = dat.type;
+		msg.dest = dat.dest;
+		msg.sz = dat.sz;
+		msg.hasEdict = dat.hasEdict;
+		msg.hasOrigin = dat.hasOrigin;
+		
+		msgbuffer.write(&msg, sizeof(DemoNetMessage));
+
+		if (msg.hasOrigin) {
+			msgbuffer.write(dat.origin, sizeof(float) * 3);
+		}
+		if (msg.hasEdict) {
+			msgbuffer.write(&dat.eidx, sizeof(uint16_t));
+		}
+		msgbuffer.write(dat.data, dat.sz);
+	}
+	if (msgbuffer.eom()) {
+		println("ERROR: Demo file network message buffer overflowed. Use a bigger buffer! The demo file is now broken");
+	}
+
+	mstream cmdbuffer(cmdsBuffer, cmdsBufferSize);
+	for (int i = 0; i < cmds_count; i++) {
+		CommandData& dat = cmds[i];
+		DemoCommand cmd;
+
+		cmd.idx = dat.idx;
+		cmd.len = dat.len;
+		cmdbuffer.write(&cmd, sizeof(DemoCommand));
+		cmdbuffer.write(dat.data, dat.len);
+	}
+	if (cmdbuffer.eom()) {
+		println("ERROR: Demo file command buffer overflowed. Use a bigger buffer! The demo file is now broken");
+	}
+
+	memcpy(fileedicts, netedicts, MAX_EDICTS * sizeof(netedict));
+	memcpy(fileplayerinfos, playerinfos, 32 * sizeof(DemoPlayer));
+	
+	int entDeltaSz = entbuffer.tell() + (entbuffer.tell() ? 2 : 0);
+	int plrDeltaSz = plrbuffer.tell() + (plrbuffer.tell() ? 1 : 0);
+	int msgSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
+	int cmdSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 2 : 0);
+	int totalSz = entDeltaSz + plrDeltaSz + msgSz + cmdSz + sizeof(DemoFrame);
+	numFileDeltas++;
+	deltaWriteSz += (uint64_t)totalSz;
+
+	uint8_t frameCountDelta = clamp(serverFrameCount - lastServerFrameCount, 0, 255);
+	lastServerFrameCount = serverFrameCount;
+
+	DemoFrame header;
+	header.deltaFrames = frameCountDelta;
+	header.demoTime = now - demoStartTime;
+	header.hasEntityDeltas = numEntDeltas > 0;
+	header.hasNetworkMessages = netmessage_count > 0;
+	header.hasPlayerDeltas = numPlrDeltas > 0;
+	header.hasCommands = cmds_count > 0;
+	header.isKeyFrame = isKeyframe;
+	header.frameSize = totalSz;
+
+	fwrite(&header, sizeof(DemoFrame), 1, demoFile);
+
+	if (header.hasEntityDeltas) {
+		fwrite(&numEntDeltas, sizeof(uint16_t), 1, demoFile);
+		fwrite(entbuffer.getBuffer(), entbuffer.tell(), 1, demoFile);
+	}
+	if (header.hasPlayerDeltas) {
+		fwrite(&numPlrDeltas, sizeof(uint8_t), 1, demoFile);
+		fwrite(plrbuffer.getBuffer(), plrbuffer.tell(), 1, demoFile);
+	}
+	if (header.hasNetworkMessages) {
+		fwrite(&netmessage_count, sizeof(uint16_t), 1, demoFile);
+		fwrite(msgbuffer.getBuffer(), msgbuffer.tell(), 1, demoFile);
+	}
+	if (header.hasCommands) {
+		fwrite(&cmds_count, sizeof(uint16_t), 1, demoFile);
+		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
+	}
+
+	println("%4de %2dp %4dm %4dc    |  %4d + %4d + %4d + %4d = %4d B  |  %.1f MB file  |  %dms copy, %dms think",
+		numEntDeltas, numPlrDeltas, netmessage_count, cmds_count,
+		entDeltaSz, plrDeltaSz, msgSz, cmdSz, totalSz,
+		(float)((double)deltaWriteSz / (1024.0*1024.0)),
+		copyTime, thinkTime);
+
+	return true;
+}
+
 void SvenTV::think_tvThread() {
-	socket = new Socket(SOCKET_UDP | SOCKET_NONBLOCKING, SVENTV_PORT);
+	bool loadNewData = true;
 
 	while (!threadShouldExit) {
 		while (edictCopyState.getValue() != EDICT_COPY_FINISHED && !threadShouldExit) {
 			this_thread::sleep_for(chrono::milliseconds(1));
 		}
-		for (int i = 0; i < MAX_EDICTS; i++) {
-			netedicts[i].load(edicts[i]);
-		}
-		edictCopyState.setValue(EDICT_COPY_REQUESTED);
+		uint64_t startMillis = getEpochMillis();
 
-		handleClientPackets();
-		broadcastEntityStates();
-		updateId++;
+		if (loadNewData) {
+			for (int i = 0; i < MAX_EDICTS; i++) {
+				netedicts[i].load(edicts[i]);
+			}
+			loadNewData = false;
+		}
+
+		bool wantMoreData = false;
+
+		if (enableDemoFile) {
+			wantMoreData = wantMoreData || writeDemoFile();
+		}
+		else if (demoFile) {
+			fclose(demoFile);
+			demoFile = NULL;
+			println("Close demo file");
+		}
+
+		if (enableServer && !socket) {
+			socket = new Socket(SOCKET_UDP | SOCKET_NONBLOCKING, SVENTV_PORT);
+		}
+		if (socket) {
+			wantMoreData = true;
+			handleClientPackets();
+			broadcastEntityStates();
+			updateId++;
+		}
+
+		if (wantMoreData) {
+			edictCopyState.setValue(EDICT_COPY_REQUESTED);
+			loadNewData = true;
+			thinkTime = getEpochMillis() - startMillis;
+		}
+	}
+
+	if (demoFile) {
+		fclose(demoFile);
 	}
 
 	delete socket;

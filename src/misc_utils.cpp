@@ -124,22 +124,18 @@ string formatTime(int totalSeconds) {
 vector<string> splitString(string str, const char* delimitters)
 {
 	vector<string> split;
-	if (str.size() == 0)
-		return split;
+	size_t start = 0;
+	size_t end = str.find_first_of(delimitters);
 
-	// somehow plain assignment doesn't create a copy and even modifies the parameter that was passed by value (WTF!?!)
-	//string copy = str; 
-	string copy;
-	for (int i = 0; i < str.length(); i++)
-		copy += str[i];
-
-	char* tok = strtok((char*)copy.c_str(), delimitters);
-
-	while (tok != NULL)
+	while (end != std::string::npos)
 	{
-		split.push_back(tok);
-		tok = strtok(NULL, delimitters);
+		split.push_back(str.substr(start, end - start));
+		start = end + 1;
+		end = str.find_first_of(delimitters, start);
 	}
+
+	split.push_back(str.substr(start));
+
 	return split;
 }
 
