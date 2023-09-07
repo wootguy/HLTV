@@ -7,50 +7,22 @@ project(SvenTV)
 
 set(SOURCE_FILES
 	src/main.h src/main.cpp
-	src/misc_utils.h src/misc_utils.cpp
-	src/meta_utils.h src/meta_utils.cpp
-	src/meta_init.h src/meta_init.cpp
 	src/SvenTV.h src/SvenTV.cpp
 	src/NetClient.h src/NetClient.cpp
-	src/EHandle.h src/EHandle.cpp
-	src/ThreadSafeQueue.h src/ThreadSafeQueue.cpp
-	src/ThreadSafeInt.h src/ThreadSafeInt.cpp
-	src/mstream.h src/mstream.cpp
-	src/net/Packet.h src/net/Packet.cpp
-	src/net/IPV4.h src/net/IPV4.cpp
-	src/net/Socket.h
 )
 
-if(MSVC)
-	set(SOURCE_FILES
-		${SOURCE_FILES}
-		src/net/Socket_win.cpp
-		src/net/network_win.cpp
-	)	
-else()
-	set(SOURCE_FILES
-		${SOURCE_FILES}
-		src/net/Socket_unix.cpp
-		src/net/network_unix.cpp
-	)
-endif()
-
-include_directories(src)
-include_directories(src/net)
-include_directories(include)
-include_directories(include/metamod)
-include_directories(include/hlsdk/common)
-include_directories(include/hlsdk/dlls)
-include_directories(include/hlsdk/engine)
-include_directories(include/hlsdk/pm_shared)
-
-add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES})
+add_library(${PROJECT_NAME} SHARED)
+add_subdirectory(mmlib)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
                       RUNTIME_OUTPUT_DIRECTORY_DEBUG "${SVEN_ROOT_PATH}/${DLL_INSTALL_PATH}"
                       RUNTIME_OUTPUT_DIRECTORY_RELEASE "${SVEN_ROOT_PATH}/${DLL_INSTALL_PATH}")
 				
-if(MSVC)											
+if(MSVC)									
+	source_group("Header Files\\sven" FILES ${SVEN_API_HEADERS})
+	source_group("Header Files\\mmlib" FILES ${META_HELPER_HEADERS})
+	source_group("Source Files\\mmlib" FILES ${META_HELPER_SOURCES})
+	
 	set_target_properties(${PROJECT_NAME} PROPERTIES
 					  VS_STARTUP_PROJECT ${PROJECT_NAME}
 					  VS_DEBUGGER_COMMAND "svencoop.exe"
