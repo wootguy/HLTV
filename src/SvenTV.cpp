@@ -1,6 +1,5 @@
 #include "SvenTV.h"
-#include "meta_utils.h"
-#include "mstream.h"
+#include "mmlib.h"
 #include <iostream>
 #include <ctime>
 
@@ -280,7 +279,6 @@ int SvenTV::writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlaye
 
 	DemoPlayerDelta deltaBits; // flags which fields were changed
 	memset(&deltaBits, 0, sizeof(DemoPlayerDelta));
-	deltaBits.idx = playerIdx;
 
 	writer.skip(sizeof(DemoPlayerDelta)); // write delta bits later
 	uint64_t deltaStartOffset = writer.tell();
@@ -695,13 +693,42 @@ void SvenTV::initDemoFile() {
 	DemoHeader header;
 	strncpy(header.mapname, STRING(gpGlobals->mapname), 64);
 	header.maxPlayers = gpGlobals->maxClients;
-	header.serverTime = now;
+	header.startTime = now;
+	header.endTime = 0; // will indicate server crash if stays 0
 	header.version = 1;
 
 	nextDemoKeyframe = 0;
 	demoStartTime = now;
+	lastDemoFrameTime = now;
+
+	string modelData;
+	int maxModelIdx = 0;
+	int minModelIdx = 0;
+	for (pair<int, string> item : g_indexToModel) {
+		if (item.first > maxModelIdx) {
+			maxModelIdx = item.first;
+		}
+	}
+	for (int i = 0; i <= maxModelIdx; i++) {
+		if (g_indexToModel[i].empty() || g_indexToModel[i].size() > 1 && g_indexToModel[i][0] == '*') {
+			minModelIdx = i+1;
+			continue;
+		}
+		modelData += g_indexToModel[i] + "\n";
+	}
+
+	string soundData;
+	for (int i = 0; i < g_SoundCacheFiles.size(); i++) {
+		soundData += g_SoundCacheFiles[i] + "\n";
+	}
+
+	header.modelIdxStart = minModelIdx;
+	header.modelLen = modelData.size();
+	header.soundLen = soundData.size();
 
 	fwrite(&header, sizeof(DemoHeader), 1, demoFile);
+	fwrite(modelData.c_str(), modelData.size(), 1, demoFile);
+	fwrite(soundData.c_str(), soundData.size(), 1, demoFile);
 }
 
 bool SvenTV::writeDemoFile() {
@@ -716,6 +743,7 @@ bool SvenTV::writeDemoFile() {
 	if (!demoFile) {
 		initDemoFile();
 	}
+	lastDemoFrameTime = now;
 
 	bool isKeyframe = now >= nextDemoKeyframe;
 
@@ -764,7 +792,8 @@ bool SvenTV::writeDemoFile() {
 		}
 	}
 
-	uint8_t numPlrDeltas = 0;
+	int numPlayerDeltas = 0;
+	uint32_t plrDeltaBits = 0;
 	mstream plrbuffer(fileDeltaBuffer, fileDeltaBufferSize);
 	for (int i = 0; i < gpGlobals->maxClients; i++) {
 		uint64_t startOffset = entbuffer.tell();
@@ -781,7 +810,8 @@ bool SvenTV::writeDemoFile() {
 		else {
 			// delta written
 			offset = 1;
-			numPlrDeltas++;
+			plrDeltaBits |= 1 << i;
+			numPlayerDeltas++;
 		}
 	}
 
@@ -828,7 +858,7 @@ bool SvenTV::writeDemoFile() {
 	memcpy(fileplayerinfos, playerinfos, 32 * sizeof(DemoPlayer));
 	
 	int entDeltaSz = entbuffer.tell() + (entbuffer.tell() ? 2 : 0);
-	int plrDeltaSz = plrbuffer.tell() + (plrbuffer.tell() ? 1 : 0);
+	int plrDeltaSz = plrbuffer.tell() + (plrbuffer.tell() ? 4 : 0);
 	int msgSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
 	int cmdSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 2 : 0);
 	int totalSz = entDeltaSz + plrDeltaSz + msgSz + cmdSz + sizeof(DemoFrame);
@@ -843,7 +873,7 @@ bool SvenTV::writeDemoFile() {
 	header.demoTime = now - demoStartTime;
 	header.hasEntityDeltas = numEntDeltas > 0;
 	header.hasNetworkMessages = netmessage_count > 0;
-	header.hasPlayerDeltas = numPlrDeltas > 0;
+	header.hasPlayerDeltas = plrDeltaBits > 0;
 	header.hasCommands = cmds_count > 0;
 	header.isKeyFrame = isKeyframe;
 	header.frameSize = totalSz;
@@ -855,7 +885,7 @@ bool SvenTV::writeDemoFile() {
 		fwrite(entbuffer.getBuffer(), entbuffer.tell(), 1, demoFile);
 	}
 	if (header.hasPlayerDeltas) {
-		fwrite(&numPlrDeltas, sizeof(uint8_t), 1, demoFile);
+		fwrite(&plrDeltaBits, sizeof(uint32_t), 1, demoFile);
 		fwrite(plrbuffer.getBuffer(), plrbuffer.tell(), 1, demoFile);
 	}
 	if (header.hasNetworkMessages) {
@@ -868,12 +898,26 @@ bool SvenTV::writeDemoFile() {
 	}
 
 	println("%4de %2dp %4dm %4dc    |  %4d + %4d + %4d + %4d = %4d B  |  %.1f MB file  |  %dms copy, %dms think",
-		numEntDeltas, numPlrDeltas, netmessage_count, cmds_count,
+		numEntDeltas, numPlayerDeltas, netmessage_count, cmds_count,
 		entDeltaSz, plrDeltaSz, msgSz, cmdSz, totalSz,
 		(float)((double)deltaWriteSz / (1024.0*1024.0)),
 		copyTime, thinkTime);
 
 	return true;
+}
+
+void SvenTV::closeDemoFile() {
+	if (!demoFile) {
+		return;
+	}
+	println("Close demo file");
+
+	uint64_t endTime = getEpochMillis();
+	fseek(demoFile, offsetof(DemoHeader, endTime), SEEK_SET);
+	fwrite(&lastDemoFrameTime, sizeof(uint64_t), 1, demoFile);
+
+	fclose(demoFile);
+	demoFile = NULL;
 }
 
 void SvenTV::think_tvThread() {
@@ -898,9 +942,7 @@ void SvenTV::think_tvThread() {
 			wantMoreData = wantMoreData || writeDemoFile();
 		}
 		else if (demoFile) {
-			fclose(demoFile);
-			demoFile = NULL;
-			println("Close demo file");
+			closeDemoFile();
 		}
 
 		if (enableServer && !socket) {
@@ -921,7 +963,7 @@ void SvenTV::think_tvThread() {
 	}
 
 	if (demoFile) {
-		fclose(demoFile);
+		closeDemoFile();
 	}
 
 	delete socket;

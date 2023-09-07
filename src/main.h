@@ -1,11 +1,18 @@
 #pragma once
 #include "meta_utils.h"
+#include <map>
+#include <set>
+
+using namespace std;
 
 #define MAX_EDICTS 8192 // sven co-op
 
 void MapInit(edict_t* pEdictList, int edictCount, int maxClients);
 void StartFrame();
 void ClientLeave(edict_t* plr);
+
+extern map<int, string> g_indexToModel;
+extern set<string> g_playerModels;
 
 typedef struct usercmd_s
 {

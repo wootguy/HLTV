@@ -1,10 +1,9 @@
 #include "main.h"
+#include "mmlib.h"
 #include <string>
 #include "misc_utils.h"
 #include "ThreadSafeInt.h"
 #include "SvenTV.h"
-
-using namespace std;
 
 // Description of plugin
 plugin_info_t Plugin_info = {
@@ -30,6 +29,10 @@ CommandData* g_cmds = NULL;
 int g_command_count = 0;
 uint32_t g_server_frame_count = 0;
 
+// maps indexes to model names, for all models that were so far in this map
+map<int, string> g_indexToModel;
+set<string> g_playerModels; // all player model names used during the game
+
 void ClientLeave(edict_t* ent) {
 	DemoPlayer& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.isConnected = false;
@@ -39,6 +42,11 @@ void ClientLeave(edict_t* ent) {
 void Changelevel() {
 	if (g_sventv) {
 		g_sventv->enableDemoFile = false;
+		g_server_frame_count = 0;
+		g_netmessage_count = 0;
+		g_server_frame_count = 0;
+		g_indexToModel.clear();
+		g_playerModels.clear();
 	}
 }
 
@@ -50,25 +58,10 @@ void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 	RETURN_META(MRES_IGNORED);
 }
 
-void handleThreadPrints() {
-	string msg;
-	for (int failsafe = 0; failsafe < 10; failsafe++) {
-		if (g_thread_prints.dequeue(msg)) {
-			println(msg.c_str());
-		}
-		else {
-			break;
-		}
-	}
+void MapInit_post(edict_t* pEdictList, int edictCount, int maxClients) {
+	loadSoundCacheFile();
 
-	for (int failsafe = 0; failsafe < 10; failsafe++) {
-		if (g_thread_logs.dequeue(msg)) {
-			logln(msg.c_str());
-		}
-		else {
-			break;
-		}
-	}
+	RETURN_META(MRES_IGNORED);
 }
 
 void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
@@ -92,6 +85,7 @@ void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
 		else if (key == "name") {
 			strncpy(plr.name, value.c_str(), 31);
 			plr.name[31] = 0;
+			g_playerModels.insert(value);
 		}
 	}
 }
@@ -129,7 +123,6 @@ void StartFrame() {
 
 	if (!g_sventv->enableDemoFile && gpGlobals->time > 1.0f) {
 		g_sventv->enableDemoFile = true;
-		g_server_frame_count = 0;
 	}
 
 	if (g_engfuncs.pfnTime() - lastPingUpdate > 1.0f) {
@@ -151,7 +144,6 @@ void StartFrame() {
 
 			if (plr.steamid64 == 0) {
 				// plugin reloaded mid-map
-				println("INIT PLAYER LATE");
 				plr.isConnected = true;
 				plr.steamid64 = getSteamId64(ent);
 				char* infobuffer = g_engfuncs.pfnGetInfoKeyBuffer(ent);
@@ -323,10 +315,24 @@ void ClientCommand(edict_t* pEntity) {
 	RETURN_META(MRES_IGNORED);
 }
 
+// maps BSP model indexes
+void SetModel(edict_t* e, const char* m) {
+	int index = MODEL_INDEX(m);
+	g_indexToModel[index] = m;
+}
+
+// maps .mdl indexes
+int PrecacheModel_post(char* m) {
+	int index = MODEL_INDEX(m);
+	g_indexToModel[index] = m;
+	RETURN_META_VALUE(MRES_IGNORED, 0);
+}
+
 void PluginInit() {
 	g_plugin_exiting = false;
 
 	g_dll_hooks.pfnServerActivate = MapInit;
+	g_dll_hooks_post.pfnServerActivate = MapInit_post;
 	g_dll_hooks.pfnServerDeactivate = Changelevel;
 	g_dll_hooks.pfnStartFrame = StartFrame;
 	g_dll_hooks.pfnClientDisconnect = ClientLeave;
@@ -345,6 +351,9 @@ void PluginInit() {
 	g_engine_hooks.pfnWriteShort = WriteShort;
 	g_engine_hooks.pfnWriteString = WriteString;
 	g_engine_hooks.pfnMessageEnd = MessageEnd;
+
+	g_engine_hooks_post.pfnSetModel = SetModel;
+	g_engine_hooks_post.pfnPrecacheModel = PrecacheModel_post;
 
 	const char* stringPoolStart = gpGlobals->pStringBase;
 

@@ -70,9 +70,15 @@ enum delta_results {
 
 struct DemoHeader {
 	uint16_t version; // demo file version
-	uint64_t serverTime; // epoch time when demo recording started
+	uint64_t startTime; // epoch time when demo recording started
+	uint64_t endTime; // epoch time when demo recording stopped (0 = server crashed before finishing)
 	char mapname[64];
 	uint8_t maxPlayers;
+	uint32_t modelIdxStart; // idx of the first non-bsp model
+	uint32_t modelLen; // size of model string data (model idx = string idx + modelIdxStart)
+	uint32_t soundLen; // size of sound string data (sound idx = string idx)
+	// modelLen bytes of model strings delimtted by \n
+	// soundLen bytes of sound strings delimtted by \n
 };
 
 struct DemoPlayer {
@@ -87,15 +93,14 @@ struct DemoPlayer {
 };
 
 struct DemoPlayerDelta {
-	uint16_t idx : 5; // entity index - 1
-	uint16_t isConnectedChanged : 1;
-	uint16_t nameChanged : 1;
-	uint16_t modelChanged : 1;
-	uint16_t steamIdChanged : 1;
-	uint16_t topColorChanged : 1;
-	uint16_t bottomColorChanged : 1;
-	uint16_t pingChanged : 1;
-	uint16_t pmMoveChanged : 1;
+	uint8_t isConnectedChanged : 1;
+	uint8_t nameChanged : 1;
+	uint8_t modelChanged : 1;
+	uint8_t steamIdChanged : 1;
+	uint8_t topColorChanged : 1;
+	uint8_t bottomColorChanged : 1;
+	uint8_t pingChanged : 1;
+	uint8_t pmMoveChanged : 1;
 	// if isConnectedChanged:
 	//     uint8 = is connected
 	// if name changed:
@@ -167,13 +172,17 @@ struct DemoNetMessage {
 	// byte[] = message bytes
 };
 
+// File layout:
+// DemoHeader
+// DemoFrame[]
+
 // DemoFrame layout:
 // DemoFrame = header
 // if hasEntityDeltas:
 //     uint16 = count of entity deltas
 //     byte[] = deltas
 // if hasPlayerDeltas:
-//     uint8 = count of DemoPlayerDelta[]
+//     uint32 = bitfield of included deltas (count of bits = count of deltas)
 //     DemoPlayerDelta[]
 // if hasNetworkMessages:
 //     uint16 = count of DemoNetMessage[]
@@ -193,7 +202,7 @@ public:
 	int deltaPacketBufferSz = -1;
 
 	volatile bool enableServer = false;
-	volatile bool enableDemoFile = true;
+	volatile bool enableDemoFile = false;
 
 	SvenTV(bool singleThreadMode);
 	~SvenTV();
@@ -231,6 +240,7 @@ private:
 	uint32_t lastServerFrameCount = 0;
 	uint32_t serverFrameCount = 0;
 	uint64_t demoStartTime = 0;
+	uint64_t lastDemoFrameTime = 0;
 
 	DemoPlayer* playerinfos = NULL;
 	DemoPlayer* fileplayerinfos = NULL;
@@ -269,6 +279,8 @@ private:
 	
 	// return true if more data requested
 	bool writeDemoFile();
+
+	void closeDemoFile();
 };
 
 
