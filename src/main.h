@@ -14,6 +14,9 @@ void ClientLeave(edict_t* plr);
 extern map<int, string> g_indexToModel;
 extern set<string> g_playerModels;
 
+extern cvar_t* g_auto_demo_file;
+extern cvar_t* g_demo_file_path;
+
 typedef struct usercmd_s
 {
 	short	lerp_msec;      // Interpolation time on client

@@ -24,14 +24,14 @@ SvenTV::SvenTV(bool singleThreadMode) {
 	deltaPacketBuffer = new char[deltaPacketBufferSz];
 
 	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
-	int fullDeltaMaxSize = 50;
+	int fullDeltaMaxSize = 55;
 	int indexBytes = 1; // 2 for full index writes but on a max size update there will be no 255+ edict gaps
 	int headerBytes = 1; // 1 for first full index
 	fileDeltaBufferSize = headerBytes + (fullDeltaMaxSize + indexBytes) * MAX_EDICTS;
 	fileDeltaBuffer = new char[fileDeltaBufferSize];
 
 	// size of full delta on every player info
-	filePlayerInfoBufferSize = 70 * 32;
+	filePlayerInfoBufferSize = (sizeof(DemoPlayer)+2) * 32;
 	filePlayerInfoBuffer = new char[filePlayerInfoBufferSize];
 
 	netmessagesBufferSize = sizeof(NetMessageData) * MAX_NETMSG_FRAME;
@@ -74,6 +74,10 @@ SvenTV::~SvenTV() {
 	delete[] netmessagesBuffer;
 	delete[] cmds;
 	delete[] cmdsBuffer;
+
+	if (replayFile) {
+		fclose(replayFile);
+	}
 }
 
 void SvenTV::think_mainThread() {
@@ -252,9 +256,17 @@ int SvenTV::writeEdictDelta(mstream& writer, const netedict& old, const netedict
 	}
 	if (old.aiment != now.aiment) {
 		deltaBits |= FL_DELTA_AIMENT;
-		writer.write((void*)&now.aiment, 1);
+		writer.write((void*)&now.aiment, 2);
 	}
-	// 46 + 4 possible bytes
+	if (old.health != now.health) {
+		deltaBits |= FL_DELTA_HEALTH;
+		writer.write((void*)&now.health, 4);
+	}
+	if (old.colormap != now.colormap) {
+		deltaBits |= FL_DELTA_COLORMAP;
+		writer.write((void*)&now.colormap, 1);
+	}
+	// 51 + 4 possible bytes
 
 	if (writer.eom()) {
 		writer.seek(startOffset);
@@ -304,12 +316,9 @@ int SvenTV::writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlaye
 			deltaBits.steamIdChanged = 1;
 			writer.write((void*)&now.steamid64, 8);
 		}
-		if (old.topColor != now.topColor) {
-			deltaBits.topColorChanged = 1;
+		if (old.topColor != now.topColor || old.bottomColor != now.bottomColor) {
+			deltaBits.colorsChanged = 1;
 			writer.write((void*)&now.topColor, 1);
-		}
-		if (old.bottomColor != now.bottomColor) {
-			deltaBits.bottomColorChanged = 1;
 			writer.write((void*)&now.bottomColor, 1);
 		}
 		if (old.ping != now.ping) {
@@ -320,6 +329,59 @@ int SvenTV::writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlaye
 			deltaBits.pmMoveChanged = 1;
 			uint8_t delta = clamp(now.pmMoveCounter - old.pmMoveCounter, 0, 255);
 			writer.write((void*)&delta, 1);
+		}
+		if (old.viewmodel != now.viewmodel) {
+			deltaBits.viewmodelChanged = 1;
+			writer.write((void*)&now.viewmodel, 2);
+		}
+		if (old.weaponmodel != now.weaponmodel) {
+			deltaBits.weaponmodelChanged = 1;
+			writer.write((void*)&now.weaponmodel, 2);
+		}
+		if (old.weaponanim != now.weaponanim) {
+			deltaBits.weaponanimChanged = 1;
+			writer.write((void*)&now.weaponanim, 2);
+		}
+		if (old.armorvalue != now.armorvalue) {
+			deltaBits.armorvalueChanged = 1;
+			writer.write((void*)&now.armorvalue, 4);
+		}
+		if (old.button != now.button) {
+			deltaBits.buttonChanged = 1;
+			writer.write((void*)&now.button, 2);
+		}
+		if (old.view_ofs != now.view_ofs) {
+			deltaBits.view_ofsChanged = 1;
+			writer.write((void*)&now.view_ofs, 2);
+		}
+		if (old.frags != now.frags) {
+			deltaBits.fragsChanged = 1;
+			writer.write((void*)&now.frags, 2);
+		}
+		if (old.fov != now.fov) {
+			deltaBits.fovChanged = 1;
+			writer.write((void*)&now.fov, 2);
+		}
+		if (old.clip != now.clip) {
+			deltaBits.clipChanged = 1;
+			writer.write((void*)&now.clip, 2);
+		}
+		if (old.clip2 != now.clip2) {
+			deltaBits.clip2Changed = 1;
+			writer.write((void*)&now.clip2, 2);
+		}
+		if (old.ammo != now.ammo) {
+			deltaBits.ammoChanged = 1;
+			writer.write((void*)&now.ammo, 2);
+		}
+		if (old.ammo2 != now.ammo2) {
+			deltaBits.ammo2Changed = 1;
+			writer.write((void*)&now.ammo2, 2);
+		}
+		if (old.iuser1 != now.iuser1 || old.iuser2 != now.iuser2) {
+			deltaBits.observerChanged = 1;
+			uint8_t observer = now.iuser1 | (now.iuser2 << 2);
+			writer.write((void*)&observer, 1);
 		}
 	}
 
@@ -667,6 +729,426 @@ void SvenTV::broadcastEntityStates() {
 	//println("Send %d ents to %d clients (%d bytes each)", totalEnts, clientCount, sizeof(netedict));
 }
 
+bool SvenTV::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache) {
+	stopReplay();
+	replayFile = fopen(path.c_str(), "rb");
+
+	if (!replayFile) {
+		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
+		return false;
+	}
+
+	DemoHeader header;
+
+	if (!fread(&header, sizeof(DemoHeader), 1, replayFile)) {
+		ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
+		closeReplayFile();
+		return false;
+	}
+
+	if (header.version != DEMO_VERSION) {
+		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", header.version, DEMO_VERSION));
+		closeReplayFile();
+		return false;
+	}
+
+	string mapname = string(header.mapname, 64);
+	if (!g_engfuncs.pfnIsMapValid((char*)mapname.c_str())) {
+		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
+		closeReplayFile();
+		return false;
+	}
+
+	if (header.modelLen > 1024 * 1024 * 32 || header.soundLen > 1024 * 1024 * 32) {
+		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", header.modelLen, header.soundLen));
+		closeReplayFile();
+		return false;
+	}
+	
+	if (header.modelLen) {
+		char* modelData = new char[header.modelLen];
+
+		if (!fread(modelData, header.modelLen, 1, replayFile)) {
+			ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
+			closeReplayFile();
+			return false;
+		}
+
+		precacheModels = splitString(string(modelData, header.modelLen), "\n");
+
+		for (int i = 0; i < precacheModels.size(); i++) {
+			int replayIdx = header.modelIdxStart + i;
+			replayModelPath[replayIdx] = precacheModels[i];
+		}
+
+		delete[] modelData;
+	}
+	if (header.soundLen) {
+		char* soundData = new char[header.soundLen];
+
+		if (!fread(soundData, header.soundLen, 1, replayFile)) {
+			ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
+			closeReplayFile();
+			return false;
+		}
+
+		precacheSounds = splitString(string(soundData, header.soundLen), "\n");
+
+		delete[] soundData;
+	}
+
+	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
+	{
+		time_t rawtime;
+		struct tm* timeinfo;
+		char buffer[80];
+
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
+
+		strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+		ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("date       : %s\n", buffer));
+	}
+	{
+		int duration = header.endTime ? TimeDifference(header.startTime, header.endTime) : 0;
+		int hours = duration / (60 * 60);
+		int minutes = (duration - (hours * 60 * 60)) / 60;
+		int seconds = duration % 60;
+
+		if (duration) {
+			ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %02d:%02d:%02d\n", hours, minutes, seconds));
+		}
+		else {
+			ClientPrint(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
+		}
+	}
+	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
+	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", header.maxPlayers));
+	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d (offset %d)\n", precacheModels.size(), header.modelIdxStart));
+	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
+
+	if (skipPrecache) {
+		prepareDemo(offsetSeconds);
+		return true;
+	}
+
+	if (toLowerCase(STRING(gpGlobals->mapname)) != toLowerCase(mapname)) {
+		g_engfuncs.pfnServerCommand(UTIL_VarArgs("changelevel %s\n", mapname.c_str()));
+		g_engfuncs.pfnServerExecute();
+	}
+}
+
+void SvenTV::prepareDemo(float offsetSeconds) {
+	for (int i = 1; i <= gpGlobals->maxClients; i++) {
+		edict_t* ent = INDEXENT(i);
+		CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
+		if (isValidPlayer(ent) && plr) {
+			ent->v.viewmodel = 0;
+			ent->v.weaponmodel = 0;
+			plr->m_iHideHUD = 1;
+		}
+	}
+	for (int i = gpGlobals->maxClients; i < gpGlobals->maxEntities; i++) {
+		edict_t* ent = INDEXENT(i);
+		if (ent && strlen(STRING(ent->v.classname)) > 0) {
+			REMOVE_ENTITY(ent);
+		}
+	}
+
+	replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds*1000);
+	replayFrame = 0;
+	nextFrameOffset = ftell(replayFile);
+	nextFrameTime = 0;
+	enableDemoFile = false;
+}
+
+void SvenTV::precacheDemo() {
+	if (!replayFile) {
+		return;
+	}
+
+	for (int i = 0; i < precacheModels.size(); i++) {
+		PrecacheModel(precacheModels[i]);
+	}
+	for (int i = 0; i < precacheSounds.size(); i++) {
+		PrecacheSound(precacheSounds[i]);
+	}
+}
+
+void SvenTV::stopReplay() {
+	closeReplayFile();
+	precacheModels.clear();
+	precacheSounds.clear();
+	replayModelPath.clear();
+	replayEnts.clear();
+}
+
+void SvenTV::closeReplayFile() {
+	if (replayFile) {
+		fclose(replayFile);
+		replayFile = NULL;
+	}
+}
+
+bool SvenTV::readEntDeltas(mstream& reader) {
+	uint16_t numEntDeltas = 0;
+	reader.read(&numEntDeltas, 2);
+
+	//println("Reading %d deltas", (int)numEntDeltas);
+
+	int loop = -1;
+	uint16_t fullIndex = 0;
+	for (int i = 0; i < numEntDeltas; i++) {
+		loop++;
+		uint8_t offset = 0;
+		reader.read(&offset, 1);
+
+		if (offset == 0) {
+			reader.read(&fullIndex, 2);
+		}
+		else {
+			fullIndex += offset;
+		}
+
+		if (fullIndex >= MAX_EDICTS) {
+			println("ERROR: Invalid delta wants to update edict %d at %d\n", (int)fullIndex, loop);
+			closeReplayFile();
+			return false;
+		}
+
+		uint64_t startPos = reader.tell();
+
+		netedict* ed = &fileedicts[fullIndex];
+
+		uint32_t deltaBits = 0;
+		reader.read(&deltaBits, 4);
+
+		if (deltaBits == 0) {
+			ed->isValid = false;
+			//println("Skip free %d", fullIndex);
+			continue;
+		}
+		ed->isValid = true;
+
+		if (deltaBits & FL_DELTA_ORIGIN_X) {
+			reader.read((void*)&ed->origin[0], 4);
+		}
+		if (deltaBits & FL_DELTA_ORIGIN_Y) {
+			reader.read((void*)&ed->origin[1], 4);
+		}
+		if (deltaBits & FL_DELTA_ORIGIN_Z) {
+			reader.read((void*)&ed->origin[2], 4);
+		}
+		if (deltaBits & FL_DELTA_ANGLES_X) {
+			reader.read((void*)&ed->angles[0], 2);
+		}
+		if (deltaBits & FL_DELTA_ANGLES_Y) {
+			reader.read((void*)&ed->angles[1], 2);
+		}
+		if (deltaBits & FL_DELTA_ANGLES_Z) {
+			reader.read((void*)&ed->angles[2], 2);
+		}
+		if (deltaBits & FL_DELTA_MODELINDEX) {
+			reader.read((void*)&ed->modelindex, 2);
+		}
+		if (deltaBits & FL_DELTA_SKIN) {
+			reader.read((void*)&ed->skin, 1);
+		}
+		if (deltaBits & FL_DELTA_BODY) {
+			reader.read((void*)&ed->body, 1);
+		}
+		if (deltaBits & FL_DELTA_EFFECTS) {
+			reader.read((void*)&ed->effects, 1);
+		}
+		if (deltaBits & FL_DELTA_SEQUENCE) {
+			reader.read((void*)&ed->sequence, 1);
+		}
+		if (deltaBits & FL_DELTA_GAITSEQUENCE) {
+			reader.read((void*)&ed->gaitsequence, 1);
+		}
+		if (deltaBits & FL_DELTA_FRAME) {
+			reader.read((void*)&ed->frame, 1);
+		}
+		if (deltaBits & FL_DELTA_ANIMTIME) {
+			reader.read((void*)&ed->animtime, 1);
+		}
+		if (deltaBits & FL_DELTA_FRAMERATE) {
+			reader.read((void*)&ed->framerate, 1);
+		}
+		if (deltaBits & FL_DELTA_CONTROLLER_0) {
+			reader.read((void*)&ed->controller[0], 1);
+		}
+		if (deltaBits & FL_DELTA_CONTROLLER_1) {
+			reader.read((void*)&ed->controller[1], 1);
+		}
+		if (deltaBits & FL_DELTA_CONTROLLER_2) {
+			reader.read((void*)&ed->controller[2], 1);
+		}
+		if (deltaBits & FL_DELTA_CONTROLLER_3) {
+			reader.read((void*)&ed->controller[3], 1);
+		}
+		if (deltaBits & FL_DELTA_BLENDING_0) {
+			reader.read((void*)&ed->blending[0], 1);
+		}
+		if (deltaBits & FL_DELTA_BLENDING_1) {
+			reader.read((void*)&ed->blending[1], 1);
+		}
+		if (deltaBits & FL_DELTA_SCALE) {
+			reader.read((void*)&ed->scale, 1);
+		}
+		if (deltaBits & FL_DELTA_RENDERMODE) {
+			reader.read((void*)&ed->rendermode, 1);
+		}
+		if (deltaBits & FL_DELTA_RENDERAMT) {
+			reader.read((void*)&ed->renderamt, 1);
+		}
+		if (deltaBits & FL_DELTA_RENDERCOLOR_0) {
+			reader.read((void*)&ed->rendercolor[0], 1);
+		}
+		if (deltaBits & FL_DELTA_RENDERCOLOR_1) {
+			reader.read((void*)&ed->rendercolor[1], 1);
+		}
+		if (deltaBits & FL_DELTA_RENDERCOLOR_2) {
+			reader.read((void*)&ed->rendercolor[2], 1);
+		}
+		if (deltaBits & FL_DELTA_RENDERFX) {
+			reader.read((void*)&ed->renderfx, 1);
+		}
+		if (deltaBits & FL_DELTA_AIMENT) {
+			reader.read((void*)&ed->aiment, 2);
+		}
+		if (deltaBits & FL_DELTA_HEALTH) {
+			reader.read((void*)&ed->health, 4);
+		}
+		if (deltaBits & FL_DELTA_COLORMAP) {
+			reader.read((void*)&ed->colormap, 1);
+		}
+
+		//println("Read index %d (%d bytes)", (int)fullIndex, (int)(reader.tell() - startPos));
+
+		if (reader.eom()) {
+			println("ERROR: Invalid delta hit unexpected eom at %d\n", loop);
+			closeReplayFile();
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool SvenTV::readDemoFrame() {
+	uint32_t t = getEpochMillis() - replayStartTime;
+
+	fseek(replayFile, nextFrameOffset, SEEK_SET);
+
+	DemoFrame header;
+	if (!fread(&header, sizeof(DemoFrame), 1, replayFile)) {
+		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
+		closeReplayFile();
+		return false;
+	}
+	if (header.demoTime > t) {
+		//println("Wait %u > %u", header.demoTime, t);
+		return false;
+	}
+	if (header.frameSize > 1024 * 1024*32 || header.frameSize == 0) {
+		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Invalid frame size\n");
+		closeReplayFile();
+		return false;
+	}
+	nextFrameOffset = ftell(replayFile) + (header.frameSize - sizeof(DemoFrame));
+
+	char* frameData = new char[header.frameSize];
+	if (!fread(frameData, header.frameSize, 1, replayFile)) {
+		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
+		closeReplayFile();
+		return false;
+	}
+
+	mstream reader = mstream(frameData, header.frameSize);
+
+	if (header.isKeyFrame) {
+		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayer));
+	}
+
+	if (header.hasEntityDeltas) {
+		if (!readEntDeltas(reader)) {
+			return false;
+		}
+		
+		for (int i = 1; i < MAX_EDICTS; i++) {
+			if (!fileedicts[i].isValid) {
+				if (i < replayEnts.size()) {
+					replayEnts[i].GetEdict()->v.effects |= EF_NODRAW;
+				}
+				continue;
+			}
+
+			while (i >= replayEnts.size()) {
+				map<string, string> keys;
+				keys["model"] = "models/error.mdl";
+
+				CBaseEntity* ent = CreateEntity("cycler", keys, true);
+				ent->pev->solid = SOLID_NOT;
+				ent->pev->effects |= EF_NODRAW;
+
+				if (!ent) {
+					println("Entity overflow at %d\n", (int)replayEnts.size());
+					for (int i = 0; i < replayEnts.size(); i++) {
+						REMOVE_ENTITY(replayEnts[i]);
+					}
+					closeReplayFile();
+					return false;
+				}
+
+				replayEnts.push_back(ent);
+			}
+
+			edict_t* ent = replayEnts[i];
+			int oldModelIdx = ent->v.modelindex;
+			int oldSeq = ent->v.sequence;
+
+			fileedicts[i].apply(ent, replayEnts);
+			ent->v.framerate = 0.00001f;
+
+			if (oldSeq != ent->v.sequence) {
+				CBaseMonster* anim = (CBaseMonster*)replayEnts[i].GetEntity();
+				anim->m_Activity = ACT_RELOAD;
+				anim->ResetSequenceInfo();
+			}
+			
+			if (oldModelIdx != ent->v.modelindex) {
+				if (replayModelPath.count(ent->v.modelindex)) {
+					SET_MODEL(ent, replayModelPath[ent->v.modelindex].c_str());
+				}
+				else if (g_indexToModel.count(ent->v.modelindex)) {
+					println("BSP MODEL IDX: %d '%s'", (int)ent->v.modelindex, g_indexToModel[ent->v.modelindex].c_str());
+					SET_MODEL(ent, g_indexToModel[ent->v.modelindex].c_str());
+				}
+				else {
+					//ent->v.modelindex = oldModelIdx;
+					//SET_MODEL(ent, ("*" + to_string(ent->v.modelindex)).c_str());
+					println("Unknown model idx %d on edict %d", (int)ent->v.modelindex, i);
+				}
+			}
+		}
+	}
+	
+	replayFrame++;
+	//println("Frame %d, Time: %.1f", replayFrame, (float)TimeDifference(0, header.demoTime));
+
+	return true;
+}
+
+void SvenTV::playDemo() {
+	if (!replayFile) {
+		return;
+	}	
+
+	while (readDemoFrame());
+}
+
 void SvenTV::initDemoFile() {
 	time_t rawtime;
 	struct tm* timeinfo;
@@ -677,8 +1159,9 @@ void SvenTV::initDemoFile() {
 
 	strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H-%M-%S", timeinfo);
 	std::string fname(buffer);
-	fname = fname + "_" + STRING(gpGlobals->mapname) + ".demo";
-	string fpath = "svencoop_addon/scripts/plugins/metamod/SvenTV/" + fname;
+	//fname = fname + "_" + STRING(gpGlobals->mapname) + ".demo";
+	fname = string(STRING(gpGlobals->mapname)) + ".demo";
+	string fpath = g_demo_file_path->string + fname;
 	println("Open demo file: %s", fpath.c_str());
 
 	demoFile = fopen(fpath.c_str(), "wb");
@@ -695,7 +1178,7 @@ void SvenTV::initDemoFile() {
 	header.maxPlayers = gpGlobals->maxClients;
 	header.startTime = now;
 	header.endTime = 0; // will indicate server crash if stays 0
-	header.version = 1;
+	header.version = DEMO_VERSION;
 
 	nextDemoKeyframe = 0;
 	demoStartTime = now;
@@ -727,22 +1210,24 @@ void SvenTV::initDemoFile() {
 	header.soundLen = soundData.size();
 
 	fwrite(&header, sizeof(DemoHeader), 1, demoFile);
-	fwrite(modelData.c_str(), modelData.size(), 1, demoFile);
-	fwrite(soundData.c_str(), soundData.size(), 1, demoFile);
+
+	if (modelData.size())
+		fwrite(modelData.c_str(), modelData.size(), 1, demoFile);
+	if (soundData.size())
+		fwrite(soundData.c_str(), soundData.size(), 1, demoFile);
 }
 
 bool SvenTV::writeDemoFile() {
-	uint64_t now = getEpochMillis();
+	if (!demoFile) {
+		initDemoFile();
+	}
 
+	uint64_t now = getEpochMillis();
 	if (now < nextDemoUpdate) {
 		return false;
 	}
 	uint64_t updateDelay = (1.0f / demoFileFps) * 1000;
 	nextDemoUpdate = now + updateDelay;
-
-	if (!demoFile) {
-		initDemoFile();
-	}
 	lastDemoFrameTime = now;
 
 	bool isKeyframe = now >= nextDemoKeyframe;
@@ -762,15 +1247,12 @@ bool SvenTV::writeDemoFile() {
 		netedict& now = netedicts[i];
 
 		uint64_t startOffset = entbuffer.tell();
-		uint8_t initialOffset = offset;
 
 		entbuffer.write(&offset, 1); // entity index the delta is for (offset from previous)
 		if (offset == 0) {
 			// last edict was 256+ slots away. Write full index.
 			entbuffer.write(&i, 2);
 		}
-
-		uint64_t datOffset = entbuffer.tell();
 
 		int ret = writeEdictDelta(entbuffer, fileedicts[i], now);
 
@@ -787,6 +1269,7 @@ bool SvenTV::writeDemoFile() {
 		}
 		else {
 			// delta written
+			println("Write edict %d offset %d bytes %d", i, (int)offset, (int)(entbuffer.tell() - startOffset));
 			offset = 1;
 			numEntDeltas++;
 		}
@@ -794,10 +1277,8 @@ bool SvenTV::writeDemoFile() {
 
 	int numPlayerDeltas = 0;
 	uint32_t plrDeltaBits = 0;
-	mstream plrbuffer(fileDeltaBuffer, fileDeltaBufferSize);
+	mstream plrbuffer(filePlayerInfoBuffer, filePlayerInfoBufferSize);
 	for (int i = 0; i < gpGlobals->maxClients; i++) {
-		uint64_t startOffset = entbuffer.tell();
-
 		int ret = writePlayerDelta(plrbuffer, i, fileplayerinfos[i], playerinfos[i]);
 
 		if (ret == EDELTA_OVERFLOW) {
@@ -925,6 +1406,9 @@ void SvenTV::think_tvThread() {
 
 	while (!threadShouldExit) {
 		while (edictCopyState.getValue() != EDICT_COPY_FINISHED && !threadShouldExit) {
+			if (demoFile && !enableDemoFile) {
+				closeDemoFile();
+			}
 			this_thread::sleep_for(chrono::milliseconds(1));
 		}
 		uint64_t startMillis = getEpochMillis();
@@ -932,6 +1416,25 @@ void SvenTV::think_tvThread() {
 		if (loadNewData) {
 			for (int i = 0; i < MAX_EDICTS; i++) {
 				netedicts[i].load(edicts[i]);
+			}
+			for (int i = 1; i <= gpGlobals->maxClients; i++) {
+				DemoPlayer& dplr = playerinfos[i - 1];
+				edict_t* ent = INDEXENT(i);
+
+				if (!isValidPlayer(ent)) {
+					continue;
+				}
+
+				dplr.armorvalue = ent->v.armorvalue + 0.5f;
+				dplr.button = ent->v.button;
+				dplr.fov = ent->v.fov + 0.5f;
+				dplr.frags = ent->v.frags;
+				dplr.viewmodel = ent->v.viewmodel;
+				dplr.weaponmodel = ent->v.weaponmodel;
+				dplr.weaponanim = ent->v.weaponanim;
+				dplr.view_ofs = FLOAT_TO_FIXED(ent->v.view_ofs[2], 4);
+				dplr.iuser1 = ent->v.iuser1;
+				dplr.iuser2 = ent->v.iuser2;
 			}
 			loadNewData = false;
 		}

@@ -54,6 +54,8 @@
 #define FL_DELTA_RENDERCOLOR_2	(1 << 26)
 #define FL_DELTA_RENDERFX		(1 << 27)
 #define FL_DELTA_AIMENT			(1 << 28)
+#define FL_DELTA_HEALTH			(1 << 29)
+#define FL_DELTA_COLORMAP		(1 << 30)
 
 enum edict_copy_states {
 	EDICT_COPY_REQUESTED,
@@ -68,6 +70,8 @@ enum delta_results {
 
 #pragma pack(push, 1)
 
+#define DEMO_VERSION 1
+
 struct DemoHeader {
 	uint16_t version; // demo file version
 	uint64_t startTime; // epoch time when demo recording started
@@ -81,6 +85,7 @@ struct DemoHeader {
 	// soundLen bytes of sound strings delimtted by \n
 };
 
+// extra info for player entities (combined with netedict data)
 struct DemoPlayer {
 	bool isConnected;
 	char name[32];
@@ -90,6 +95,24 @@ struct DemoPlayer {
 	uint8_t bottomColor;
 	uint16_t ping;
 	uint16_t pmMoveCounter; // detect client FPS and lag spikes
+
+	// player-specific entvars for 1st/3rd person views and scoreboard
+	uint16_t	viewmodel;		// 1st-person weapon model
+	uint16_t	weaponmodel;	// 3rd-person weapon model
+	uint16_t	armorvalue;
+	uint16_t	button;
+	uint16_t	frags;
+	int16_t		view_ofs;	// eye position (Z) (12.4 fixed point)
+	uint8_t		fov;
+	uint8_t		weaponanim;
+	uint8_t		iuser1 : 2; // observer mode
+	uint8_t		iuser2 : 6; // observer target
+
+	// weapon info
+	uint16_t	clip;
+	uint16_t	clip2;
+	uint16_t	ammo;
+	uint16_t	ammo2;
 };
 
 struct DemoPlayerDelta {
@@ -97,10 +120,25 @@ struct DemoPlayerDelta {
 	uint8_t nameChanged : 1;
 	uint8_t modelChanged : 1;
 	uint8_t steamIdChanged : 1;
-	uint8_t topColorChanged : 1;
-	uint8_t bottomColorChanged : 1;
+	uint8_t colorsChanged : 1;
 	uint8_t pingChanged : 1;
 	uint8_t pmMoveChanged : 1;
+	uint8_t viewmodelChanged : 1;
+
+	uint8_t weaponmodelChanged : 1;
+	uint8_t weaponanimChanged : 1;
+	uint8_t armorvalueChanged : 1;
+	uint8_t buttonChanged : 1;
+	uint8_t view_ofsChanged : 1;
+	uint8_t fragsChanged : 1;
+	uint8_t fovChanged : 1;
+
+	uint8_t clipChanged : 1;
+	uint8_t clip2Changed : 1;
+	uint8_t ammoChanged : 1;
+	uint8_t ammo2Changed : 1;
+	uint8_t observerChanged : 1;
+
 	// if isConnectedChanged:
 	//     uint8 = is connected
 	// if name changed:
@@ -111,9 +149,8 @@ struct DemoPlayerDelta {
 	//     char[] = model bytes (max 22)
 	// if steamIdChanged:
 	//     uint64_t = steamid64 bytes
-	// if topColorChanged:
+	// if colorsChanged:
 	//     byte = top color
-	// if bottomColorChanged:
 	//     byte = bottom color
 	// if ping changed:
 	//		uint16 = ping
@@ -207,6 +244,18 @@ public:
 	SvenTV(bool singleThreadMode);
 	~SvenTV();
 
+	// validates and prepares demo file for playback
+	// plr = player who opened the file
+	bool openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache=false);
+
+	// call this every frame to replay the demo
+	void playDemo();
+
+	// call in MapInit after loading a demo file
+	void precacheDemo();
+
+	void stopReplay();
+
 	// called from main thread to copy data to SvenTV thread
 	void think_mainThread();
 
@@ -231,6 +280,16 @@ private:
 	// demo file writing
 	uint64_t nextDemoUpdate = 0;
 	float demoFileFps = 60;
+
+	FILE* replayFile = NULL;
+	vector<string> precacheModels;
+	vector<string> precacheSounds;
+	uint64_t replayStartTime = 0;
+	uint32_t replayFrame = 0;
+	uint32_t nextFrameOffset = 0;
+	uint64_t nextFrameTime = 0;
+	vector<EHandle> replayEnts;
+	map<int, string> replayModelPath; // maps model index in demo file to a path
 
 	FILE* demoFile = NULL;
 	int numFileDeltas = 0;
@@ -281,6 +340,14 @@ private:
 	bool writeDemoFile();
 
 	void closeDemoFile();
+
+	void closeReplayFile();
+
+	// returns true if more frames are needed to catch up with current playback time
+	bool readDemoFrame();
+	bool readEntDeltas(mstream& reader);
+	// clears existing map entities for playback
+	void prepareDemo(float offsetSeconds);
 };
 
 

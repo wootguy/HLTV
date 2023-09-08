@@ -5,19 +5,21 @@
 
 // convert floats to/from fixed-point integers with the given amount of fractional bits
 // TODO: does not protect against overflow/underflow
-#define FLOAT_TO_FIXED(v, fractional_bits) (v * (1 << fractional_bits) + 0.5f)
+#define FLOAT_TO_FIXED(v, fractional_bits) (v * (1 << fractional_bits))
 #define FIXED_TO_FLOAT(v, fractional_bits) ((float)v / (float)(1 << fractional_bits))
 
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
 	bool		isValid;		// true if edict is rendered and sent to clients
 	float		origin[3];
+	uint32_t	health;
 	uint16_t	angles[3];		// Model angles (0-360 scaled to 0-65535)
 	uint16_t	modelindex;
 
 	uint8_t		skin;
 	uint8_t		body;			// sub-model selection for studiomodels
 	uint8_t 	effects;
+	uint8_t		colormap;
 
 	uint8_t		sequence;		// animation sequence
 	uint8_t		gaitsequence;	// movement animation sequence for player (0 for none)
@@ -34,25 +36,12 @@ struct netedict {
 	uint8_t		rendercolor[3];
 	uint8_t		renderfx;
 
-	int16_t		aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
+	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
 
 	netedict();
 	void load(const edict_t& ed);
+	void apply(edict_t* ed, vector<EHandle>& simEnts);
 	bool matches(netedict& other);
-};
-
-struct playervars_t {
-	uint16_t	viewmodel;		// player's viewmodel
-	uint16_t	weaponmodel;	// what other players see
-	string_t	model;			// player model name
-	float		armorvalue;
-	string_t	netname;	// player name
-	uint16_t	button;
-	uint8_t		impulse;
-	float		view_ofs[3];	// eye position
-	float		health;
-	float		frags;
-	uint8_t		fov;
 };
 
 struct DeltaUpdate {

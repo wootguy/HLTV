@@ -123,6 +123,14 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch aiment");
 		return false;
 	}
+	if (health != other.health) {
+		println("Mismatch health");
+		return false;
+	}
+	if (colormap != other.colormap) {
+		println("Mismatch colormap");
+		return false;
+	}
 	return true;
 }
 
@@ -163,6 +171,52 @@ void netedict::load(const edict_t& ed) {
 	memcpy(rendercolor, vars.rendercolor, 3);
 	renderfx = vars.renderfx;
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
+	colormap = vars.colormap;
+	health = vars.health;
+}
+
+void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
+	entvars_t& vars = ed->v;
+
+	if (!isValid) {
+		vars.effects |= EF_NODRAW;
+		return; // no need to update other values. Only the isFree var will be sent from now on
+	}
+
+	memcpy(&vars.origin, origin, 3 * sizeof(float));
+	const float angleConvert = (360.0f / 65535.0f);
+	vars.angles = Vector((float)angles[0] * angleConvert, (float)angles[1] * angleConvert, (float)angles[2] * angleConvert);
+
+	vars.modelindex = modelindex;
+	vars.skin = skin;
+	vars.body = body;
+	vars.effects = effects;
+	vars.sequence = sequence;
+	vars.gaitsequence = gaitsequence;
+	vars.frame = frame;
+	vars.animtime = animtime;
+	vars.framerate = framerate;
+	memcpy(vars.controller, controller, 6); // copy controller AND blending bytes
+	vars.scale = scale;
+	vars.rendermode = rendermode;
+	vars.renderamt = renderamt;
+	memcpy(vars.rendercolor, rendercolor, 3);
+	vars.renderfx = renderfx;
+	vars.colormap = colormap;
+	vars.health = health;
+
+	vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NOCLIP;
+
+	if (aiment) {
+		if (aiment >= simEnts.size()) {
+			println("Invalid aiment %d / %d", aiment, (int)simEnts.size());
+			vars.movetype = MOVETYPE_NOCLIP;
+			return;
+		}
+		else {
+			vars.aiment = simEnts[aiment];
+		}
+	}
 }
 
 NetClient::NetClient() {

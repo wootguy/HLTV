@@ -33,6 +33,9 @@ uint32_t g_server_frame_count = 0;
 map<int, string> g_indexToModel;
 set<string> g_playerModels; // all player model names used during the game
 
+cvar_t* g_auto_demo_file;
+cvar_t* g_demo_file_path;
+
 void ClientLeave(edict_t* ent) {
 	DemoPlayer& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.isConnected = false;
@@ -42,6 +45,7 @@ void ClientLeave(edict_t* ent) {
 void Changelevel() {
 	if (g_sventv) {
 		g_sventv->enableDemoFile = false;
+		g_sventv->stopReplay();
 		g_server_frame_count = 0;
 		g_netmessage_count = 0;
 		g_server_frame_count = 0;
@@ -54,6 +58,7 @@ void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 	if (!g_sventv) {
 		g_sventv = new SvenTV(singleThreadMode);
 	}
+	g_sventv->precacheDemo();
 	
 	RETURN_META(MRES_IGNORED);
 }
@@ -121,8 +126,35 @@ void StartFrame() {
 
 	g_server_frame_count++;
 
-	if (!g_sventv->enableDemoFile && gpGlobals->time > 1.0f) {
+	if (!g_sventv->enableDemoFile && g_auto_demo_file->value > 0 && gpGlobals->time > 1.0f) {
 		g_sventv->enableDemoFile = true;
+	}
+
+	g_sventv->playDemo();
+
+	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
+		RETURN_META(MRES_IGNORED);
+	}
+
+	for (int i = 1; i <= gpGlobals->maxClients; i++) {
+		edict_t* ent = INDEXENT(i);
+		CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
+
+		if (!isValidPlayer(ent) || !plr) {
+			continue;
+		}
+
+		CBasePlayerWeapon* wep = (CBasePlayerWeapon*)plr->m_hActiveItem.GetEntity();
+
+		if (wep) {
+			DemoPlayer& dplr = g_demoplayers[i - 1];
+			int pammo = wep->m_iPrimaryAmmoType;
+			int sammo = wep->m_iSecondaryAmmoType;
+			dplr.clip = clamp(wep->m_iClip, 0, 65535);
+			dplr.clip2 = clamp(wep->m_iClip2, 0, 65535);
+			dplr.ammo = pammo >= 0 && pammo < 64 ? clamp(plr->m_rgAmmo[pammo], 0, 65535) : 0;
+			dplr.ammo2 = sammo >= 0 && sammo < 64 ? clamp(plr->m_rgAmmo[sammo], 0, 65535) : 0;
+		}
 	}
 
 	if (g_engfuncs.pfnTime() - lastPingUpdate > 1.0f) {
@@ -150,9 +182,7 @@ void StartFrame() {
 				loadPlayerInfo(ent, infobuffer);
 			}
 		}
-
 	}
-	
 
 	if (g_sventv) {
 		g_sventv->think_mainThread();
@@ -178,6 +208,9 @@ void PM_Move(playermove_s* ppmove, int server) {
 bool g_should_write_next_message = false;
 
 void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
+	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
+		RETURN_META(MRES_IGNORED);
+	}
 	if (g_netmessage_count >= MAX_NETMSG_FRAME) {
 		g_netmessage_count--; // overwrite last message
 		println("[SvenTV] Network message capture overflow!");
@@ -292,27 +325,61 @@ void WriteString(const char* s) {
 	RETURN_META(MRES_IGNORED);
 }
 
+bool doCommand(edict_t* plr) {
+	bool isAdmin = AdminLevel(plr) >= ADMIN_YES;
+	CommandArgs args = CommandArgs();
+	args.loadArgs();
+	string lowerArg = toLowerCase(args.ArgV(0));
+
+	if (!isAdmin) {
+		return false;
+	}
+
+	if (args.ArgC() > 0 && lowerArg == ".replay") {
+		if (args.ArgC() > 1) {
+			string path = g_demo_file_path->string + args.ArgV(1);
+			float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
+			g_sventv->openDemo(plr, path, offsetSeconds, true);
+		}
+		else {
+			ClientPrint(plr, HUD_PRINTTALK, "Usage: .demo [demo file path]\n");
+		}
+
+		return true;
+	}
+	if (args.ArgC() > 0 && lowerArg == ".demo") {
+		g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
+		return true;
+	}
+
+	return false;
+}
+
 void ClientCommand(edict_t* pEntity) {
-	string lowerArg0 = toLowerCase(CMD_ARGV(0));
-	bool isConsoleCmd = lowerArg0 != "say" && lowerArg0 != "say_team";
-	string cmd = CMD_ARGC() > 1 ? CMD_ARGS() : "";
+	META_RES ret = doCommand(pEntity) ? MRES_SUPERCEDE : MRES_IGNORED;
 
-	if (isConsoleCmd) {
-		cmd = CMD_ARGV(0) + string(" ") + cmd;
-	}
+	if (g_sventv->enableDemoFile || g_sventv->enableServer) {
+		string lowerArg0 = toLowerCase(CMD_ARGV(0));
+		bool isConsoleCmd = lowerArg0 != "say" && lowerArg0 != "say_team";
+		string cmd = CMD_ARGC() > 1 ? CMD_ARGS() : "";
 
-	if (g_command_count >= MAX_CMD_FRAME) {
-		println("[SvenTV] Command capture overflow!");
-		g_command_count--; // overwrite last command
-	}
+		if (isConsoleCmd) {
+			cmd = CMD_ARGV(0) + string(" ") + cmd;
+		}
 
-	CommandData& dat = g_cmds[g_command_count];
-	dat.idx = ENTINDEX(pEntity)-1;
-	dat.len = cmd.size();
-	memcpy(dat.data, cmd.c_str(), cmd.size());
-	g_command_count++;
+		if (g_command_count >= MAX_CMD_FRAME) {
+			println("[SvenTV] Command capture overflow!");
+			g_command_count--; // overwrite last command
+		}
 
-	RETURN_META(MRES_IGNORED);
+		CommandData& dat = g_cmds[g_command_count];
+		dat.idx = ENTINDEX(pEntity) - 1;
+		dat.len = cmd.size();
+		memcpy(dat.data, cmd.c_str(), cmd.size());
+		g_command_count++;
+	}	
+
+	RETURN_META(ret);
 }
 
 // maps BSP model indexes
@@ -358,6 +425,11 @@ void PluginInit() {
 	const char* stringPoolStart = gpGlobals->pStringBase;
 
 	g_main_thread_id = std::this_thread::get_id();
+
+	// start writing demo file automatically when map starts
+	g_auto_demo_file = RegisterCVar("sventv.autodemofile", "0", 0, 0);
+
+	g_demo_file_path = RegisterCVar("sventv.demofilepath", "svencoop_addon/scripts/plugins/metamod/SvenTV/", 0, 0);
 
 	if (gpGlobals->time > 3.0f)
 		g_sventv = new SvenTV(singleThreadMode);
