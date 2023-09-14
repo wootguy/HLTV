@@ -738,61 +738,59 @@ bool SvenTV::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipP
 		return false;
 	}
 
-	DemoHeader header;
-
-	if (!fread(&header, sizeof(DemoHeader), 1, replayFile)) {
+	if (!fread(&demoHeader, sizeof(DemoHeader), 1, replayFile)) {
 		ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
 		closeReplayFile();
 		return false;
 	}
 
-	if (header.version != DEMO_VERSION) {
-		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", header.version, DEMO_VERSION));
+	if (demoHeader.version != DEMO_VERSION) {
+		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", demoHeader.version, DEMO_VERSION));
 		closeReplayFile();
 		return false;
 	}
 
-	string mapname = string(header.mapname, 64);
+	string mapname = string(demoHeader.mapname, 64);
 	if (!g_engfuncs.pfnIsMapValid((char*)mapname.c_str())) {
 		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
 		closeReplayFile();
 		return false;
 	}
 
-	if (header.modelLen > 1024 * 1024 * 32 || header.soundLen > 1024 * 1024 * 32) {
-		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", header.modelLen, header.soundLen));
+	if (demoHeader.modelLen > 1024 * 1024 * 32 || demoHeader.soundLen > 1024 * 1024 * 32) {
+		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", demoHeader.modelLen, demoHeader.soundLen));
 		closeReplayFile();
 		return false;
 	}
 	
-	if (header.modelLen) {
-		char* modelData = new char[header.modelLen];
+	if (demoHeader.modelLen) {
+		char* modelData = new char[demoHeader.modelLen];
 
-		if (!fread(modelData, header.modelLen, 1, replayFile)) {
+		if (!fread(modelData, demoHeader.modelLen, 1, replayFile)) {
 			ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
 			closeReplayFile();
 			return false;
 		}
 
-		precacheModels = splitString(string(modelData, header.modelLen), "\n");
+		precacheModels = splitString(string(modelData, demoHeader.modelLen), "\n");
 
 		for (int i = 0; i < precacheModels.size(); i++) {
-			int replayIdx = header.modelIdxStart + i;
+			int replayIdx = demoHeader.modelIdxStart + i;
 			replayModelPath[replayIdx] = precacheModels[i];
 		}
 
 		delete[] modelData;
 	}
-	if (header.soundLen) {
-		char* soundData = new char[header.soundLen];
+	if (demoHeader.soundLen) {
+		char* soundData = new char[demoHeader.soundLen];
 
-		if (!fread(soundData, header.soundLen, 1, replayFile)) {
+		if (!fread(soundData, demoHeader.soundLen, 1, replayFile)) {
 			ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
 			closeReplayFile();
 			return false;
 		}
 
-		precacheSounds = splitString(string(soundData, header.soundLen), "\n");
+		precacheSounds = splitString(string(soundData, demoHeader.soundLen), "\n");
 
 		delete[] soundData;
 	}
@@ -810,7 +808,7 @@ bool SvenTV::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipP
 		ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("date       : %s\n", buffer));
 	}
 	{
-		int duration = header.endTime ? TimeDifference(header.startTime, header.endTime) : 0;
+		int duration = demoHeader.endTime ? TimeDifference(demoHeader.startTime, demoHeader.endTime) : 0;
 		int hours = duration / (60 * 60);
 		int minutes = (duration - (hours * 60 * 60)) / 60;
 		int seconds = duration % 60;
@@ -823,8 +821,8 @@ bool SvenTV::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipP
 		}
 	}
 	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
-	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", header.maxPlayers));
-	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d (offset %d)\n", precacheModels.size(), header.modelIdxStart));
+	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
+	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d (offset %d)\n", precacheModels.size(), demoHeader.modelIdxStart));
 	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
 
 	if (skipPrecache) {
@@ -1085,6 +1083,7 @@ bool SvenTV::readDemoFrame() {
 				continue;
 			}
 
+			// create ents until the client has enough to handle this demo frame
 			while (i >= replayEnts.size()) {
 				map<string, string> keys;
 				keys["model"] = "models/error.mdl";
@@ -1092,6 +1091,7 @@ bool SvenTV::readDemoFrame() {
 				CBaseEntity* ent = CreateEntity("cycler", keys, true);
 				ent->pev->solid = SOLID_NOT;
 				ent->pev->effects |= EF_NODRAW;
+				ent->pev->movetype = MOVETYPE_NONE;
 
 				if (!ent) {
 					println("Entity overflow at %d\n", (int)replayEnts.size());
@@ -1115,7 +1115,21 @@ bool SvenTV::readDemoFrame() {
 			if (oldSeq != ent->v.sequence) {
 				CBaseMonster* anim = (CBaseMonster*)replayEnts[i].GetEntity();
 				anim->m_Activity = ACT_RELOAD;
-				anim->ResetSequenceInfo();
+
+				void* pmodel = GET_MODEL_PTR(anim->edict());
+				studiohdr_t* header = (studiohdr_t*)pmodel;
+				if (!header || header->id != 1414743113 || header->version != 10) {
+					println("Invalid studio model for edict %d (%s): %s", ENTINDEX(anim->edict()), STRING(ent->v.classname), STRING(ent->v.model));
+				}
+				else {
+					anim->ResetSequenceInfo();
+				}
+			}
+
+			// player entity
+			if (i > 0 && i <= demoHeader.maxPlayers) {
+				float dt = (header.demoTime - lastReplayFrame.demoTime) / 1000.0f;
+				updatePlayerModelRotations(ent, dt);
 			}
 			
 			if (oldModelIdx != ent->v.modelindex) {
@@ -1138,7 +1152,111 @@ bool SvenTV::readDemoFrame() {
 	replayFrame++;
 	//println("Frame %d, Time: %.1f", replayFrame, (float)TimeDifference(0, header.demoTime));
 
+	memcpy(&lastReplayFrame, &header, sizeof(DemoFrame));
+
 	return true;
+}
+
+void SvenTV::updatePlayerModelRotations(edict_t* ent, float dt) {
+	// blending and pitch calculations (best guess)
+	{
+		float pitch = normalizeRangef(-ent->v.angles.x, -180.0f, 180.0f);
+
+		if (pitch > 35) {
+			ent->v.angles.x = (pitch - 35) * 0.5f;
+		}
+		else if (pitch < -45) {
+			ent->v.angles.x = (pitch - -45) * 0.5f;
+		}
+		else {
+			ent->v.angles.x = 0;
+		}
+
+		uint8_t blend = 127 + (pitch * 1.4f);
+		ent->v.blending[0] = blend;
+	}
+
+	// TODO: calculate demoFileFps
+	Vector gaitspeed = Vector(ent->v.velocity[0], ent->v.velocity[1], 0) * demoFileFps;
+	float& gaityaw = ent->v.fuser1;
+	
+	float dtScale = 1.0f / dt;
+	const float PI = 3.1415f;
+
+	if (gaitspeed.Length() < 5)
+	{
+		// standing still. Rotate legs back to forward position
+		float flYawDiff = ent->v.angles.y - gaityaw;
+		flYawDiff = flYawDiff - (int)(flYawDiff / 360) * 360;
+		if (flYawDiff > 180)
+			flYawDiff -= 360;
+		if (flYawDiff < -180)
+			flYawDiff += 360;
+
+		if (dt < 0.25)
+			flYawDiff *= dt * 4;
+		else
+			flYawDiff *= dt;
+
+		gaityaw += flYawDiff;
+		gaityaw -= (int)(gaityaw / 360) * 360;
+	}
+	else
+	{
+		// moving. rotate legs towards movement direction
+		Vector doot = gaitspeed.Normalize();
+		gaityaw = (atan2(gaitspeed.y, gaitspeed.x) * 180 / PI);
+		if (gaityaw > 180)
+			gaityaw = 180;
+		if (gaityaw < -180)
+			gaityaw = -180;
+	}
+
+	float flYaw = ent->v.angles.y - gaityaw;
+	flYaw = flYaw - (int)(flYaw / 360) * 360;
+	if (flYaw < -180)
+		flYaw = flYaw + 360;
+	if (flYaw > 180)
+		flYaw = flYaw - 360;
+
+	if (flYaw > 120)
+	{
+		gaityaw = gaityaw - 180;
+		flYaw = flYaw - 180;
+	}
+	else if (flYaw < -120)
+	{
+		gaityaw = gaityaw + 180;
+		flYaw = flYaw + 180;
+	}
+
+	// adjust torso
+	uint8_t torso = ((flYaw / 4.0) + 30) / (60.0 / 255.0);
+	memset(ent->v.controller, torso, 4);
+	ent->v.angles.y = gaityaw;
+
+	static uint8_t crouching_anims[256] = {
+		0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, // 0-15
+		0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, // 16-31
+		0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, // 32-47
+		0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, // 48-63
+		0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, // 64-79
+		0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, // 80-95
+		1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, // 96-111
+		0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, // 112-127
+		1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, // 128-143
+		1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, // 144-159
+		0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, // 160-175
+		1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 176-191
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 192-207
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 208-223
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 224-239
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 240-255
+	};
+
+	if (crouching_anims[clamp(ent->v.gaitsequence, 0, 255)]) {
+		ent->v.origin.z += 18;
+	}
 }
 
 void SvenTV::playDemo() {
@@ -1269,7 +1387,7 @@ bool SvenTV::writeDemoFile() {
 		}
 		else {
 			// delta written
-			println("Write edict %d offset %d bytes %d", i, (int)offset, (int)(entbuffer.tell() - startOffset));
+			//println("Write edict %d offset %d bytes %d", i, (int)offset, (int)(entbuffer.tell() - startOffset));
 			offset = 1;
 			numEntDeltas++;
 		}

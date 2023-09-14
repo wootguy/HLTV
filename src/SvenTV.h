@@ -276,11 +276,9 @@ private:
 	Socket* socket = NULL;
 	bool abortEverything = false;
 	netedict* debugEdict = NULL;
-	
-	// demo file writing
-	uint64_t nextDemoUpdate = 0;
-	float demoFileFps = 60;
 
+
+	// vars for replaying a demo file
 	FILE* replayFile = NULL;
 	vector<string> precacheModels;
 	vector<string> precacheSounds;
@@ -290,7 +288,12 @@ private:
 	uint64_t nextFrameTime = 0;
 	vector<EHandle> replayEnts;
 	map<int, string> replayModelPath; // maps model index in demo file to a path
+	DemoHeader demoHeader;
+	DemoFrame lastReplayFrame;
 
+	// vars for writing a demo file
+	uint64_t nextDemoUpdate = 0;
+	float demoFileFps = 60;
 	FILE* demoFile = NULL;
 	int numFileDeltas = 0;
 	uint64_t deltaWriteSz = 0;
@@ -348,6 +351,10 @@ private:
 	bool readEntDeltas(mstream& reader);
 	// clears existing map entities for playback
 	void prepareDemo(float offsetSeconds);
+
+	// ent = replay entitiy to update pitch/gait angles
+	// dt = seconds between current time and last time
+	void updatePlayerModelRotations(edict_t* ent, float dt);
 };
 
 
