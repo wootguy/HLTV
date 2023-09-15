@@ -777,6 +777,7 @@ bool SvenTV::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipP
 		for (int i = 0; i < precacheModels.size(); i++) {
 			int replayIdx = demoHeader.modelIdxStart + i;
 			replayModelPath[replayIdx] = precacheModels[i];
+			//println("Replay model %d: %s", replayIdx, precacheModels[i].c_str());
 		}
 
 		delete[] modelData;
@@ -793,6 +794,9 @@ bool SvenTV::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipP
 		precacheSounds = splitString(string(soundData, demoHeader.soundLen), "\n");
 
 		delete[] soundData;
+	}
+	if (demoHeader.modelLen == 0) {
+		println("WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.");
 	}
 
 	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
@@ -1058,6 +1062,7 @@ bool SvenTV::readDemoFrame() {
 
 	char* frameData = new char[header.frameSize];
 	if (!fread(frameData, header.frameSize, 1, replayFile)) {
+		delete[] frameData;
 		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
@@ -1072,6 +1077,7 @@ bool SvenTV::readDemoFrame() {
 
 	if (header.hasEntityDeltas) {
 		if (!readEntDeltas(reader)) {
+			delete[] frameData;
 			return false;
 		}
 		
@@ -1099,6 +1105,7 @@ bool SvenTV::readDemoFrame() {
 						REMOVE_ENTITY(replayEnts[i]);
 					}
 					closeReplayFile();
+					delete[] frameData;
 					return false;
 				}
 
@@ -1112,7 +1119,7 @@ bool SvenTV::readDemoFrame() {
 			fileedicts[i].apply(ent, replayEnts);
 			ent->v.framerate = 0.00001f;
 
-			if (oldSeq != ent->v.sequence) {
+			if (oldSeq != ent->v.sequence && (ent->v.flags & FL_MONSTER)) {
 				CBaseMonster* anim = (CBaseMonster*)replayEnts[i].GetEntity();
 				anim->m_Activity = ACT_RELOAD;
 
@@ -1131,13 +1138,16 @@ bool SvenTV::readDemoFrame() {
 				float dt = (header.demoTime - lastReplayFrame.demoTime) / 1000.0f;
 				updatePlayerModelRotations(ent, dt);
 			}
+
 			
 			if (oldModelIdx != ent->v.modelindex) {
 				if (replayModelPath.count(ent->v.modelindex)) {
-					SET_MODEL(ent, replayModelPath[ent->v.modelindex].c_str());
+					//println("SET MODEL: %s", replayModelPath[ent->v.modelindex].c_str());
+					string model = replayModelPath[ent->v.modelindex];
+					SET_MODEL(ent, model.c_str());					
 				}
 				else if (g_indexToModel.count(ent->v.modelindex)) {
-					println("BSP MODEL IDX: %d '%s'", (int)ent->v.modelindex, g_indexToModel[ent->v.modelindex].c_str());
+					//println("BSP MODEL IDX: %d '%s'", (int)ent->v.modelindex, g_indexToModel[ent->v.modelindex].c_str());
 					SET_MODEL(ent, g_indexToModel[ent->v.modelindex].c_str());
 				}
 				else {
@@ -1146,6 +1156,13 @@ bool SvenTV::readDemoFrame() {
 					println("Unknown model idx %d on edict %d", (int)ent->v.modelindex, i);
 				}
 			}
+
+			/*
+			if (g_engfuncs.pfnModelIndex("sprites/lgtning.spr") == ent->v.modelindex || g_engfuncs.pfnModelIndex("sprites/error.spr") == ent->v.modelindex) {
+				SET_MODEL(ent, "sprites/error.spr");
+				println("OK LIGHTNING: %f %d", ent->v.scale, ent->v.movetype);
+			}
+			*/
 		}
 	}
 	
@@ -1153,6 +1170,7 @@ bool SvenTV::readDemoFrame() {
 	//println("Frame %d, Time: %.1f", replayFrame, (float)TimeDifference(0, header.demoTime));
 
 	memcpy(&lastReplayFrame, &header, sizeof(DemoFrame));
+	delete[] frameData;
 
 	return true;
 }
@@ -1183,6 +1201,7 @@ void SvenTV::updatePlayerModelRotations(edict_t* ent, float dt) {
 	float dtScale = 1.0f / dt;
 	const float PI = 3.1415f;
 
+	// gait calculations from the HLSDK
 	if (gaitspeed.Length() < 5)
 	{
 		// standing still. Rotate legs back to forward position

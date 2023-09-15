@@ -208,6 +208,7 @@ void PM_Move(playermove_s* ppmove, int server) {
 bool g_should_write_next_message = false;
 
 void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
+	//println("NET MESG: %d", msg_type);
 	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
 		RETURN_META(MRES_IGNORED);
 	}
@@ -336,8 +337,11 @@ bool doCommand(edict_t* plr) {
 	}
 
 	if (args.ArgC() > 0 && lowerArg == ".replay") {
-		if (args.ArgC() > 1) {
+		if (args.ArgC() > 1 || true) {
 			string path = g_demo_file_path->string + args.ArgV(1);
+			if (args.ArgV(1).empty()) {
+				path += string(STRING(gpGlobals->mapname)) + ".demo";
+			}
 			float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
 			g_sventv->openDemo(plr, path, offsetSeconds, true);
 		}

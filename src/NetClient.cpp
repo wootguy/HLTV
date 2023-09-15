@@ -210,17 +210,24 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	vars.colormap = colormap;
 	vars.health = health;
 
-	vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NOCLIP;
+	vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NONE;
 
 	if (aiment) {
 		if (aiment >= simEnts.size()) {
 			println("Invalid aiment %d / %d", aiment, (int)simEnts.size());
-			vars.movetype = MOVETYPE_NOCLIP;
+			vars.movetype = MOVETYPE_NONE;
 			return;
 		}
 		else {
-			vars.aiment = simEnts[aiment];
+			//vars.aiment = simEnts[aiment];
+			// aiment causing hard-to-troubleshoot crashes, so just set origin
+
+			edict_t* copyent = simEnts[aiment];
+			memcpy(&vars.origin, &copyent->v.origin, 3 * sizeof(float));
 		}
+	}
+	else {
+		vars.aiment = NULL;
 	}
 }
 
