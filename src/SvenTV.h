@@ -277,7 +277,6 @@ private:
 	bool abortEverything = false;
 	netedict* debugEdict = NULL;
 
-
 	// vars for replaying a demo file
 	FILE* replayFile = NULL;
 	vector<string> precacheModels;
@@ -348,13 +347,37 @@ private:
 
 	// returns true if more frames are needed to catch up with current playback time
 	bool readDemoFrame();
+	bool applyEntDeltas(DemoFrame& header);
 	bool readEntDeltas(mstream& reader);
+	bool readPlayerDeltas(mstream& reader);
+	bool readNetworkMessages(mstream& reader);
+	bool readClientCommands(mstream& reader);
+
+	// update network message data to point to the proper entities
+	// return false if message should not be sent
+	bool processDemoNetMessage(DemoNetMessage& msg, const float* origin, uint16_t& edictIdx, byte* data);
+
+	// really like 127 different messages
+	bool processTempEntityMessage(DemoNetMessage& msg, const float* origin, uint16_t& edictIdx, byte* data);
+
 	// clears existing map entities for playback
 	void prepareDemo(float offsetSeconds);
 
 	// ent = replay entitiy to update pitch/gait angles
 	// dt = seconds between current time and last time
 	void updatePlayerModelRotations(edict_t* ent, float dt);
+
+	// convert a model index read from a demo file into a model path
+	string getReplayModel(uint16_t modelIdx);
+	
+	// convert from a demo file entity index to an entity index in the current game
+	void convReplayEntIdx(uint16_t& eidx);
+
+	// convert from a demo file model idx to a model idx in the current game
+	void convReplayModelIdx(uint16_t& modelIdx);
+	
+	// convert from a demo file sound idx to a sound idx idx in the current game
+	void convReplaySoundIdx(uint16_t& soundIdx);
 };
 
 

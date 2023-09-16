@@ -111,8 +111,14 @@ float lastPingUpdate = 0;
 uint64_t getSteamId64(edict_t* ent) {
 	string steamid = g_engfuncs.pfnGetPlayerAuthId(ent);
 	vector<string> parts = splitString(steamid, ":");
-	if (parts.size() != 3) {
-		return 1; // indicates LAN id
+	if (steamid == "STEAM_ID_LAN") {
+		return 1;
+	}
+	else if (steamid == "BOT") {
+		return 2;
+	}
+	else if (parts.size() != 3) {
+		return 0; // indicates invalid ID
 	}
 	else {
 		uint64_t x = atoi(parts[1].c_str());
@@ -262,7 +268,7 @@ void WriteByte(int b) {
 	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = b;
 		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
-		msg.sz += sizeof(float);
+		msg.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
@@ -272,17 +278,17 @@ void WriteChar(int c) {
 	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = c;
 		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
-		msg.sz += sizeof(float);
+		msg.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteCoord(float coord) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
-		int16_t dat = coord * 8.0f;
-		memcpy(msg.data + msg.sz, &dat, sizeof(int16_t));
-		msg.sz += sizeof(int16_t);
+	if (msg.sz + sizeof(float) < MAX_NETMSG_DATA) {
+		int32_t arg = coord * 8;
+		memcpy(msg.data + msg.sz, &arg, sizeof(int32_t));
+		msg.sz += sizeof(int32_t);
 	}
 	RETURN_META(MRES_IGNORED);
 }
@@ -377,7 +383,7 @@ void ClientCommand(edict_t* pEntity) {
 		}
 
 		CommandData& dat = g_cmds[g_command_count];
-		dat.idx = ENTINDEX(pEntity) - 1;
+		dat.idx = ENTINDEX(pEntity);
 		dat.len = cmd.size();
 		memcpy(dat.data, cmd.c_str(), cmd.size());
 		g_command_count++;
@@ -435,8 +441,10 @@ void PluginInit() {
 
 	g_demo_file_path = RegisterCVar("sventv.demofilepath", "svencoop_addon/scripts/plugins/metamod/SvenTV/", 0, 0);
 
-	if (gpGlobals->time > 3.0f)
+	if (gpGlobals->time > 3.0f) {
 		g_sventv = new SvenTV(singleThreadMode);
+		loadSoundCacheFile();
+	}
 
 	g_demoplayers = new DemoPlayer[32];
 	g_netmessages = new NetMessageData[MAX_NETMSG_FRAME];
