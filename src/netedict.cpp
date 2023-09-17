@@ -160,28 +160,6 @@ void netedict::load(const edict_t& ed) {
 	origin[1] = clamp(FLOAT_TO_FIXED(ed.v.origin[1], 19, 5), INT24_MIN, INT24_MAX);
 	origin[2] = clamp(FLOAT_TO_FIXED(ed.v.origin[2], 19, 5), INT24_MIN, INT24_MAX);
 
-	if (ed.v.flags & FL_CLIENT) {
-		angles[0] = normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f);
-		angles[1] = normalizeRangef(vars.v_angle.y, 0, 360) * (65535.0f / 360.0f);
-		angles[2] = normalizeRangef(vars.v_angle.z, 0, 360) * (65535.0f / 360.0f);
-		edtype = NETED_PLAYER;
-	}
-	else {
-		angles[0] = normalizeRangef(vars.angles.x, 0, 360) * (65535.0f / 360.0f);
-		angles[1] = normalizeRangef(vars.angles.y, 0, 360) * (65535.0f / 360.0f);
-		angles[2] = normalizeRangef(vars.angles.z, 0, 360) * (65535.0f / 360.0f);
-
-		if (ed.v.flags & FL_MONSTER) {
-			edtype = NETED_MONSTER;
-		}
-		else if (ed.v.flags & FL_CUSTOMENTITY) {
-			edtype = NETED_BEAM;
-		}
-		else {
-			edtype = NETED_MODEL;
-		}
-	}
-
 	modelindex = vars.modelindex;
 	skin = vars.skin;
 	body = vars.body;
@@ -195,11 +173,44 @@ void netedict::load(const edict_t& ed) {
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermode = vars.rendermode;
 	renderamt = vars.renderamt;
-	memcpy(rendercolor, vars.rendercolor, 3);
+	rendercolor[0] = vars.rendercolor[0];
+	rendercolor[1] = vars.rendercolor[1];
+	rendercolor[2] = vars.rendercolor[2];
 	renderfx = vars.renderfx;
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
 	colormap = vars.colormap;
 	health = clamp(vars.health, 0, UINT32_MAX);
+
+	if (ed.v.flags & FL_CLIENT) {
+		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f));
+		angles[1] = (uint16_t)(normalizeRangef(vars.v_angle.y, 0, 360) * (65535.0f / 360.0f));
+		angles[2] = (uint16_t)(normalizeRangef(vars.v_angle.z, 0, 360) * (65535.0f / 360.0f));
+		edtype = NETED_PLAYER;
+	}
+	else if (ed.v.flags & FL_CUSTOMENTITY) {
+		edtype = NETED_BEAM;
+		angles[0] = clamp(FLOAT_TO_FIXED(ed.v.angles[0], 21, 3), INT24_MIN, INT24_MAX);
+		angles[1] = clamp(FLOAT_TO_FIXED(ed.v.angles[1], 21, 3), INT24_MIN, INT24_MAX);
+		angles[2] = clamp(FLOAT_TO_FIXED(ed.v.angles[2], 21, 3), INT24_MIN, INT24_MAX);
+		// not enough bits in sequence/skin so using aiment/owner instead
+		// these vars set the start/end entity and attachment points
+		aiment = vars.sequence;
+		((uint16_t*)blending)[0] = vars.skin;
+		sequence = 0;
+		skin = 0;
+	}
+	else {
+		angles[0] = (uint16_t)(normalizeRangef(vars.angles.x, 0, 360) * (65535.0f / 360.0f));
+		angles[1] = (uint16_t)(normalizeRangef(vars.angles.y, 0, 360) * (65535.0f / 360.0f));
+		angles[2] = (uint16_t)(normalizeRangef(vars.angles.z, 0, 360) * (65535.0f / 360.0f));
+
+		if (ed.v.flags & FL_MONSTER) {
+			edtype = NETED_MONSTER;
+		}
+		else {
+			edtype = NETED_MODEL;
+		}
+	}
 
 	uint8_t godbit = (vars.flags & FL_GODMODE) || vars.takedamage == DAMAGE_NO;
 	CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed));
@@ -211,7 +222,6 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	entvars_t& vars = ed->v;
 
 	if (edtype == NETED_INVALID) {
-		vars.effects |= EF_NODRAW;
 		return; // no need to update other values. Only the isFree var will be sent from now on
 	}
 
@@ -219,14 +229,6 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	vars.velocity[0] = origin[0] - vars.origin[0];
 	vars.velocity[1] = origin[1] - vars.origin[1];
 	vars.velocity[2] = origin[2] - vars.origin[2];
-
-	memcpy(&vars.origin, origin, 3 * sizeof(float));
-	vars.origin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);
-	vars.origin[1] = FIXED_TO_FLOAT(origin[1], 19, 5);
-	vars.origin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
-
-	const float angleConvert = (360.0f / 65535.0f);
-	vars.angles = Vector((float)angles[0] * angleConvert, (float)angles[1] * angleConvert, (float)angles[2] * angleConvert);
 
 	vars.modelindex = modelindex;
 	vars.skin = skin;
@@ -241,31 +243,74 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	vars.scale = scale / 256.0f;
 	vars.rendermode = rendermode;
 	vars.renderamt = renderamt;
-	memcpy(vars.rendercolor, rendercolor, 3);
+	vars.rendercolor[0] = rendercolor[0];
+	vars.rendercolor[1] = rendercolor[1];
+	vars.rendercolor[2] = rendercolor[2];
 	vars.renderfx = renderfx;
 	vars.colormap = colormap;
 	vars.health = health;
 	vars.playerclass = classifyGod >> 1;
 	vars.flags |= (classifyGod & 1) ? FL_GODMODE : 0;
+	vars.aiment = NULL;
 
-	vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NONE;
+	//vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NONE;
 
-	if (aiment) {
-		if (aiment >= simEnts.size()) {
-			println("Invalid aiment %d / %d", aiment, (int)simEnts.size());
-			vars.movetype = MOVETYPE_NONE;
-			return;
+	if (edtype == NETED_BEAM) {
+		uint16_t startIdx = aiment & 0xfff;
+		uint16_t endIdx = ((uint16_t*)blending)[0] & 0xfff;
+
+		if (startIdx) {
+			if (startIdx < simEnts.size()) {
+				edict_t* copyent = simEnts[startIdx];
+				vars.sequence = (aiment & 0xf000) | ENTINDEX(simEnts[startIdx]);
+			}
+			else {
+				println("Invalid beam start entity %d / %d", startIdx, (int)simEnts.size());
+			}
 		}
 		else {
-			//vars.aiment = simEnts[aiment];
-			// aiment causing hard-to-troubleshoot crashes, so just set origin
-
-			edict_t* copyent = simEnts[aiment];
-			memcpy(&vars.origin, &copyent->v.origin, 3 * sizeof(float));
+			vars.origin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);
+			vars.origin[1] = FIXED_TO_FLOAT(origin[1], 19, 5);
+			vars.origin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
+		}
+		if (endIdx) {
+			if (endIdx < simEnts.size()) {
+				edict_t* copyent = simEnts[endIdx];
+				vars.skin = (((uint16_t*)blending)[0] & 0xf000) | ENTINDEX(simEnts[endIdx]);
+			}
+			else {
+				println("Invalid beam end entity %d / %d", endIdx, (int)simEnts.size());
+			}
+		}
+		else {
+			vars.angles[0] = FIXED_TO_FLOAT(angles[0], 21, 3);
+			vars.angles[1] = FIXED_TO_FLOAT(angles[1], 21, 3);
+			vars.angles[2] = FIXED_TO_FLOAT(angles[2], 21, 3);
 		}
 	}
 	else {
-		vars.aiment = NULL;
+		if (aiment) {
+			if (aiment >= simEnts.size()) {
+				println("Invalid aiment %d / %d", aiment, (int)simEnts.size());
+				vars.movetype = MOVETYPE_NONE;
+				return;
+			}
+			else {
+				//vars.aiment = simEnts[aiment];
+				// aiment causing hard-to-troubleshoot crashes, so just set origin
+
+				edict_t* copyent = simEnts[aiment];
+				memcpy(&vars.origin, &copyent->v.origin, 3 * sizeof(float));
+			}
+		}
+		else {
+			vars.origin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);
+			vars.origin[1] = FIXED_TO_FLOAT(origin[1], 19, 5);
+			vars.origin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
+		}
+
+		const float angleConvert = (360.0f / 65535.0f);
+		vars.angles = Vector((float)angles[0] * angleConvert, (float)angles[1] * angleConvert, (float)angles[2] * angleConvert);
 	}
 }
 
@@ -277,6 +322,8 @@ bool netedict::readDeltas(mstream& reader) {
 		edtype = NETED_INVALID;
 		return false;
 	}
+
+	int angleSz = edtype == NETED_BEAM ? 3 : 2;
 
 	if (deltaBits & FL_DELTA_EDTYPE) {
 		reader.read((void*)&edtype, 1);
@@ -291,13 +338,13 @@ bool netedict::readDeltas(mstream& reader) {
 		reader.read((void*)&origin[2], 3);
 	}
 	if (deltaBits & FL_DELTA_ANGLES_X) {
-		reader.read((void*)&angles[0], 2);
+		reader.read((void*)&angles[0], angleSz);
 	}
 	if (deltaBits & FL_DELTA_ANGLES_Y) {
-		reader.read((void*)&angles[1], 2);
+		reader.read((void*)&angles[1], angleSz);
 	}
 	if (deltaBits & FL_DELTA_ANGLES_Z) {
-		reader.read((void*)&angles[2], 2);
+		reader.read((void*)&angles[2], angleSz);
 	}
 	if (deltaBits & FL_DELTA_MODELINDEX) {
 		reader.read((void*)&modelindex, 2);
@@ -399,6 +446,8 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	writer.skip(4); // write delta bits later
 
+	int angleSz = edtype == NETED_BEAM ? 3 : 2;
+
 	if (old.edtype != edtype) {
 		deltaBits |= FL_DELTA_EDTYPE;
 		writer.write((void*)&edtype, 1);
@@ -417,15 +466,15 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	}
 	if (old.angles[0] != angles[0]) {
 		deltaBits |= FL_DELTA_ANGLES_X;
-		writer.write((void*)&angles[0], 2);
+		writer.write((void*)&angles[0], angleSz);
 	}
 	if (old.angles[1] != angles[1]) {
 		deltaBits |= FL_DELTA_ANGLES_Y;
-		writer.write((void*)&angles[1], 2);
+		writer.write((void*)&angles[1], angleSz);
 	}
 	if (old.angles[2] != angles[2]) {
 		deltaBits |= FL_DELTA_ANGLES_Z;
-		writer.write((void*)&angles[2], 2);
+		writer.write((void*)&angles[2], angleSz);
 	}
 	if (old.modelindex != modelindex) {
 		deltaBits |= FL_DELTA_MODELINDEX;

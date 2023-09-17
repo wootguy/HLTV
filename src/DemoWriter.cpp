@@ -196,7 +196,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		msgbuffer.write(dat.data, dat.header.sz);
 	}
 	if (msgbuffer.eom()) {
-		println("ERROR: Demo file network message buffer overflowed. Use a bigger buffer! The demo file is now broken");
+		println("ERROR: Demo file network message buffer overflowed (%d > %d). Use a bigger buffer!", frame.netmessage_count, MAX_NETMSG_FRAME);
 	}
 
 	mstream cmdbuffer(cmdsBuffer, cmdsBufferSize);
@@ -210,7 +210,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		cmdbuffer.write(dat.data, dat.len);
 	}
 	if (cmdbuffer.eom()) {
-		println("ERROR: Demo file command buffer overflowed. Use a bigger buffer! The demo file is now broken");
+		println("ERROR: Demo file command buffer overflowed. Use a bigger buffer!");
 	}
 
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
@@ -256,11 +256,14 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
 	}
 
-	println("%4de %2dp %4dm %4dc    |  %4d + %4d + %4d + %4d = %4d B  |  %.1f MB file  |  %dms copy, %dms think",
-		numEntDeltas, numPlayerDeltas, frame.netmessage_count, frame.cmds_count,
-		entDeltaSz, plrDeltaSz, msgSz, cmdSz, totalSz,
-		(float)((double)deltaWriteSz / (1024.0 * 1024.0)),
-		g_copyTime, g_thinkTime);
+	bool showstats = false;
+	if (showstats) {
+		println("%4de %2dp %4dm %4dc    |  %4d + %4d + %4d + %4d = %4d B  |  %.1f MB file  |  %dms copy, %dms think",
+			numEntDeltas, numPlayerDeltas, frame.netmessage_count, frame.cmds_count,
+			entDeltaSz, plrDeltaSz, msgSz, cmdSz, totalSz,
+			(float)((double)deltaWriteSz / (1024.0 * 1024.0)),
+			g_copyTime, g_thinkTime);
+	}
 
 	return true;
 }

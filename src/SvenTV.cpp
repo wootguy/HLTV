@@ -31,8 +31,6 @@ SvenTV::SvenTV(bool singleThreadMode) {
 		socket = new Socket(SOCKET_UDP | SOCKET_NONBLOCKING, SVENTV_PORT);
 		edicts = INDEXENT(0);
 	}
-
-	println("ZOMG SIZE: %d", (int)sizeof(netedict));
 }
 
 SvenTV::~SvenTV() {

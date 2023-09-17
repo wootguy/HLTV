@@ -49,9 +49,9 @@ enum netedict_types {
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
 	uint8_t		edtype;			// netedict_types
-	uint32_t	origin[3];		// 19.5 fixed point
+	uint32_t	origin[3];		// 21.3 fixed point (beams), or 19.5 fixed point (everything else)
 	uint32_t	health;
-	uint16_t	angles[3];		// Model/view angles (0-360 scaled to 0-65535)
+	uint32_t	angles[3];		// 21.3 fixed point (beams), or 0-360 scaled to uint16_t (everything else)
 	uint16_t	modelindex;
 
 	uint8_t		skin;

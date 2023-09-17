@@ -31,6 +31,7 @@ int g_command_count = 0;
 uint32_t g_server_frame_count = 0;
 int g_copyTime = 0;
 volatile int g_thinkTime = 0;
+bool g_should_write_next_message = false;
 
 // maps indexes to model names, for all models that were so far in this map
 map<int, string> g_indexToModel;
@@ -69,7 +70,6 @@ void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 
 void MapInit_post(edict_t* pEdictList, int edictCount, int maxClients) {
 	loadSoundCacheFile();
-
 	RETURN_META(MRES_IGNORED);
 }
 
@@ -215,11 +215,10 @@ void PM_Move(playermove_s* ppmove, int server) {
 	RETURN_META(MRES_IGNORED);
 }
 
-bool g_should_write_next_message = false;
-
 void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
 	//println("NET MESG: %d", msg_type);
 	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
+		g_should_write_next_message = false;
 		RETURN_META(MRES_IGNORED);
 	}
 	if (g_netmessage_count >= MAX_NETMSG_FRAME) {

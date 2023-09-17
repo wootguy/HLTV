@@ -13,6 +13,10 @@ DemoPlayer::~DemoPlayer() {
 	delete[] fileplayerinfos;
 	delete[] fileedicts;
 
+	for (int i = 0; i < replayEnts.size(); i++) {
+		REMOVE_ENTITY(replayEnts[i]);
+	}
+
 	if (replayFile) {
 		fclose(replayFile);
 	}
@@ -118,6 +122,8 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d (offset %d)\n", precacheModels.size(), demoHeader.modelIdxStart));
 	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
 
+	ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[SvenTV] Opened: %s\n", path.c_str()));
+
 	if (skipPrecache) {
 		prepareDemo(offsetSeconds);
 		return true;
@@ -134,14 +140,17 @@ void DemoPlayer::prepareDemo(float offsetSeconds) {
 		edict_t* ent = INDEXENT(i);
 		CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
 		if (isValidPlayer(ent) && plr) {
-			ent->v.viewmodel = 0;
-			ent->v.weaponmodel = 0;
-			plr->m_iHideHUD = 1;
+			// hide weapons
+			//ent->v.viewmodel = 0;
+			//ent->v.weaponmodel = 0;
+			//plr->m_iHideHUD = 1;
 		}
 	}
 	for (int i = gpGlobals->maxClients; i < gpGlobals->maxEntities; i++) {
 		edict_t* ent = INDEXENT(i);
-		if (ent && strlen(STRING(ent->v.classname)) > 0) {
+		
+		// kill everything that isn't attached to a player
+		if (ent && strlen(STRING(ent->v.classname)) > 0 && (!ent->v.aiment || (ent->v.aiment->v.flags & FL_CLIENT) == 0)) {
 			REMOVE_ENTITY(ent);
 		}
 	}
@@ -178,6 +187,12 @@ void DemoPlayer::closeReplayFile() {
 		fclose(replayFile);
 		replayFile = NULL;
 	}
+
+	for (int i = 0; i < replayEnts.size(); i++) {
+		if (replayEnts[i].IsValid() && (replayEnts[i].GetEdict()->v.flags & FL_CLIENT) == 0)
+			REMOVE_ENTITY(replayEnts[i]);
+	}
+	replayEnts.clear();
 }
 
 bool DemoPlayer::readEntDeltas(mstream& reader) {
@@ -246,6 +261,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			ent->pev->solid = SOLID_NOT;
 			ent->pev->effects |= EF_NODRAW;
 			ent->pev->movetype = MOVETYPE_NONE;
+			ent->pev->flags |= FL_MONSTER;
 
 			if (!ent) {
 				println("Entity overflow at %d\n", (int)replayEnts.size());
@@ -260,6 +276,17 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		}
 
 		edict_t* ent = replayEnts[i];
+
+		if (fileedicts[i].edtype == NETED_BEAM && (ent->v.flags & FL_MONSTER)) {
+			map<string, string> keys;
+			keys["model"] = "sprites/error.spr";
+			CBaseEntity* newEnt = CreateEntity("beam", keys, true);
+
+			REMOVE_ENTITY(replayEnts[i]);
+			replayEnts[i] = ent = newEnt->edict();
+			ent->v.flags |= FL_CUSTOMENTITY;
+		}
+		
 		int oldModelIdx = ent->v.modelindex;
 		int oldSeq = ent->v.sequence;
 
@@ -281,11 +308,10 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		}
 
 		// player entity
-		if (i > 0 && i <= demoHeader.maxPlayers) {
+		if (fileedicts[i].edtype == NETED_PLAYER) {
 			float dt = (header.demoTime - lastReplayFrame.demoTime) / 1000.0f;
 			updatePlayerModelRotations(ent, dt);
 		}
-
 
 		if (oldModelIdx != ent->v.modelindex) {
 			SET_MODEL(ent, getReplayModel(ent->v.modelindex).c_str());
@@ -383,6 +409,118 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	byte* args = msg.data + 1;
 	uint16_t* args16 = (uint16_t*)args;
 	float* fargs = (float*)args;
+
+	if (type > TE_USERTRACER) {
+		println("Invalid temp ent type %d", (int)type);
+		return false;
+	}
+
+	static uint8_t expectedSzLookup[TE_USERTRACER+1] = {
+		37, // TE_BEAMPOINTS
+		27, // TE_BEAMENTPOINT
+		13, // TE_GUNSHOT
+		18, // TE_EXPLOSION
+		13, // TE_TAREXPLOSION
+		17, // TE_SMOKE
+		25, // TE_TRACER
+		30, // TE_LIGHTNING
+		17, // TE_BEAMENTS
+		4, // TE_SPARKS
+		13, // TE_LAVASPLASH
+		13, // TE_TELEPORT
+		15, // TE_EXPLOSION2
+		0, // TE_BSPDECAL (19 or 17!!!)
+		16, // TE_IMPLOSION
+		32, // TE_SPRITETRAIL
+		0, // unused index
+		17, // TE_SPRITE
+		29, // TE_BEAMSPRITE
+		37, // TE_BEAMTORUS
+		37, // TE_BEAMDISK
+		37, // TE_BEAMCYLINDER
+		11, // TE_BEAMFOLLOW
+		18, // TE_GLOWSPRITE
+		17, // TE_BEAMRING
+		32, // TE_STREAK_SPLASH
+		0, // unused index
+		19, // TE_DLIGHT
+		28, // TE_ELIGHT
+		0, // TE_TEXTMESSAGE (depends on text/effect)
+		30, // TE_LINE
+		30, // TE_BOX
+
+		// unused indexes
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+
+		3, // TE_KILLBEAM
+		17, // TE_LARGEFUNNEL
+		27, // TE_BLOODSTREAM
+		25, // TE_SHOWLINE
+		27, // TE_BLOOD
+		16, // TE_DECAL
+		6, // TE_FIZZ
+		30, // TE_MODEL
+		22, // TE_EXPLODEMODEL
+		43, // TE_BREAKMODEL
+		16, // TE_GUNSHOTDECAL
+		30, // TE_SPRITE_SPRAY
+		14, // TE_ARMOR_RICOCHET
+		17, // TE_PLAYERDECAL
+		36, // TE_BUBBLES
+		36, // TE_BUBBLETRAIL
+		19, // TE_BLOODSPRITE
+		14, // TE_WORLDDECAL
+		14, // TE_WORLDDECALHIGH
+		16, // TE_DECALHIGH
+		29, // TE_PROJECTILE
+		31, // TE_SPRAY
+		7, // TE_PLAYERSPRITES
+		17, // TE_PARTICLEBURST
+		20, // TE_FIREFIELD
+		10, // TE_PLAYERATTACHMENT
+		2, // TE_KILLPLAYERATTACHMENTS
+		35, // TE_MULTIGUNSHOT
+		31 // TE_USERTRACER		
+	};
+
+	static const char* te_names[TE_USERTRACER + 1] = {
+		"TE_BEAMPOINTS", "TE_BEAMENTPOINT", "TE_GUNSHOT", "TE_EXPLOSION",
+		"TE_TAREXPLOSION", "TE_SMOKE", "TE_TRACER", "TE_LIGHTNING",
+		"TE_BEAMENTS", "TE_SPARKS", "TE_LAVASPLASH", "TE_TELEPORT",
+		"TE_EXPLOSION2", "TE_BSPDECAL", "TE_IMPLOSION", "TE_SPRITETRAIL", 0,
+		"TE_SPRITE", "TE_BEAMSPRITE", "TE_BEAMTORUS", "TE_BEAMDISK",
+		"TE_BEAMCYLINDER", "TE_BEAMFOLLOW", "TE_GLOWSPRITE", "TE_BEAMRING",
+		"TE_STREAK_SPLASH", 0, "TE_DLIGHT", "TE_ELIGHT", "TE_TEXTMESSAGE",
+		"TE_LINE", "TE_BOX",
+
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+
+		"TE_KILLBEAM", "TE_LARGEFUNNEL", "TE_BLOODSTREAM", "TE_SHOWLINE",
+		"TE_BLOOD", "TE_DECAL", "TE_FIZZ", "TE_MODEL",
+		"TE_EXPLODEMODEL", "TE_BREAKMODEL", "TE_GUNSHOTDECAL", "TE_SPRITE_SPRAY",
+		"TE_ARMOR_RICOCHET", "TE_PLAYERDECAL", "TE_BUBBLES", "TE_BUBBLETRAIL",
+		"TE_BLOODSPRITE", "TE_WORLDDECAL", "TE_WORLDDECALHIGH", "TE_DECALHIGH",
+		"TE_PROJECTILE", "TE_SPRAY", "TE_PLAYERSPRITES", "TE_PARTICLEBURST",
+		"TE_FIREFIELD", "TE_PLAYERATTACHMENT", "TE_KILLPLAYERATTACHMENTS",
+		"TE_MULTIGUNSHOT", "TE_USERTRACER"
+	};
+
+	int expectedSz = expectedSzLookup[type];
+
+	if (type == TE_BSPDECAL) {
+		expectedSz = args16[7] ? 19 : 17;
+	}
+	if (type != TE_TEXTMESSAGE && msg.header.sz != expectedSz) {
+		println("Bad size for %s (%d): %d != %d", te_names[type], (int)type, (int)msg.header.sz, expectedSz);
+		return false;
+	}
+
 
 	switch (type) {
 	case TE_BEAMPOINTS:
@@ -553,6 +691,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 			continue;
 		}
 
+		//println("SEND MSG %d sz %d", (int)msg.header.type, (int)msg.header.sz);
 		MESSAGE_BEGIN(msg.header.dest, msg.header.type, ori, ent);
 
 		int numLongs = msg.header.sz / 4;
@@ -645,6 +784,8 @@ bool DemoPlayer::readDemoFrame() {
 	}
 	nextFrameOffset = ftell(replayFile) + (header.frameSize - sizeof(DemoFrame));
 
+	//println("Frame %d (%.1f kb), Time: %.1f", replayFrame, header.frameSize / 1024.0f, (float)TimeDifference(0, header.demoTime));
+
 	char* frameData = new char[header.frameSize];
 	if (!fread(frameData, header.frameSize, 1, replayFile)) {
 		delete[] frameData;
@@ -681,7 +822,6 @@ bool DemoPlayer::readDemoFrame() {
 	}
 
 	replayFrame++;
-	//println("Frame %d, Time: %.1f", replayFrame, (float)TimeDifference(0, header.demoTime));
 
 	memcpy(&lastReplayFrame, &header, sizeof(DemoFrame));
 	delete[] frameData;
