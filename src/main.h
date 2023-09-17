@@ -17,6 +17,9 @@ extern set<string> g_playerModels;
 extern cvar_t* g_auto_demo_file;
 extern cvar_t* g_demo_file_path;
 
+extern int g_copyTime;
+extern volatile int g_thinkTime;
+
 typedef struct usercmd_s
 {
 	short	lerp_msec;      // Interpolation time on client

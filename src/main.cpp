@@ -22,12 +22,15 @@ volatile bool g_plugin_exiting = false;
 const bool singleThreadMode = false;
 
 SvenTV* g_sventv = NULL;
-DemoPlayer* g_demoplayers = NULL;
+DemoPlayer* g_demoPlayer = NULL;
+DemoPlayerEnt* g_demoplayers = NULL;
 NetMessageData* g_netmessages = NULL;
 int g_netmessage_count = 0;
 CommandData* g_cmds = NULL;
 int g_command_count = 0;
 uint32_t g_server_frame_count = 0;
+int g_copyTime = 0;
+volatile int g_thinkTime = 0;
 
 // maps indexes to model names, for all models that were so far in this map
 map<int, string> g_indexToModel;
@@ -37,7 +40,7 @@ cvar_t* g_auto_demo_file;
 cvar_t* g_demo_file_path;
 
 void ClientLeave(edict_t* ent) {
-	DemoPlayer& plr = g_demoplayers[ENTINDEX(ent) - 1];
+	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.isConnected = false;
 	RETURN_META(MRES_IGNORED);
 }
@@ -45,7 +48,7 @@ void ClientLeave(edict_t* ent) {
 void Changelevel() {
 	if (g_sventv) {
 		g_sventv->enableDemoFile = false;
-		g_sventv->stopReplay();
+		g_demoPlayer->stopReplay();
 		g_server_frame_count = 0;
 		g_netmessage_count = 0;
 		g_server_frame_count = 0;
@@ -57,8 +60,9 @@ void Changelevel() {
 void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 	if (!g_sventv) {
 		g_sventv = new SvenTV(singleThreadMode);
+		g_demoPlayer = new DemoPlayer();
 	}
-	g_sventv->precacheDemo();
+	g_demoPlayer->precacheDemo();
 	
 	RETURN_META(MRES_IGNORED);
 }
@@ -71,7 +75,7 @@ void MapInit_post(edict_t* pEdictList, int edictCount, int maxClients) {
 
 void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
 	vector<string> parts = splitString(infobuffer, "\\");
-	DemoPlayer& plr = g_demoplayers[ENTINDEX(pEntity) - 1];
+	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(pEntity) - 1];
 
 	for (int i = 1; i < parts.size() - 1; i += 2) {
 		string key = parts[i];
@@ -136,7 +140,7 @@ void StartFrame() {
 		g_sventv->enableDemoFile = true;
 	}
 
-	g_sventv->playDemo();
+	g_demoPlayer->playDemo();
 
 	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
 		RETURN_META(MRES_IGNORED);
@@ -153,7 +157,7 @@ void StartFrame() {
 		CBasePlayerWeapon* wep = (CBasePlayerWeapon*)plr->m_hActiveItem.GetEntity();
 
 		if (wep) {
-			DemoPlayer& dplr = g_demoplayers[i - 1];
+			DemoPlayerEnt& dplr = g_demoplayers[i - 1];
 			int pammo = wep->m_iPrimaryAmmoType;
 			int sammo = wep->m_iSecondaryAmmoType;
 			dplr.clip = clamp(wep->m_iClip, 0, 65535);
@@ -167,7 +171,7 @@ void StartFrame() {
 		lastPingUpdate = g_engfuncs.pfnTime();
 
 		for (int i = 1; i <= gpGlobals->maxClients; i++) {
-			DemoPlayer& plr = g_demoplayers[i - 1];
+			DemoPlayerEnt& plr = g_demoplayers[i - 1];
 			edict_t* ent = INDEXENT(i);
 			
 			if (!isValidPlayer(ent)) {
@@ -198,7 +202,7 @@ void StartFrame() {
 }
 
 void ClientJoin(edict_t* ent) {
-	DemoPlayer& plr = g_demoplayers[ENTINDEX(ent) - 1];
+	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.steamid64 = getSteamId64(ent);
 	plr.isConnected = true;
 
@@ -206,7 +210,7 @@ void ClientJoin(edict_t* ent) {
 }
 
 void PM_Move(playermove_s* ppmove, int server) {
-	DemoPlayer& plr = g_demoplayers[ppmove->player_index];
+	DemoPlayerEnt& plr = g_demoplayers[ppmove->player_index];
 	plr.pmMoveCounter++;
 	RETURN_META(MRES_IGNORED);
 }
@@ -226,23 +230,23 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 	g_should_write_next_message = msg_dest != MSG_ONE && msg_dest != MSG_ONE_UNRELIABLE && msg_dest != MSG_INIT;
 
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	msg.dest = msg_dest;
-	msg.type = msg_type;
+	msg.header.dest = msg_dest;
+	msg.header.type = msg_type;
 	if (pOrigin) {
-		msg.hasOrigin = 1;
+		msg.header.hasOrigin = 1;
 		memcpy(msg.origin, pOrigin, 3 * sizeof(float));
 	}
 	else {
-		msg.hasOrigin = 0;
+		msg.header.hasOrigin = 0;
 	}
 	if (ed) {
-		msg.hasEdict = 1;
+		msg.header.hasEdict = 1;
 		msg.eidx = ENTINDEX(ed);
 	}
 	else {
-		msg.hasEdict = 0;
+		msg.header.hasEdict = 0;
 	}
-	msg.sz = 0;
+	msg.header.sz = 0;
 
 	RETURN_META(MRES_IGNORED);
 }
@@ -255,69 +259,69 @@ void MessageEnd() {
 
 void WriteAngle(float angle) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (msg.header.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = (int64)(fmod((double)angle, 360.0) * 256.0 / 360.0) & 0xFF;
-		memcpy(msg.data + msg.sz, &angle, sizeof(byte));
-		msg.sz += sizeof(byte);
+		memcpy(msg.data + msg.header.sz, &angle, sizeof(byte));
+		msg.header.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteByte(int b) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (msg.header.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = b;
-		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
-		msg.sz += sizeof(byte);
+		memcpy(msg.data + msg.header.sz, &dat, sizeof(byte));
+		msg.header.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteChar(int c) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (msg.header.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = c;
-		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
-		msg.sz += sizeof(byte);
+		memcpy(msg.data + msg.header.sz, &dat, sizeof(byte));
+		msg.header.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteCoord(float coord) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(float) < MAX_NETMSG_DATA) {
+	if (msg.header.sz + sizeof(float) < MAX_NETMSG_DATA) {
 		int32_t arg = coord * 8;
-		memcpy(msg.data + msg.sz, &arg, sizeof(int32_t));
-		msg.sz += sizeof(int32_t);
+		memcpy(msg.data + msg.header.sz, &arg, sizeof(int32_t));
+		msg.header.sz += sizeof(int32_t);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteEntity(int ent) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(uint16_t) < MAX_NETMSG_DATA) {
+	if (msg.header.sz + sizeof(uint16_t) < MAX_NETMSG_DATA) {
 		uint16_t dat = ent;
-		memcpy(msg.data + msg.sz, &dat, sizeof(uint16_t));
-		msg.sz += sizeof(uint16_t);
+		memcpy(msg.data + msg.header.sz, &dat, sizeof(uint16_t));
+		msg.header.sz += sizeof(uint16_t);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteLong(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(int) < MAX_NETMSG_DATA) {
-		memcpy(msg.data + msg.sz, &val, sizeof(int));
-		msg.sz += sizeof(int);
+	if (msg.header.sz + sizeof(int) < MAX_NETMSG_DATA) {
+		memcpy(msg.data + msg.header.sz, &val, sizeof(int));
+		msg.header.sz += sizeof(int);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteShort(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
+	if (msg.header.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
 		int16_t dat = val;
-		memcpy(msg.data + msg.sz, &dat, sizeof(int16_t));
-		msg.sz += sizeof(int16_t);
+		memcpy(msg.data + msg.header.sz, &dat, sizeof(int16_t));
+		msg.header.sz += sizeof(int16_t);
 	}
 	RETURN_META(MRES_IGNORED);
 }
@@ -325,9 +329,9 @@ void WriteShort(int val) {
 void WriteString(const char* s) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	int len = strlen(s)+1;
-	if (msg.sz + len < MAX_NETMSG_DATA) {
-		memcpy(msg.data + msg.sz, s, len);
-		msg.sz += len;
+	if (msg.header.sz + len < MAX_NETMSG_DATA) {
+		memcpy(msg.data + msg.header.sz, s, len);
+		msg.header.sz += len;
 	}
 	RETURN_META(MRES_IGNORED);
 }
@@ -349,7 +353,8 @@ bool doCommand(edict_t* plr) {
 				path += string(STRING(gpGlobals->mapname)) + ".demo";
 			}
 			float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
-			g_sventv->openDemo(plr, path, offsetSeconds, true);
+			g_demoPlayer->openDemo(plr, path, offsetSeconds, true);
+			g_sventv->enableDemoFile = false;
 		}
 		else {
 			ClientPrint(plr, HUD_PRINTTALK, "Usage: .demo [demo file path]\n");
@@ -443,17 +448,19 @@ void PluginInit() {
 
 	if (gpGlobals->time > 3.0f) {
 		g_sventv = new SvenTV(singleThreadMode);
+		g_demoPlayer = new DemoPlayer();
 		loadSoundCacheFile();
 	}
 
-	g_demoplayers = new DemoPlayer[32];
+	g_demoplayers = new DemoPlayerEnt[32];
 	g_netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 	g_cmds = new CommandData[MAX_CMD_FRAME];
-	memset(g_demoplayers, 0, 32*sizeof(DemoPlayer));
+	memset(g_demoplayers, 0, 32*sizeof(DemoPlayerEnt));
 }
 
 void PluginExit() {
-	delete g_sventv;
+	if (g_sventv) delete g_sventv;
+	if (g_demoPlayer) delete g_demoPlayer;
 	delete[] g_demoplayers;
 	delete[] g_netmessages;
 	delete[] g_cmds;
