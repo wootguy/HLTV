@@ -24,7 +24,7 @@ SvenTV::SvenTV(bool singleThreadMode) {
 	deltaPacketBuffer = new char[deltaPacketBufferSz];
 
 	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
-	int fullDeltaMaxSize = 55;
+	int fullDeltaMaxSize = sizeof(netedict) + 4;
 	int indexBytes = 1; // 2 for full index writes but on a max size update there will be no 255+ edict gaps
 	int headerBytes = 1; // 1 for first full index
 	fileDeltaBufferSize = headerBytes + (fullDeltaMaxSize + indexBytes) * MAX_EDICTS;
@@ -49,6 +49,8 @@ SvenTV::SvenTV(bool singleThreadMode) {
 		socket = new Socket(SOCKET_UDP | SOCKET_NONBLOCKING, SVENTV_PORT);
 		edicts = INDEXENT(0);
 	}
+
+	println("ZOMG SIZE: %d", (int)sizeof(netedict));
 }
 
 SvenTV::~SvenTV() {
@@ -120,172 +122,6 @@ void SvenTV::think_mainThread() {
 	}
 }
 
-int SvenTV::writeEdictDelta(mstream& writer, const netedict& old, const netedict& now) {
-	uint64_t startOffset = writer.tell();
-
-	uint32_t deltaBits = 0; // flags which fields were changed
-	
-
-	if (old.isValid != now.isValid) {
-		if (!now.isValid) {
-			// 0 deltas indicates edict was deleted
-			writer.write(&deltaBits, 4);
-
-			if (writer.eom()) {
-				writer.seek(startOffset);
-				return EDELTA_OVERFLOW;
-			}
-
-			return EDELTA_WRITE;
-		}
-	}
-
-	writer.skip(4); // write delta bits later
-
-	if (old.origin[0] != now.origin[0]) {
-		deltaBits |= FL_DELTA_ORIGIN_X;
-		writer.write((void*)&now.origin[0], 4);
-	}
-	if (old.origin[1] != now.origin[1]) {
-		deltaBits |= FL_DELTA_ORIGIN_Y;
-		writer.write((void*)&now.origin[1], 4);
-	}
-	if (old.origin[2] != now.origin[2]) {
-		deltaBits |= FL_DELTA_ORIGIN_Z;
-		writer.write((void*)&now.origin[2], 4);
-	}
-	if (old.angles[0] != now.angles[0]) {
-		deltaBits |= FL_DELTA_ANGLES_X;
-		writer.write((void*)&now.angles[0], 2);
-	}
-	if (old.angles[1] != now.angles[1]) {
-		deltaBits |= FL_DELTA_ANGLES_Y;
-		writer.write((void*)&now.angles[1], 2);
-	}
-	if (old.angles[2] != now.angles[2]) {
-		deltaBits |= FL_DELTA_ANGLES_Z;
-		writer.write((void*)&now.angles[2], 2);
-	}
-	if (old.modelindex != now.modelindex) {
-		deltaBits |= FL_DELTA_MODELINDEX;
-		writer.write((void*)&now.modelindex, 2);
-	}
-	if (old.skin != now.skin) {
-		deltaBits |= FL_DELTA_SKIN;
-		writer.write((void*)&now.skin, 1);
-	}
-	if (old.body != now.body) {
-		deltaBits |= FL_DELTA_BODY;
-		writer.write((void*)&now.body, 1);
-	}
-	if (old.effects != now.effects) {
-		deltaBits |= FL_DELTA_EFFECTS;
-		writer.write((void*)&now.effects, 1);
-	}
-	if (old.sequence != now.sequence) {
-		deltaBits |= FL_DELTA_SEQUENCE;
-		writer.write((void*)&now.sequence, 1);
-	}
-	if (old.gaitsequence != now.gaitsequence) {
-		deltaBits |= FL_DELTA_GAITSEQUENCE;
-		writer.write((void*)&now.gaitsequence, 1);
-	}
-	if (old.frame != now.frame) {
-		deltaBits |= FL_DELTA_FRAME;
-		writer.write((void*)&now.frame, 1);
-	}
-	if (old.animtime != now.animtime) {
-		deltaBits |= FL_DELTA_ANIMTIME;
-		writer.write((void*)&now.animtime, 1);
-	}
-	if (old.framerate != now.framerate) {
-		deltaBits |= FL_DELTA_FRAMERATE;
-		writer.write((void*)&now.framerate, 1);
-	}
-	if (old.controller[0] != now.controller[0]) {
-		deltaBits |= FL_DELTA_CONTROLLER_0;
-		writer.write((void*)&now.controller[0], 1);
-	}
-	if (old.controller[1] != now.controller[1]) {
-		deltaBits |= FL_DELTA_CONTROLLER_1;
-		writer.write((void*)&now.controller[1], 1);
-	}
-	if (old.controller[2] != now.controller[2]) {
-		deltaBits |= FL_DELTA_CONTROLLER_2;
-		writer.write((void*)&now.controller[2], 1);
-	}
-	if (old.controller[3] != now.controller[3]) {
-		deltaBits |= FL_DELTA_CONTROLLER_3;
-		writer.write((void*)&now.controller[3], 1);
-	}
-	if (old.blending[0] != now.blending[0]) {
-		deltaBits |= FL_DELTA_BLENDING_0;
-		writer.write((void*)&now.blending[0], 1);
-	}
-	if (old.blending[1] != now.blending[1]) {
-		deltaBits |= FL_DELTA_BLENDING_1;
-		writer.write((void*)&now.blending[1], 1);
-	}
-	if (old.scale != now.scale) {
-		deltaBits |= FL_DELTA_SCALE;
-		writer.write((void*)&now.scale, 1);
-	}
-	if (old.rendermode != now.rendermode) {
-		deltaBits |= FL_DELTA_RENDERMODE;
-		writer.write((void*)&now.rendermode, 1);
-	}
-	if (old.renderamt != now.renderamt) {
-		deltaBits |= FL_DELTA_RENDERAMT;
-		writer.write((void*)&now.renderamt, 1);
-	}
-	if (old.rendercolor[0] != now.rendercolor[0]) {
-		deltaBits |= FL_DELTA_RENDERCOLOR_0;
-		writer.write((void*)&now.rendercolor[0], 1);
-	}
-	if (old.rendercolor[1] != now.rendercolor[1]) {
-		deltaBits |= FL_DELTA_RENDERCOLOR_1;
-		writer.write((void*)&now.rendercolor[1], 1);
-	}
-	if (old.rendercolor[2] != now.rendercolor[2]) {
-		deltaBits |= FL_DELTA_RENDERCOLOR_2;
-		writer.write((void*)&now.rendercolor[2], 1);
-	}
-	if (old.renderfx != now.renderfx) {
-		deltaBits |= FL_DELTA_RENDERFX;
-		writer.write((void*)&now.renderfx, 1);
-	}
-	if (old.aiment != now.aiment) {
-		deltaBits |= FL_DELTA_AIMENT;
-		writer.write((void*)&now.aiment, 2);
-	}
-	if (old.health != now.health) {
-		deltaBits |= FL_DELTA_HEALTH;
-		writer.write((void*)&now.health, 4);
-	}
-	if (old.colormap != now.colormap) {
-		deltaBits |= FL_DELTA_COLORMAP;
-		writer.write((void*)&now.colormap, 1);
-	}
-	// 51 + 4 possible bytes
-
-	if (writer.eom()) {
-		writer.seek(startOffset);
-		return EDELTA_OVERFLOW;
-	}
-
-	uint64_t currentOffset = writer.tell();
-	writer.seek(startOffset);
-
-	if (deltaBits == 0) {
-		return EDELTA_NONE;
-	}
-
-	writer.write((void*)&deltaBits, 4);
-	writer.seek(currentOffset);
-
-	return EDELTA_WRITE;
-}
-
 int SvenTV::writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlayer& old, const DemoPlayer& now) {
 	uint64_t startOffset = writer.tell();
 
@@ -329,6 +165,22 @@ int SvenTV::writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlaye
 			deltaBits.pmMoveChanged = 1;
 			uint8_t delta = clamp(now.pmMoveCounter - old.pmMoveCounter, 0, 255);
 			writer.write((void*)&delta, 1);
+		}
+		if (old.flags != now.flags) {
+			deltaBits.flagsChanged = 1;
+			writer.write((void*)&now.flags, 1);
+		}
+		if (old.punchangle[0] != now.punchangle[0]) {
+			deltaBits.punchAngleXChanged = 1;
+			writer.write((void*)&now.punchangle[0], 2);
+		}
+		if (old.punchangle[1] != now.punchangle[1]) {
+			deltaBits.punchAngleYChanged = 1;
+			writer.write((void*)&now.punchangle[1], 2);
+		}
+		if (old.punchangle[2] != now.punchangle[2]) {
+			deltaBits.punchAngleZChanged = 1;
+			writer.write((void*)&now.punchangle[2], 2);
 		}
 		if (old.viewmodel != now.viewmodel) {
 			deltaBits.viewmodelChanged = 1;
@@ -378,10 +230,9 @@ int SvenTV::writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlaye
 			deltaBits.ammo2Changed = 1;
 			writer.write((void*)&now.ammo2, 2);
 		}
-		if (old.iuser1 != now.iuser1 || old.iuser2 != now.iuser2) {
+		if (old.observer != now.observer) {
 			deltaBits.observerChanged = 1;
-			uint8_t observer = now.iuser1 | (now.iuser2 << 2);
-			writer.write((void*)&observer, 1);
+			writer.write((void*)&now.observer, 1);
 		}
 	}
 
@@ -592,7 +443,7 @@ void SvenTV::broadcastEntityStates() {
 
 			uint64_t datOffset = buffer.tell();
 
-			int ret = writeEdictDelta(buffer, clients[k].baselines[i], now);
+			int ret = now.writeDeltas(buffer, clients[k].baselines[i]);
 
 			if (ret == EDELTA_OVERFLOW) {
 				Packet delta = Packet(clients[k].addr, deltaPacketBuffer, startOffset);
@@ -921,109 +772,9 @@ bool SvenTV::readEntDeltas(mstream& reader) {
 		uint64_t startPos = reader.tell();
 
 		netedict* ed = &fileedicts[fullIndex];
-
-		uint32_t deltaBits = 0;
-		reader.read(&deltaBits, 4);
-
-		if (deltaBits == 0) {
-			ed->isValid = false;
+		if (!ed->readDeltas(reader)) {
 			//println("Skip free %d", fullIndex);
 			continue;
-		}
-		ed->isValid = true;
-
-		if (deltaBits & FL_DELTA_ORIGIN_X) {
-			reader.read((void*)&ed->origin[0], 4);
-		}
-		if (deltaBits & FL_DELTA_ORIGIN_Y) {
-			reader.read((void*)&ed->origin[1], 4);
-		}
-		if (deltaBits & FL_DELTA_ORIGIN_Z) {
-			reader.read((void*)&ed->origin[2], 4);
-		}
-		if (deltaBits & FL_DELTA_ANGLES_X) {
-			reader.read((void*)&ed->angles[0], 2);
-		}
-		if (deltaBits & FL_DELTA_ANGLES_Y) {
-			reader.read((void*)&ed->angles[1], 2);
-		}
-		if (deltaBits & FL_DELTA_ANGLES_Z) {
-			reader.read((void*)&ed->angles[2], 2);
-		}
-		if (deltaBits & FL_DELTA_MODELINDEX) {
-			reader.read((void*)&ed->modelindex, 2);
-		}
-		if (deltaBits & FL_DELTA_SKIN) {
-			reader.read((void*)&ed->skin, 1);
-		}
-		if (deltaBits & FL_DELTA_BODY) {
-			reader.read((void*)&ed->body, 1);
-		}
-		if (deltaBits & FL_DELTA_EFFECTS) {
-			reader.read((void*)&ed->effects, 1);
-		}
-		if (deltaBits & FL_DELTA_SEQUENCE) {
-			reader.read((void*)&ed->sequence, 1);
-		}
-		if (deltaBits & FL_DELTA_GAITSEQUENCE) {
-			reader.read((void*)&ed->gaitsequence, 1);
-		}
-		if (deltaBits & FL_DELTA_FRAME) {
-			reader.read((void*)&ed->frame, 1);
-		}
-		if (deltaBits & FL_DELTA_ANIMTIME) {
-			reader.read((void*)&ed->animtime, 1);
-		}
-		if (deltaBits & FL_DELTA_FRAMERATE) {
-			reader.read((void*)&ed->framerate, 1);
-		}
-		if (deltaBits & FL_DELTA_CONTROLLER_0) {
-			reader.read((void*)&ed->controller[0], 1);
-		}
-		if (deltaBits & FL_DELTA_CONTROLLER_1) {
-			reader.read((void*)&ed->controller[1], 1);
-		}
-		if (deltaBits & FL_DELTA_CONTROLLER_2) {
-			reader.read((void*)&ed->controller[2], 1);
-		}
-		if (deltaBits & FL_DELTA_CONTROLLER_3) {
-			reader.read((void*)&ed->controller[3], 1);
-		}
-		if (deltaBits & FL_DELTA_BLENDING_0) {
-			reader.read((void*)&ed->blending[0], 1);
-		}
-		if (deltaBits & FL_DELTA_BLENDING_1) {
-			reader.read((void*)&ed->blending[1], 1);
-		}
-		if (deltaBits & FL_DELTA_SCALE) {
-			reader.read((void*)&ed->scale, 1);
-		}
-		if (deltaBits & FL_DELTA_RENDERMODE) {
-			reader.read((void*)&ed->rendermode, 1);
-		}
-		if (deltaBits & FL_DELTA_RENDERAMT) {
-			reader.read((void*)&ed->renderamt, 1);
-		}
-		if (deltaBits & FL_DELTA_RENDERCOLOR_0) {
-			reader.read((void*)&ed->rendercolor[0], 1);
-		}
-		if (deltaBits & FL_DELTA_RENDERCOLOR_1) {
-			reader.read((void*)&ed->rendercolor[1], 1);
-		}
-		if (deltaBits & FL_DELTA_RENDERCOLOR_2) {
-			reader.read((void*)&ed->rendercolor[2], 1);
-		}
-		if (deltaBits & FL_DELTA_RENDERFX) {
-			reader.read((void*)&ed->renderfx, 1);
-		}
-		if (deltaBits & FL_DELTA_AIMENT) {
-			reader.read((void*)&ed->aiment, 2);
-		}
-		if (deltaBits & FL_DELTA_HEALTH) {
-			reader.read((void*)&ed->health, 4);
-		}
-		if (deltaBits & FL_DELTA_COLORMAP) {
-			reader.read((void*)&ed->colormap, 1);
 		}
 
 		//println("Read index %d (%d bytes)", (int)fullIndex, (int)(reader.tell() - startPos));
@@ -1039,8 +790,10 @@ bool SvenTV::readEntDeltas(mstream& reader) {
 }
 
 bool SvenTV::applyEntDeltas(DemoFrame& header) {
+	int errorSprIdx = g_engfuncs.pfnModelIndex("sprites/error.spr");
+
 	for (int i = 1; i < MAX_EDICTS; i++) {
-		if (!fileedicts[i].isValid) {
+		if (!fileedicts[i].edtype) {
 			if (i < replayEnts.size()) {
 				replayEnts[i].GetEdict()->v.effects |= EF_NODRAW;
 			}
@@ -1099,6 +852,11 @@ bool SvenTV::applyEntDeltas(DemoFrame& header) {
 
 		if (oldModelIdx != ent->v.modelindex) {
 			SET_MODEL(ent, getReplayModel(ent->v.modelindex).c_str());
+		}
+
+		if (ent->v.modelindex == errorSprIdx) {
+			// prevent console flooding with invalid frame errors
+			ent->v.frame = 0;
 		}
 
 		/*
@@ -1219,6 +977,18 @@ bool SvenTV::readPlayerDeltas(mstream& reader) {
 		if (deltaBits.pmMoveChanged) {
 			reader.read(&info.pmMoveCounter, 1);
 		}
+		if (deltaBits.flagsChanged) {
+			reader.read(&info.flags, 1);
+		}
+		if (deltaBits.punchAngleXChanged) {
+			reader.read(&info.punchangle[0], 2);
+		}
+		if (deltaBits.punchAngleYChanged) {
+			reader.read(&info.punchangle[1], 2);
+		}
+		if (deltaBits.punchAngleZChanged) {
+			reader.read(&info.punchangle[2], 2);
+		}
 		if (deltaBits.viewmodelChanged) {
 			reader.read(&info.viewmodel, 2);
 		}
@@ -1256,10 +1026,7 @@ bool SvenTV::readPlayerDeltas(mstream& reader) {
 			reader.read(&info.ammo2, 2);
 		}
 		if (deltaBits.observerChanged) {
-			uint8_t observer;
-			reader.read(&observer, 1);
-			info.iuser1 = observer & 0x03;
-			info.iuser2 = observer >> 2;
+			reader.read(&info.observer, 1);
 		}
 
 		numPlayerDeltas++;
@@ -1800,7 +1567,7 @@ bool SvenTV::writeDemoFile() {
 			entbuffer.write(&i, 2);
 		}
 
-		int ret = writeEdictDelta(entbuffer, fileedicts[i], now);
+		int ret = now.writeDeltas(entbuffer, fileedicts[i]);
 
 		if (ret == EDELTA_OVERFLOW) {
 			println("ERROR: Demo file entity delta buffer overflowed. Use a bigger buffer! The demo file is now broken");
@@ -1971,16 +1738,27 @@ void SvenTV::think_tvThread() {
 					continue;
 				}
 
-				dplr.armorvalue = ent->v.armorvalue + 0.5f;
-				dplr.button = ent->v.button;
-				dplr.fov = ent->v.fov + 0.5f;
-				dplr.frags = ent->v.frags;
+				dplr.armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
+				dplr.button = ent->v.button & 0xffff;
+				dplr.fov = clamp(ent->v.fov + 0.5f, 0, 255);
+				dplr.frags = clamp(ent->v.frags, 0, UINT16_MAX);
+				dplr.punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
+				dplr.punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
+				dplr.punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
 				dplr.viewmodel = ent->v.viewmodel;
 				dplr.weaponmodel = ent->v.weaponmodel;
 				dplr.weaponanim = ent->v.weaponanim;
-				dplr.view_ofs = FLOAT_TO_FIXED(ent->v.view_ofs[2], 4);
-				dplr.iuser1 = ent->v.iuser1;
-				dplr.iuser2 = ent->v.iuser2;
+				dplr.view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
+				dplr.observer = ((uint8_t)ent->v.iuser2 << 6) | ((ent->v.iuser1 & 0x3) << 1) | (ent->v.deadflag != DEAD_NO);
+
+				int fl = ent->v.flags;
+				dplr.flags = (fl & FL_INWATER ? PLR_FL_INWATER : 0)
+					| (fl & FL_NOTARGET ? PLR_FL_NOTARGET : 0)
+					| (fl & (FL_ONGROUND|FL_PARTIALGROUND) ? PLR_FL_ONGROUND : 0)
+					| (fl & FL_WATERJUMP ? PLR_FL_WATERJUMP : 0)
+					| (fl & FL_FROZEN ? PLR_FL_FROZEN : 0)
+					| (fl & FL_DUCKING ? PLR_FL_DUCKING : 0)
+					| (fl & FL_NOWEAPONS ? PLR_FL_NOWEAPONS : 0);
 			}
 			loadNewData = false;
 		}

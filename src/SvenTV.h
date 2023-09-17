@@ -24,53 +24,14 @@
 #define CLC_DELTA_ACK 2
 #define CLC_DELTA_RESET 3
 
-// flags for indicating which edict fields were updated
-#define FL_DELTA_ORIGIN_X		(1 << 0)
-#define FL_DELTA_ORIGIN_Y		(1 << 1)
-#define FL_DELTA_ORIGIN_Z		(1 << 2)
-#define FL_DELTA_ANGLES_X		(1 << 3)
-#define FL_DELTA_ANGLES_Y		(1 << 4)
-#define FL_DELTA_ANGLES_Z		(1 << 5)
-#define FL_DELTA_MODELINDEX		(1 << 6)
-#define FL_DELTA_SKIN			(1 << 7)
-#define FL_DELTA_BODY			(1 << 8)
-#define FL_DELTA_EFFECTS		(1 << 9)
-#define FL_DELTA_SEQUENCE		(1 << 10)
-#define FL_DELTA_GAITSEQUENCE	(1 << 11)
-#define FL_DELTA_FRAME			(1 << 12)
-#define FL_DELTA_ANIMTIME		(1 << 13)
-#define FL_DELTA_FRAMERATE		(1 << 14)
-#define FL_DELTA_CONTROLLER_0	(1 << 15)
-#define FL_DELTA_CONTROLLER_1	(1 << 16)
-#define FL_DELTA_CONTROLLER_2	(1 << 17)
-#define FL_DELTA_CONTROLLER_3	(1 << 18)
-#define FL_DELTA_BLENDING_0		(1 << 19)
-#define FL_DELTA_BLENDING_1		(1 << 20)
-#define FL_DELTA_SCALE			(1 << 21)
-#define FL_DELTA_RENDERMODE		(1 << 22)
-#define FL_DELTA_RENDERAMT		(1 << 23)
-#define FL_DELTA_RENDERCOLOR_0	(1 << 24)
-#define FL_DELTA_RENDERCOLOR_1	(1 << 25)
-#define FL_DELTA_RENDERCOLOR_2	(1 << 26)
-#define FL_DELTA_RENDERFX		(1 << 27)
-#define FL_DELTA_AIMENT			(1 << 28)
-#define FL_DELTA_HEALTH			(1 << 29)
-#define FL_DELTA_COLORMAP		(1 << 30)
-
 enum edict_copy_states {
 	EDICT_COPY_REQUESTED,
 	EDICT_COPY_FINISHED,
 };
 
-enum delta_results {
-	EDELTA_NONE, // there were no differences between the edicts
-	EDELTA_WRITE, // there were differences between the edicts
-	EDELTA_OVERFLOW, // there were differences but there is no room to write them
-};
-
 #pragma pack(push, 1)
 
-#define DEMO_VERSION 1
+#define DEMO_VERSION 1 // version number written to demo files for compatibility check (0-65535)
 
 struct DemoHeader {
 	uint16_t version; // demo file version
@@ -85,7 +46,16 @@ struct DemoHeader {
 	// soundLen bytes of sound strings delimtted by \n
 };
 
+#define PLR_FL_INWATER 1
+#define PLR_FL_NOTARGET 2
+#define PLR_FL_ONGROUND 4	// or partial ground
+#define PLR_FL_WATERJUMP 8
+#define PLR_FL_FROZEN 16
+#define PLR_FL_DUCKING 32
+#define PLR_FL_NOWEAPONS 64
+
 // extra info for player entities (combined with netedict data)
+// TODO: weapon bits?
 struct DemoPlayer {
 	bool isConnected;
 	char name[32];
@@ -95,8 +65,10 @@ struct DemoPlayer {
 	uint8_t bottomColor;
 	uint16_t ping;
 	uint16_t pmMoveCounter; // detect client FPS and lag spikes
+	uint8_t flags; // simplified edict flags (PLR_FL_*)
 
 	// player-specific entvars for 1st/3rd person views and scoreboard
+	int16_t		punchangle[3];	// 13.3 fixed point
 	uint16_t	viewmodel;		// 1st-person weapon model
 	uint16_t	weaponmodel;	// 3rd-person weapon model
 	uint16_t	armorvalue;
@@ -105,8 +77,7 @@ struct DemoPlayer {
 	int16_t		view_ofs;	// eye position (Z) (12.4 fixed point)
 	uint8_t		fov;
 	uint8_t		weaponanim;
-	uint8_t		iuser1 : 2; // observer mode
-	uint8_t		iuser2 : 6; // observer target
+	uint8_t		observer; // observer mode (upper 2bits), observer target (middle 5bits), and deadflag (LSB)
 
 	// weapon info
 	uint16_t	clip;
@@ -123,16 +94,20 @@ struct DemoPlayerDelta {
 	uint8_t colorsChanged : 1;
 	uint8_t pingChanged : 1;
 	uint8_t pmMoveChanged : 1;
-	uint8_t viewmodelChanged : 1;
+	uint8_t flagsChanged : 1;
 
+	uint8_t punchAngleXChanged : 1;
+	uint8_t punchAngleYChanged : 1;
+	uint8_t punchAngleZChanged : 1;
+	uint8_t viewmodelChanged : 1;
 	uint8_t weaponmodelChanged : 1;
 	uint8_t weaponanimChanged : 1;
 	uint8_t armorvalueChanged : 1;
 	uint8_t buttonChanged : 1;
+
 	uint8_t view_ofsChanged : 1;
 	uint8_t fragsChanged : 1;
 	uint8_t fovChanged : 1;
-
 	uint8_t clipChanged : 1;
 	uint8_t clip2Changed : 1;
 	uint8_t ammoChanged : 1;
@@ -156,8 +131,6 @@ struct DemoPlayerDelta {
 	//		uint16 = ping
 	// if pmMoveDeltaChanged:
 	//      uint8 = movement commands since last delta
-	
-	// max bytes = 2 + 33 + 22 + 8 + 2 + 2 + 1 = 70
 };
 
 struct DemoCommand {
@@ -331,7 +304,6 @@ private:
 	void handleDeltaAck(mstream& reader, NetClient& client);
 
 	void broadcastEntityStates();
-	int writeEdictDelta(mstream& writer, const netedict& old, const netedict& now);
 
 	// playerIdx = entity index - 1
 	int writePlayerDelta(mstream& writer, uint8_t playerIdx, const DemoPlayer& old, const DemoPlayer& now);
