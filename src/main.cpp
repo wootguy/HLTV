@@ -33,12 +33,14 @@ int g_copyTime = 0;
 volatile int g_thinkTime = 0;
 bool g_should_write_next_message = false;
 
-// maps indexes to model names, for all models that were so far in this map
+// maps indexes to model names, for all models that were used so far in this map
 map<int, string> g_indexToModel;
 set<string> g_playerModels; // all player model names used during the game
 
 cvar_t* g_auto_demo_file;
 cvar_t* g_demo_file_path;
+
+const char* stateFilePath = "svencoop/addons/metamod/store/sventv.txt";
 
 void ClientLeave(edict_t* ent) {
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
@@ -56,6 +58,48 @@ void Changelevel() {
 		g_indexToModel.clear();
 		g_playerModels.clear();
 	}
+	remove(stateFilePath);
+}
+
+void writeSvenTvState() {
+	FILE* file = fopen(stateFilePath, "w");
+	if (!file) {
+		println("Failed to write sventv state file");
+		return;
+	}
+
+	for (auto item : g_indexToModel) {
+		string line = to_string(item.first) + "=" + item.second + "\n";
+		fwrite(line.c_str(), line.size(), 1, file);
+	}
+
+	fclose(file);
+}
+
+void loadSvenTvState() {
+	FILE* file = fopen(stateFilePath, "r");
+	if (!file) {
+		println("Failed to open sventv state file");
+		return;
+	}
+
+	string line;
+	bool parsingSounds = false;
+	while (cgetline(file, line)) {
+		if (line.empty()) {
+			continue;
+		}
+
+		vector<string> parts = splitString(line, "=");
+
+		if (parts.size() != 2) {
+			continue;
+		}
+
+		g_indexToModel[atoi(parts[0].c_str())] = parts[1];
+	}
+
+	fclose(file);
 }
 
 void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
@@ -64,12 +108,16 @@ void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 		g_demoPlayer = new DemoPlayer();
 	}
 	g_demoPlayer->precacheDemo();
+	remove(stateFilePath);
 	
 	RETURN_META(MRES_IGNORED);
 }
 
 void MapInit_post(edict_t* pEdictList, int edictCount, int maxClients) {
 	loadSoundCacheFile();
+
+	writeSvenTvState();
+
 	RETURN_META(MRES_IGNORED);
 }
 
@@ -449,6 +497,7 @@ void PluginInit() {
 		g_sventv = new SvenTV(singleThreadMode);
 		g_demoPlayer = new DemoPlayer();
 		loadSoundCacheFile();
+		loadSvenTvState();
 	}
 
 	g_demoplayers = new DemoPlayerEnt[32];
@@ -458,6 +507,7 @@ void PluginInit() {
 }
 
 void PluginExit() {
+	writeSvenTvState();
 	if (g_sventv) delete g_sventv;
 	if (g_demoPlayer) delete g_demoPlayer;
 	delete[] g_demoplayers;

@@ -225,10 +225,8 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 		return; // no need to update other values. Only the isFree var will be sent from now on
 	}
 
-	// calculate instantaneous velocity for gait calculations
-	vars.velocity[0] = origin[0] - vars.origin[0];
-	vars.velocity[1] = origin[1] - vars.origin[1];
-	vars.velocity[2] = origin[2] - vars.origin[2];
+	Vector oldorigin;
+	memcpy(oldorigin, vars.origin, sizeof(Vector));
 
 	vars.modelindex = modelindex;
 	vars.skin = skin;
@@ -312,6 +310,9 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 		const float angleConvert = (360.0f / 65535.0f);
 		vars.angles = Vector((float)angles[0] * angleConvert, (float)angles[1] * angleConvert, (float)angles[2] * angleConvert);
 	}
+
+	// calculate instantaneous velocity for gait calculations
+	vars.velocity = vars.origin - oldorigin;
 }
 
 bool netedict::readDeltas(mstream& reader) {
