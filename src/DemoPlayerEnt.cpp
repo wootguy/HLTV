@@ -21,6 +21,11 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 		writer.write((void*)&isConnected, 1);
 	}
 	if (isConnected) {
+		if (!old.isConnected) {
+			// new player. Start from a fresh state
+			memset(this, 0, sizeof(DemoPlayerEnt));
+		}
+
 		if (strcmp(old.name, name) != 0) {
 			deltaBits.nameChanged = 1;
 			uint8_t len = strlen(name);
@@ -144,12 +149,23 @@ int DemoPlayerEnt::readDeltas(mstream& reader) {
 	reader.read(&deltaBits, sizeof(DemoPlayerDelta));
 	static char strBuffer[256];
 
+	bool oldConnected = isConnected;
+	bool newConnected = isConnected;
+
 	if (deltaBits.isConnectedChanged) {
-		reader.read(&isConnected, 1);
+		reader.read(&newConnected, 1);
 	}
+
+	if (!oldConnected && newConnected) {
+		// new player joined. Start from a fresh state.
+		memset(this, 0, sizeof(DemoPlayerEnt));
+	}
+	isConnected = newConnected;
+
 	if (!isConnected) {
 		return 0;
 	}
+
 	if (deltaBits.nameChanged) {
 		uint8_t len;
 		reader.read(&len, 1);

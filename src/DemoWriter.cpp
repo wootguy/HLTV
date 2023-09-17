@@ -7,6 +7,7 @@ DemoWriter::DemoWriter() {
 	fileplayerinfos = new DemoPlayerEnt[32];
 	fileedicts = new netedict[MAX_EDICTS];
 
+	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
 	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 
 	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
@@ -284,4 +285,14 @@ void DemoWriter::closeDemoFile() {
 
 bool DemoWriter::isFileOpen() {
 	return demoFile != NULL;
+}
+
+bool DemoWriter::validateEdicts() {
+	for (int i = 0; i < MAX_EDICTS; i++) {
+		if (fileedicts[i].edtype != NETED_INVALID && fileedicts[i].edtype != NETED_BEAM && fileedicts[i].aiment > 8192) {
+			println("Invalid edict %d has %d", i, (int)fileedicts[i].aiment);
+			return false;
+		}
+	}
+	return true;
 }

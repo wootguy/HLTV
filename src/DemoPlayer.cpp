@@ -136,22 +136,37 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 }
 
 void DemoPlayer::prepareDemo(float offsetSeconds) {
-	for (int i = 1; i <= gpGlobals->maxClients; i++) {
-		edict_t* ent = INDEXENT(i);
-		CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
-		if (isValidPlayer(ent) && plr) {
-			// hide weapons
-			//ent->v.viewmodel = 0;
-			//ent->v.weaponmodel = 0;
-			//plr->m_iHideHUD = 1;
+	if (clearMapForPlayback) {
+		for (int i = 1; i <= gpGlobals->maxClients; i++) {
+			edict_t* ent = INDEXENT(i);
+			CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
+			if (isValidPlayer(ent) && plr) {
+				// hide weapons
+				//ent->v.viewmodel = 0;
+				//ent->v.weaponmodel = 0;
+				//plr->m_iHideHUD = 1;
+			}
+		}
+		for (int i = gpGlobals->maxClients; i < gpGlobals->maxEntities; i++) {
+			edict_t* ent = INDEXENT(i);
+
+			// kill everything that isn't attached to a player
+			if (ent && strlen(STRING(ent->v.classname)) > 0 && (!ent->v.aiment || (ent->v.aiment->v.flags & FL_CLIENT) == 0)) {
+				REMOVE_ENTITY(ent);
+			}
 		}
 	}
-	for (int i = gpGlobals->maxClients; i < gpGlobals->maxEntities; i++) {
-		edict_t* ent = INDEXENT(i);
-		
-		// kill everything that isn't attached to a player
-		if (ent && strlen(STRING(ent->v.classname)) > 0 && (!ent->v.aiment || (ent->v.aiment->v.flags & FL_CLIENT) == 0)) {
-			REMOVE_ENTITY(ent);
+	else {
+		// just remove the monsters
+		for (int i = gpGlobals->maxClients; i < gpGlobals->maxEntities; i++) {
+			edict_t* ent = INDEXENT(i);
+			if (!ent) {
+				continue;
+			}
+			int flags = ent->v.flags;
+			if ((flags & FL_CLIENT) == 0 && (flags & FL_MONSTER) != 0) {
+				REMOVE_ENTITY(ent);
+			}
 		}
 	}
 
@@ -241,6 +256,16 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 	return true;
 }
 
+bool DemoPlayer::validateEdicts() {
+	for (int i = 0; i < MAX_EDICTS; i++) {
+		if (fileedicts[i].edtype != NETED_INVALID && fileedicts[i].edtype != NETED_BEAM && fileedicts[i].aiment > 8192) {
+			println("Invalid edict %d has %d", i, (int)fileedicts[i].aiment);
+			return false;
+		}
+	}
+	return true;
+}
+
 bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 	int errorSprIdx = g_engfuncs.pfnModelIndex("sprites/error.spr");
 
@@ -285,6 +310,18 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			REMOVE_ENTITY(replayEnts[i]);
 			replayEnts[i] = ent = newEnt->edict();
 			ent->v.flags |= FL_CUSTOMENTITY;
+			ent->v.effects |= EF_NODRAW;
+		}
+		else if (fileedicts[i].edtype != NETED_BEAM && (ent->v.flags & FL_MONSTER) == 0) {
+			map<string, string> keys;
+			keys["model"] = "sprites/error.spr";
+
+			CBaseEntity* newEnt = CreateEntity("cycler", keys, true);
+			replayEnts[i] = ent = newEnt->edict();
+			ent->v.solid = SOLID_NOT;
+			ent->v.effects |= EF_NODRAW;
+			ent->v.movetype = MOVETYPE_NONE;
+			ent->v.flags |= FL_MONSTER;
 		}
 		
 		int oldModelIdx = ent->v.modelindex;
@@ -314,7 +351,13 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		}
 
 		if (oldModelIdx != ent->v.modelindex) {
-			SET_MODEL(ent, getReplayModel(ent->v.modelindex).c_str());
+			string newModel = getReplayModel(ent->v.modelindex);
+			if (fileedicts[i].edtype == NETED_BEAM && newModel.find(".spr") == string::npos) {
+				println("Invalid model set on beam: %s", newModel.c_str());
+			}
+			else {
+				SET_MODEL(ent, newModel.c_str());
+			}
 		}
 
 		if (ent->v.modelindex == errorSprIdx) {
@@ -425,7 +468,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		25, // TE_TRACER
 		30, // TE_LIGHTNING
 		17, // TE_BEAMENTS
-		4, // TE_SPARKS
+		13, // TE_SPARKS
 		13, // TE_LAVASPLASH
 		13, // TE_TELEPORT
 		15, // TE_EXPLOSION2
@@ -444,7 +487,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		32, // TE_STREAK_SPLASH
 		0, // unused index
 		19, // TE_DLIGHT
-		28, // TE_ELIGHT
+		27, // TE_ELIGHT
 		0, // TE_TEXTMESSAGE (depends on text/effect)
 		30, // TE_LINE
 		30, // TE_BOX
@@ -785,6 +828,12 @@ bool DemoPlayer::readDemoFrame() {
 	nextFrameOffset = ftell(replayFile) + (header.frameSize - sizeof(DemoFrame));
 
 	//println("Frame %d (%.1f kb), Time: %.1f", replayFrame, header.frameSize / 1024.0f, (float)TimeDifference(0, header.demoTime));
+
+	/*
+	if (replayFrame == 242) {
+		println("debug");
+	}
+	*/
 
 	char* frameData = new char[header.frameSize];
 	if (!fread(frameData, header.frameSize, 1, replayFile)) {

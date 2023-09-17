@@ -475,6 +475,9 @@ void SvenTV::think_tvThread() {
 
 		if (enableDemoFile) {
 			wantMoreData = wantMoreData || demoWriter->writeDemoFile(frame);
+			//if (!demoWriter->validateEdicts()) {
+			//	enableDemoFile = false;
+			//}
 		}
 		else if (demoWriter->isFileOpen()) {
 			demoWriter->closeDemoFile();
@@ -500,4 +503,14 @@ void SvenTV::think_tvThread() {
 	demoWriter->closeDemoFile();
 
 	delete socket;
+}
+
+bool SvenTV::validateEdicts() {
+	for (int i = 0; i < MAX_EDICTS; i++) {
+		if (frame.netedicts[i].edtype != NETED_INVALID && frame.netedicts[i].aiment > 8192) {
+			println("Invalid edict %d has %d", i, (int)frame.netedicts[i].aiment);
+			return false;
+		}
+	}
+	return true;
 }

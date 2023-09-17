@@ -17,6 +17,8 @@ public:
 
 	bool isFileOpen();
 
+	bool validateEdicts(); // debug
+
 private:
 	// vars for writing a demo file
 	uint64_t nextDemoUpdate = 0;

@@ -4,9 +4,16 @@
 #include "DemoFile.h"
 #include "NetClient.h"
 
+// TODO:
+// - shocktrooper beam
+// - gonome gait
+// - garg red eye
+// - voltigore beam
+
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
+	bool clearMapForPlayback = false;
 
 	DemoPlayer();
 	~DemoPlayer();
@@ -75,4 +82,6 @@ private:
 
 	// convert from a demo file sound idx to a sound idx idx in the current game
 	void convReplaySoundIdx(uint16_t& soundIdx);
+
+	bool validateEdicts(); // debug
 };

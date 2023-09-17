@@ -169,7 +169,8 @@ void netedict::load(const edict_t& ed) {
 	frame = vars.frame;
 	animtime = vars.animtime;
 	framerate = clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
-	memcpy(controller, vars.controller, 6); // copy controller AND blending bytes
+	memcpy(controller, vars.controller, 4);
+	memcpy(blending, vars.blending, 2);
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermode = vars.rendermode;
 	renderamt = vars.renderamt;
@@ -237,7 +238,8 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	vars.frame = frame;
 	vars.animtime = animtime;
 	vars.framerate = framerate / 16.0f;
-	memcpy(vars.controller, controller, 6); // copy controller AND blending bytes
+	memcpy(vars.controller, controller, 4);
+	memcpy(vars.blending, blending, 2);
 	vars.scale = scale / 256.0f;
 	vars.rendermode = rendermode;
 	vars.renderamt = renderamt;
@@ -324,11 +326,22 @@ bool netedict::readDeltas(mstream& reader) {
 		return false;
 	}
 
-	int angleSz = edtype == NETED_BEAM ? 3 : 2;
+	uint8_t oldEdtype = edtype;
+	uint8_t newEdtype = edtype;
 
 	if (deltaBits & FL_DELTA_EDTYPE) {
-		reader.read((void*)&edtype, 1);
+		reader.read((void*)&newEdtype, 1);
 	}
+
+	if (oldEdtype == NETED_INVALID && newEdtype != NETED_INVALID) {
+		// new entity created. Start deltas from a fresh state.
+		memset(this, 0, sizeof(netedict));
+	}
+
+	edtype = newEdtype;
+
+	int angleSz = edtype == NETED_BEAM ? 3 : 2;
+
 	if (deltaBits & FL_DELTA_ORIGIN_X) {
 		reader.read((void*)&origin[0], 3);
 	}
@@ -431,7 +444,9 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	uint32_t deltaBits = 0; // flags which fields were changed
 
-	if (old.edtype != edtype) {
+	uint8_t newEdtype = edtype;
+
+	if (old.edtype != newEdtype) {
 		if (!edtype) {
 			// 0 deltas indicates edict was deleted
 			writer.write(&deltaBits, 4);
@@ -442,6 +457,13 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			}
 
 			return EDELTA_WRITE;
+		}
+		if (!old.edtype) {
+			// new entity created. Start from a fresh state.
+			// some vars may have changed while we didn't send deltas but still memcpy()'d
+			// to fileedicts as if the client knows the latest state.
+			memset(this, 0, sizeof(netedict));
+			edtype = newEdtype;
 		}
 	}
 
