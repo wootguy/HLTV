@@ -318,7 +318,6 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		}
 		else if (fileedicts[i].edtype == NETED_BEAM && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
 			map<string, string> keys;
-			keys["model"] = "sprites/error.spr";
 			CBaseEntity* newEnt = CreateEntity("beam", keys, true);
 
 			if (ent->v.flags & FL_CLIENT) {
@@ -332,6 +331,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			replayEnts[i] = ent = newEnt->edict();
 			ent->v.flags |= FL_CUSTOMENTITY;
 			ent->v.effects |= EF_NODRAW;
+			SET_MODEL(ent, "sprites/error.spr");
 		}
 		else if (fileedicts[i].edtype != NETED_BEAM && (ent->v.flags & (FL_MONSTER|FL_CLIENT)) == 0) {
 			map<string, string> keys;

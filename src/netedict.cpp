@@ -248,7 +248,8 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 		if (startIdx) {
 			if (startIdx < simEnts.size()) {
 				edict_t* copyent = simEnts[startIdx];
-				vars.sequence = (aiment & 0xf000) | ENTINDEX(simEnts[startIdx]);
+				vars.sequence = (aiment & 0xf000) | ENTINDEX(copyent);
+				vars.origin = copyent->v.origin; // must be set even if not used
 			}
 			else {
 				println("Invalid beam start entity %d / %d", startIdx, (int)simEnts.size());
