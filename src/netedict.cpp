@@ -166,7 +166,7 @@ void netedict::load(const edict_t& ed) {
 	renderfx = vars.renderfx;
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
 	colormap = vars.colormap;
-	health = clamp(vars.health, 0, UINT32_MAX);
+	health = vars.health > 0 ? Min(vars.health, UINT32_MAX) : 0;
 
 	if (ed.v.flags & FL_CLIENT) {
 		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f));

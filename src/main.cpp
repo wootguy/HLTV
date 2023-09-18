@@ -181,6 +181,7 @@ uint64_t getSteamId64(edict_t* ent) {
 
 void StartFrame() {
 	handleThreadPrints();
+	g_Scheduler.Think();
 
 	g_server_frame_count++;
 
@@ -413,7 +414,31 @@ bool doCommand(edict_t* plr) {
 		g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
 		return true;
 	}
-
+	/*
+	if (args.ArgC() > 0 && lowerArg == ".bot") {
+		edict_t* bot = g_engfuncs.pfnCreateFakeClient("botguy");
+		if (bot) {
+			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot);
+			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
+			g_engfuncs.pfnSetClientKeyValue(ENTINDEX(bot), infoBuffer, "model", "player");
+			//g_Scheduler.SetInterval(updateBot, 0.1, -1, EHandle(plr), EHandle(bot));
+			h_plr = plr;
+			h_bot = bot;
+		}
+		return true;
+	}
+	if (args.ArgC() > 0 && lowerArg == ".kick") {
+		for (int i = 1; i <= 32; i++) {
+			edict_t* ent = INDEXENT(i);
+			if (ent) {
+				int userid = g_engfuncs.pfnGetPlayerUserId(ent);
+				g_engfuncs.pfnServerCommand(UTIL_VarArgs("kick #%d\n", userid));
+			}
+		}
+		g_engfuncs.pfnServerExecute();
+		return true;
+	}
+	*/
 	return false;
 }
 

@@ -23,7 +23,7 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 	if (isConnected) {
 		if (!old.isConnected) {
 			// new player. Start from a fresh state
-			memset(this, 0, sizeof(DemoPlayerEnt));
+			memset((void*)(&old), 0, sizeof(DemoPlayerEnt));
 		}
 
 		if (strcmp(old.name, name) != 0) {
@@ -144,7 +144,7 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 	return EDELTA_WRITE;
 }
 
-int DemoPlayerEnt::readDeltas(mstream& reader) {
+DemoPlayerDelta DemoPlayerEnt::readDeltas(mstream& reader) {
 	DemoPlayerDelta deltaBits;
 	reader.read(&deltaBits, sizeof(DemoPlayerDelta));
 	static char strBuffer[256];
@@ -163,7 +163,7 @@ int DemoPlayerEnt::readDeltas(mstream& reader) {
 	isConnected = newConnected;
 
 	if (!isConnected) {
-		return 0;
+		return deltaBits;
 	}
 
 	if (deltaBits.nameChanged) {
@@ -253,5 +253,5 @@ int DemoPlayerEnt::readDeltas(mstream& reader) {
 		reader.read(&observer, 1);
 	}
 
-	return 0;
+	return deltaBits;
 }

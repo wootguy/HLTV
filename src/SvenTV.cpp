@@ -453,8 +453,8 @@ void SvenTV::think_tvThread() {
 				dplr.punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
 				dplr.punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
 				dplr.punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
-				dplr.viewmodel = ent->v.viewmodel;
-				dplr.weaponmodel = ent->v.weaponmodel;
+				dplr.viewmodel = g_engfuncs.pfnModelIndex(STRING(ent->v.viewmodel));
+				dplr.weaponmodel = g_engfuncs.pfnModelIndex(STRING(ent->v.weaponmodel));
 				dplr.weaponanim = ent->v.weaponanim;
 				dplr.view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
 				dplr.observer = ((uint8_t)ent->v.iuser2 << 6) | ((ent->v.iuser1 & 0x3) << 1) | (ent->v.deadflag != DEAD_NO);

@@ -10,41 +10,6 @@
 #define PLR_FL_DUCKING 32
 #define PLR_FL_NOWEAPONS 64
 
-// extra info for player entities (combined with netedict data)
-// TODO: weapon bits?
-struct DemoPlayerEnt {
-	bool isConnected;
-	char name[32];
-	char model[23];
-	uint64_t steamid64;
-	uint8_t topColor;
-	uint8_t bottomColor;
-	uint16_t ping;
-	uint16_t pmMoveCounter; // detect client FPS and lag spikes
-	uint8_t flags; // simplified edict flags (PLR_FL_*)
-
-	// player-specific entvars for 1st/3rd person views and scoreboard
-	int16_t		punchangle[3];	// 13.3 fixed point
-	uint16_t	viewmodel;		// 1st-person weapon model
-	uint16_t	weaponmodel;	// 3rd-person weapon model
-	uint16_t	armorvalue;
-	uint16_t	button;
-	uint16_t	frags;
-	int16_t		view_ofs;	// eye position (Z) (12.4 fixed point)
-	uint8_t		fov;
-	uint8_t		weaponanim;
-	uint8_t		observer; // observer mode (upper 2bits), observer target (middle 5bits), and deadflag (LSB)
-
-	// weapon info
-	uint16_t	clip;
-	uint16_t	clip2;
-	uint16_t	ammo;
-	uint16_t	ammo2;
-
-	int writeDeltas(mstream& writer, const DemoPlayerEnt& old);
-	int readDeltas(mstream& reader);
-};
-
 #pragma pack(push, 1)
 
 struct DemoPlayerDelta {
@@ -95,3 +60,38 @@ struct DemoPlayerDelta {
 };
 
 #pragma pack(pop)
+
+// extra info for player entities (combined with netedict data)
+// TODO: weapon bits?
+struct DemoPlayerEnt {
+	bool isConnected;
+	char name[32];
+	char model[23];
+	uint64_t steamid64;
+	uint8_t topColor;
+	uint8_t bottomColor;
+	uint16_t ping;
+	uint16_t pmMoveCounter; // detect client FPS and lag spikes
+	uint8_t flags; // simplified edict flags (PLR_FL_*)
+
+	// player-specific entvars for 1st/3rd person views and scoreboard
+	int16_t		punchangle[3];	// 13.3 fixed point
+	uint16_t	viewmodel;		// 1st-person weapon model
+	uint16_t	weaponmodel;	// 3rd-person weapon model
+	uint16_t	armorvalue;
+	uint16_t	button;
+	uint16_t	frags;
+	int16_t		view_ofs;	// eye position (Z) (12.4 fixed point)
+	uint8_t		fov;
+	uint8_t		weaponanim;
+	uint8_t		observer; // observer mode (upper 2bits), observer target (middle 5bits), and deadflag (LSB)
+
+	// weapon info
+	uint16_t	clip;
+	uint16_t	clip2;
+	uint16_t	ammo;
+	uint16_t	ammo2;
+
+	int writeDeltas(mstream& writer, const DemoPlayerEnt& old);
+	DemoPlayerDelta readDeltas(mstream& reader);
+};

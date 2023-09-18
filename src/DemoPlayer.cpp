@@ -13,16 +13,13 @@ DemoPlayer::~DemoPlayer() {
 	delete[] fileplayerinfos;
 	delete[] fileedicts;
 
-	for (int i = 0; i < replayEnts.size(); i++) {
-		REMOVE_ENTITY(replayEnts[i]);
-	}
-
 	if (replayFile) {
 		fclose(replayFile);
 	}
 }
 
 bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache) {
+	this->offsetSeconds = offsetSeconds;
 	stopReplay();
 	replayFile = fopen(path.c_str(), "rb");
 
@@ -125,7 +122,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[SvenTV] Opened: %s\n", path.c_str()));
 
 	if (skipPrecache) {
-		prepareDemo(offsetSeconds);
+		prepareDemo();
 		return true;
 	}
 
@@ -135,7 +132,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	}
 }
 
-void DemoPlayer::prepareDemo(float offsetSeconds) {
+void DemoPlayer::prepareDemo() {
 	if (clearMapForPlayback) {
 		for (int i = 1; i <= gpGlobals->maxClients; i++) {
 			edict_t* ent = INDEXENT(i);
@@ -170,7 +167,8 @@ void DemoPlayer::prepareDemo(float offsetSeconds) {
 		}
 	}
 
-	replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
+	botInitDone = false;
+
 	replayFrame = 0;
 	nextFrameOffset = ftell(replayFile);
 	nextFrameTime = 0;
@@ -208,6 +206,16 @@ void DemoPlayer::closeReplayFile() {
 			REMOVE_ENTITY(replayEnts[i]);
 	}
 	replayEnts.clear();
+
+	for (int i = 0; i < bots.size(); i++) {
+		if (!bots[i].IsValid()) {
+			continue;
+		}
+		int userid = g_engfuncs.pfnGetPlayerUserId(bots[i]);
+		g_engfuncs.pfnServerCommand(UTIL_VarArgs("kick #%d\n", userid));
+	}
+	g_engfuncs.pfnServerExecute();
+	bots.clear();
 }
 
 bool DemoPlayer::readEntDeltas(mstream& reader) {
@@ -303,23 +311,42 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 
 		edict_t* ent = replayEnts[i];
 
-		if (fileedicts[i].edtype == NETED_BEAM && (ent->v.flags & FL_MONSTER)) {
+		if (useBots && (i-1) < bots.size() && fileedicts[i].edtype == NETED_PLAYER && (ent->v.flags & FL_CLIENT) == 0) {
+			REMOVE_ENTITY(replayEnts[i]);
+			replayEnts[i] = ent = bots[i-1];
+			ent->v.solid = SOLID_SLIDEBOX;
+		}
+		else if (fileedicts[i].edtype == NETED_BEAM && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
 			map<string, string> keys;
 			keys["model"] = "sprites/error.spr";
 			CBaseEntity* newEnt = CreateEntity("beam", keys, true);
 
-			REMOVE_ENTITY(replayEnts[i]);
+			if (ent->v.flags & FL_CLIENT) {
+				ent->v.effects |= EF_NODRAW;
+				ent->v.solid = SOLID_NOT;
+			}
+			else {
+				REMOVE_ENTITY(replayEnts[i]);
+			}
+			
 			replayEnts[i] = ent = newEnt->edict();
 			ent->v.flags |= FL_CUSTOMENTITY;
 			ent->v.effects |= EF_NODRAW;
 		}
-		else if (fileedicts[i].edtype != NETED_BEAM && (ent->v.flags & FL_MONSTER) == 0) {
+		else if (fileedicts[i].edtype != NETED_BEAM && (ent->v.flags & (FL_MONSTER|FL_CLIENT)) == 0) {
 			map<string, string> keys;
 			keys["model"] = "sprites/error.spr";
 
 			CBaseEntity* newEnt = CreateEntity(model_entity, keys, true);
 
-			REMOVE_ENTITY(replayEnts[i]);
+			if (ent->v.flags & FL_CLIENT) {
+				ent->v.effects |= EF_NODRAW;
+				ent->v.solid = SOLID_NOT;
+			}
+			else {
+				REMOVE_ENTITY(replayEnts[i]);
+			}
+
 			replayEnts[i] = ent = newEnt->edict();
 			ent->v.solid = SOLID_NOT;
 			ent->v.effects |= EF_NODRAW;
@@ -327,12 +354,12 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			ent->v.flags |= FL_MONSTER;
 		}
 		
-		
 		int oldModelIdx = ent->v.modelindex;
 		int oldSeq = ent->v.sequence;
 		float lastFrame = ent->v.frame;
 
 		fileedicts[i].apply(ent, replayEnts);
+		
 		// interpolation setup
 		if (fileedicts[i].edtype != NETED_MONSTER) {
 			ent->v.vuser3 = ent->v.vuser4; // previous origin
@@ -341,7 +368,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			ent->v.vuser2 = ent->v.angles; // target angles
 			ent->v.fuser1 = ent->v.fuser2; // previous frame
 			ent->v.fuser2 = ent->v.frame; // target frame
-			ent->v.iuser1 = oldSeq; // previous sequence
+			ent->v.iuser4 = oldSeq; // previous sequence
 		}
 		else if (fileedicts[i].edtype == NETED_MONSTER) {
 			// monster data is updated at a framerate independent of the server
@@ -357,18 +384,18 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 				
 				ent->v.starttime = clampf(gpGlobals->time - ent->v.fuser4, 0, 0.1f); // expected time between frames
 				ent->v.fuser4 = gpGlobals->time; // previous animation start time (for next next update)
-				ent->v.iuser1 = oldSeq;
+				ent->v.iuser4 = oldSeq;
 			}
 		}
 		ent->v.fuser3 = ent->v.framerate;
-		ent->v.framerate = 0.00001f;
+		ent->v.framerate = 0.00001f;		
 
 		if (oldModelIdx != ent->v.modelindex) {
 			string newModel = getReplayModel(ent->v.modelindex);
 			if (fileedicts[i].edtype == NETED_BEAM && newModel.find(".spr") == string::npos) {
 				println("Invalid model set on beam: %s", newModel.c_str());
 			}
-			else {
+			else if (fileedicts[i].edtype != NETED_PLAYER) {
 				SET_MODEL(ent, newModel.c_str());
 			}
 		}
@@ -451,7 +478,36 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 			continue;
 		}
 
-		fileplayerinfos[i].readDeltas(reader);
+		DemoPlayerDelta deltas = fileplayerinfos[i].readDeltas(reader);
+
+		if (i < bots.size()) {
+			edict_t* bot = bots[i];
+			int eidx = ENTINDEX(bot);
+			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
+			DemoPlayerEnt& info = fileplayerinfos[i];
+
+			if (deltas.nameChanged) {
+				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", info.name);
+			}
+			if (deltas.modelChanged) {
+				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
+			}
+			if (deltas.colorsChanged) {
+				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
+				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
+			}
+			if (deltas.weaponmodelChanged) {
+				bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel).c_str());
+			}
+			if (deltas.viewmodelChanged) {
+				bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel).c_str());
+			}
+			bot->v.frags = info.frags;
+			bot->v.weaponanim = info.weaponanim;
+			bot->v.armorvalue = info.armorvalue;
+			bot->v.view_ofs.z = info.view_ofs / 16.0f;
+			bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
+		}
 
 		numPlayerDeltas++;
 	}
@@ -619,10 +675,15 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		convReplayEntIdx(args16[0]);
 		convReplayModelIdx(args16[1]);
 		break;
-	case TE_PLAYERSPRITES:
-		args16[0] = 1; // TODO: Use bots so player attachments work
+	case TE_PLAYERSPRITES: {
+		convReplayEntIdx(args16[0]);
+		edict_t* plr = INDEXENT(args16[0]);
+		if (plr && (plr->v.flags & FL_CLIENT) == 0) {
+			args16[0] = 1; // prevent fatal error
+		}
 		convReplayModelIdx(args16[1]);
 		break;
+	}
 	case TE_EXPLOSION:
 	case TE_SMOKE:
 	case TE_SPRITE:
@@ -635,7 +696,10 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		uint16_t& modelIdx = *(uint16_t*)(args + 5);
 		convReplayEntIdx(entIdx);
 		convReplayModelIdx(modelIdx);
-		entIdx = 1; // TODO: Use bots so player attachments work
+		edict_t* plr = INDEXENT(entIdx);
+		if (plr && (plr->v.flags & FL_CLIENT) == 0) {
+			entIdx = 1; // prevent fatal error
+		}
 		args[0] = (uint8_t)entIdx;
 		break;
 	}
@@ -643,7 +707,10 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_PLAYERDECAL: {
 		uint16_t entIdx = args[0];
 		convReplayEntIdx(entIdx);
-		entIdx = 1; // TODO: Use bots so player attachments work
+		edict_t* plr = INDEXENT(entIdx);
+		if (plr && (plr->v.flags & FL_CLIENT) == 0) {
+			entIdx = 1; // prevent fatal error
+		}
 		args[0] = (uint8_t)entIdx;
 		break;
 	}
@@ -936,7 +1003,7 @@ void DemoPlayer::interpolateEdicts() {
 
 		if (fileedicts[i].edtype == NETED_MONSTER) {
 			float t = 1;
-			if (ent->v.iuser1 == ent->v.sequence && ent->v.starttime > 0) {
+			if (ent->v.iuser4 == ent->v.sequence && ent->v.starttime > 0) {
 				t = clampf((gpGlobals->time - ent->v.fuser4) / ent->v.starttime, 0, 1);
 			}
 
@@ -968,7 +1035,7 @@ void DemoPlayer::interpolateEdicts() {
 		else {
 			float frameDelta = ent->v.fuser2 - ent->v.fuser1;
 			bool sameDir = (frameDelta >= 0) == (ent->v.fuser3 >= 0);
-			if (ent->v.iuser1 == ent->v.sequence && sameDir) {
+			if (ent->v.iuser4 == ent->v.sequence && sameDir) {
 				ent->v.frame = lerp(ent->v.fuser1, ent->v.fuser2, frameProgress);
 			}
 
@@ -978,37 +1045,43 @@ void DemoPlayer::interpolateEdicts() {
 
 			ent->v.angles[0] = anglelerp(ent->v.vuser1[0], ent->v.vuser2[0], frameProgress);
 			ent->v.angles[1] = anglelerp(ent->v.vuser1[1], ent->v.vuser2[1], frameProgress);
-			ent->v.angles[2] = anglelerp(ent->v.vuser1[2], ent->v.vuser2[2], frameProgress);
+
+			// fixes hud info
+			g_engfuncs.pfnSetOrigin(ent, ent->v.origin);
 
 			if (fileedicts[i].edtype == NETED_PLAYER) {
-				updatePlayerModelRotations(ent, dt);
+				updatePlayerModelPitchBlend(ent);
+
+				if ((ent->v.flags & FL_CLIENT) == 0) {
+					updatePlayerModelGait(ent, dt); // manual gait calculations for non-player entity
+				}
 			}
 		}
 	}
 }
 
-void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
-	// blending and pitch calculations (best guess)
-	{
-		float pitch = normalizeRangef(-ent->v.angles.x, -180.0f, 180.0f);
+void DemoPlayer::updatePlayerModelPitchBlend(edict_t* ent) {
+	float pitch = normalizeRangef(-ent->v.angles.x, -180.0f, 180.0f);
 
-		if (pitch > 35) {
-			ent->v.angles.x = (pitch - 35) * 0.5f;
-		}
-		else if (pitch < -45) {
-			ent->v.angles.x = (pitch - -45) * 0.5f;
-		}
-		else {
-			ent->v.angles.x = 0;
-		}
-
-		uint8_t blend = 127 + (pitch * 1.4f);
-		ent->v.blending[0] = blend;
+	if (pitch > 35) {
+		ent->v.angles.x = (pitch - 35) * 0.5f;
+	}
+	else if (pitch < -45) {
+		ent->v.angles.x = (pitch - -45) * 0.5f;
+	}
+	else {
+		ent->v.angles.x = 0;
 	}
 
+	uint8_t blend = 127 + (pitch * 1.4f);
+	ent->v.blending[0] = blend;
+}
+
+void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 	// TODO: calculate demoFileFps
 	Vector gaitspeed = Vector(ent->v.velocity[0], ent->v.velocity[1], 0) * demoFileFps;
 	float& gaityaw = ent->v.fuser4;
+	float& yaw = ent->v.angles.y;
 
 	float dtScale = 1.0f / dt;
 	const float PI = 3.1415f;
@@ -1017,7 +1090,7 @@ void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 	if (gaitspeed.Length() < 5)
 	{
 		// standing still. Rotate legs back to forward position
-		float flYawDiff = ent->v.angles.y - gaityaw;
+		float flYawDiff = yaw - gaityaw;
 		flYawDiff = flYawDiff - (int)(flYawDiff / 360) * 360;
 		if (flYawDiff > 180)
 			flYawDiff -= 360;
@@ -1043,7 +1116,7 @@ void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 			gaityaw = -180;
 	}
 
-	float flYaw = ent->v.angles.y - gaityaw;
+	float flYaw = yaw - gaityaw;
 	flYaw = flYaw - (int)(flYaw / 360) * 360;
 	if (flYaw < -180)
 		flYaw = flYaw + 360;
@@ -1065,6 +1138,7 @@ void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 	uint8_t torso = ((flYaw / 4.0) + 30) / (60.0 / 255.0);
 	memset(ent->v.controller, torso, 4);
 	ent->v.angles.y = gaityaw;
+	
 
 	if (ent->v.gaitsequence == 0) {
 		ent->v.gaitsequence = ent->v.sequence;
@@ -1096,9 +1170,43 @@ void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 	*/
 }
 
+bool DemoPlayer::initBots() {
+	edict_t* bot = g_engfuncs.pfnCreateFakeClient(UTIL_VarArgs("bot%d", bots.size()));
+	if (!bot) {
+		println("Failed to create bot %d", bots.size());
+		return true; // now start setting user info
+	}
+	else {
+		gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot);
+		char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
+		g_engfuncs.pfnSetClientKeyValue(ENTINDEX(bot), infoBuffer, "model", "player");
+		bot->v.solid = SOLID_NOT;
+		bot->v.takedamage = DAMAGE_NO;
+		bot->v.movetype = MOVETYPE_NOCLIP;
+		bot->v.effects |= EF_NODRAW;
+
+		bots.push_back(bot);
+		if (bots.size() == demoHeader.maxPlayers) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void DemoPlayer::playDemo() {
 	if (!replayFile) {
 		return;
+	}
+
+	if (!botInitDone) {
+		if (!useBots || initBots()) {
+			botInitDone = true;
+			replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
+		}
+		else {
+			return;
+		}
 	}
 
 	while (readDemoFrame());
