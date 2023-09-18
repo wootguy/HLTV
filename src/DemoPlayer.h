@@ -6,14 +6,17 @@
 
 // TODO:
 // - shocktrooper beam
-// - gonome gait
+// - gonome/hgrunt gait
 // - garg red eye
 // - voltigore beam
+// - apache bullets
+// - sentences (scientist)
+// - model animation interpolation
 
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
-	bool clearMapForPlayback = false;
+	bool clearMapForPlayback = true;
 
 	DemoPlayer();
 	~DemoPlayer();

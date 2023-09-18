@@ -268,6 +268,7 @@ bool DemoPlayer::validateEdicts() {
 
 bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 	int errorSprIdx = g_engfuncs.pfnModelIndex("sprites/error.spr");
+	const char* model_entity = "env_sprite";
 
 	for (int i = 1; i < MAX_EDICTS; i++) {
 		if (!fileedicts[i].edtype) {
@@ -282,7 +283,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			map<string, string> keys;
 			keys["model"] = "sprites/error.spr";
 
-			CBaseEntity* ent = CreateEntity("cycler", keys, true);
+			CBaseEntity* ent = CreateEntity(model_entity, keys, true);
 			ent->pev->solid = SOLID_NOT;
 			ent->pev->effects |= EF_NODRAW;
 			ent->pev->movetype = MOVETYPE_NONE;
@@ -316,7 +317,9 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			map<string, string> keys;
 			keys["model"] = "sprites/error.spr";
 
-			CBaseEntity* newEnt = CreateEntity("cycler", keys, true);
+			CBaseEntity* newEnt = CreateEntity(model_entity, keys, true);
+
+			REMOVE_ENTITY(replayEnts[i]);
 			replayEnts[i] = ent = newEnt->edict();
 			ent->v.solid = SOLID_NOT;
 			ent->v.effects |= EF_NODRAW;
@@ -324,13 +327,14 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			ent->v.flags |= FL_MONSTER;
 		}
 		
+		
 		int oldModelIdx = ent->v.modelindex;
 		int oldSeq = ent->v.sequence;
 
 		fileedicts[i].apply(ent, replayEnts);
 		ent->v.framerate = 0.00001f;
 
-		if (oldSeq != ent->v.sequence && (ent->v.flags & FL_MONSTER)) {
+		if (oldSeq != ent->v.sequence && (ent->v.flags & FL_MONSTER) && false) {
 			CBaseMonster* anim = (CBaseMonster*)replayEnts[i].GetEntity();
 			anim->m_Activity = ACT_RELOAD;
 
