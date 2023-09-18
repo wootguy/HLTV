@@ -67,10 +67,6 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch frame");
 		return false;
 	}
-	if (animtime != other.animtime) {
-		println("Mismatch animtime");
-		return false;
-	}
 	if (framerate != other.framerate) {
 		println("Mismatch framerate");
 		return false;
@@ -85,14 +81,6 @@ bool netedict::matches(netedict& other) {
 	}
 	if (controller[2] != other.controller[2]) {
 		println("Mismatch controller[2]");
-		return false;
-	}
-	if (blending[0] != other.blending[0]) {
-		println("Mismatch blending[0]");
-		return false;
-	}
-	if (blending[1] != other.blending[1]) {
-		println("Mismatch blending[1]");
 		return false;
 	}
 	if (scale != other.scale) {
@@ -167,10 +155,8 @@ void netedict::load(const edict_t& ed) {
 	sequence = vars.sequence;
 	gaitsequence = vars.gaitsequence;
 	frame = vars.frame;
-	animtime = vars.animtime;
 	framerate = clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
 	memcpy(controller, vars.controller, 4);
-	memcpy(blending, vars.blending, 2);
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermode = vars.rendermode;
 	renderamt = vars.renderamt;
@@ -196,7 +182,7 @@ void netedict::load(const edict_t& ed) {
 		// not enough bits in sequence/skin so using aiment/owner instead
 		// these vars set the start/end entity and attachment points
 		aiment = vars.sequence;
-		((uint16_t*)blending)[0] = vars.skin;
+		((uint16_t*)controller)[0] = vars.skin;
 		sequence = 0;
 		skin = 0;
 	}
@@ -213,10 +199,12 @@ void netedict::load(const edict_t& ed) {
 		}
 	}
 
-	uint8_t godbit = (vars.flags & FL_GODMODE) || vars.takedamage == DAMAGE_NO;
-	CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed));
-	uint8_t classifyBits = bent && bent->m_fOverrideClass ? bent->m_iClassSelection : 0;
-	classifyGod = (classifyBits << 1) | godbit;
+	if (ed.v.flags & (FL_CLIENT | FL_MONSTER)) {
+		uint8_t godbit = (vars.flags & FL_GODMODE) || vars.takedamage == DAMAGE_NO;
+		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed));
+		uint8_t classifyBits = bent && bent->m_fOverrideClass ? bent->m_iClassSelection : 0;
+		classifyGod = (classifyBits << 1) | godbit;
+	}
 }
 
 void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
@@ -236,10 +224,8 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	vars.sequence = sequence;
 	vars.gaitsequence = gaitsequence;
 	vars.frame = frame;
-	vars.animtime = animtime;
 	vars.framerate = framerate / 16.0f;
 	memcpy(vars.controller, controller, 4);
-	memcpy(vars.blending, blending, 2);
 	vars.scale = scale / 256.0f;
 	vars.rendermode = rendermode;
 	vars.renderamt = renderamt;
@@ -257,7 +243,7 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 
 	if (edtype == NETED_BEAM) {
 		uint16_t startIdx = aiment & 0xfff;
-		uint16_t endIdx = ((uint16_t*)blending)[0] & 0xfff;
+		uint16_t endIdx = ((uint16_t*)controller)[0] & 0xfff;
 
 		if (startIdx) {
 			if (startIdx < simEnts.size()) {
@@ -276,7 +262,7 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 		if (endIdx) {
 			if (endIdx < simEnts.size()) {
 				edict_t* copyent = simEnts[endIdx];
-				vars.skin = (((uint16_t*)blending)[0] & 0xf000) | ENTINDEX(simEnts[endIdx]);
+				vars.skin = (((uint16_t*)controller)[0] & 0xf000) | ENTINDEX(simEnts[endIdx]);
 			}
 			else {
 				println("Invalid beam end entity %d / %d", endIdx, (int)simEnts.size());
@@ -382,9 +368,6 @@ bool netedict::readDeltas(mstream& reader) {
 	if (deltaBits & FL_DELTA_FRAME) {
 		reader.read((void*)&frame, 1);
 	}
-	if (deltaBits & FL_DELTA_ANIMTIME) {
-		reader.read((void*)&animtime, 1);
-	}
 	if (deltaBits & FL_DELTA_FRAMERATE) {
 		reader.read((void*)&framerate, 1);
 	}
@@ -394,14 +377,8 @@ bool netedict::readDeltas(mstream& reader) {
 	if (deltaBits & FL_DELTA_CONTROLLER_1) {
 		reader.read((void*)&controller[1], 1);
 	}
-	if (deltaBits & FL_DELTA_CONTROLLER_2) {
-		reader.read((void*)&controller[2], 1);
-	}
-	if (deltaBits & FL_DELTA_CONTROLLER_3) {
-		reader.read((void*)&controller[3], 1);
-	}
-	if (deltaBits & FL_DELTA_BLENDING) {
-		reader.read((void*)blending, 2);
+	if (deltaBits & FL_DELTA_CONTROLLER_HI) {
+		reader.read((void*)&controller[2], 2);
 	}
 	if (deltaBits & FL_DELTA_SCALE) {
 		reader.read((void*)&scale, 2);
@@ -528,10 +505,6 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		deltaBits |= FL_DELTA_FRAME;
 		writer.write((void*)&frame, 1);
 	}
-	if (old.animtime != animtime) {
-		deltaBits |= FL_DELTA_ANIMTIME;
-		writer.write((void*)&animtime, 1);
-	}
 	if (old.framerate != framerate) {
 		deltaBits |= FL_DELTA_FRAMERATE;
 		writer.write((void*)&framerate, 1);
@@ -544,17 +517,9 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		deltaBits |= FL_DELTA_CONTROLLER_1;
 		writer.write((void*)&controller[1], 1);
 	}
-	if (old.controller[2] != controller[2]) {
-		deltaBits |= FL_DELTA_CONTROLLER_2;
-		writer.write((void*)&controller[2], 1);
-	}
-	if (old.controller[3] != controller[3]) {
-		deltaBits |= FL_DELTA_CONTROLLER_3;
-		writer.write((void*)&controller[3], 1);
-	}
-	if (old.blending[0] != blending[0] || old.blending[1] != blending[1]) {
-		deltaBits |= FL_DELTA_BLENDING;
-		writer.write((void*)&blending, 2);
+	if (old.controller[2] != controller[2] || old.controller[3] != controller[3]) {
+		deltaBits |= FL_DELTA_CONTROLLER_HI;
+		writer.write((void*)&controller[2], 2);
 	}
 	if (old.scale != scale) {
 		deltaBits |= FL_DELTA_SCALE;

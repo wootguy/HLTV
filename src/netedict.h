@@ -19,24 +19,21 @@
 #define FL_DELTA_SEQUENCE		(1 << 11)
 #define FL_DELTA_GAITSEQUENCE	(1 << 12)
 #define FL_DELTA_FRAME			(1 << 13)
-#define FL_DELTA_ANIMTIME		(1 << 14)
-#define FL_DELTA_FRAMERATE		(1 << 15)
-#define FL_DELTA_CONTROLLER_0	(1 << 16)
-#define FL_DELTA_CONTROLLER_1	(1 << 17)
-#define FL_DELTA_CONTROLLER_2	(1 << 18)
-#define FL_DELTA_CONTROLLER_3	(1 << 19)
-#define FL_DELTA_BLENDING		(1 << 20)
-#define FL_DELTA_SCALE			(1 << 21)
-#define FL_DELTA_RENDERMODE		(1 << 22)
-#define FL_DELTA_RENDERAMT		(1 << 23)
-#define FL_DELTA_RENDERCOLOR_0	(1 << 24)
-#define FL_DELTA_RENDERCOLOR_1	(1 << 25)
-#define FL_DELTA_RENDERCOLOR_2	(1 << 26)
-#define FL_DELTA_RENDERFX		(1 << 27)
-#define FL_DELTA_AIMENT			(1 << 28)
-#define FL_DELTA_HEALTH			(1 << 29)
-#define FL_DELTA_COLORMAP		(1 << 30)
-#define FL_DELTA_CLASSIFYGOD	(1 << 31)
+#define FL_DELTA_FRAMERATE		(1 << 14)
+#define FL_DELTA_CONTROLLER_0	(1 << 15)
+#define FL_DELTA_CONTROLLER_1	(1 << 16)
+#define FL_DELTA_CONTROLLER_HI	(1 << 17)	// rare for something to have more than 2 controllers
+#define FL_DELTA_SCALE			(1 << 18)
+#define FL_DELTA_RENDERMODE		(1 << 19)
+#define FL_DELTA_RENDERAMT		(1 << 20)
+#define FL_DELTA_RENDERCOLOR_0	(1 << 21)
+#define FL_DELTA_RENDERCOLOR_1	(1 << 22)
+#define FL_DELTA_RENDERCOLOR_2	(1 << 23)
+#define FL_DELTA_RENDERFX		(1 << 24)
+#define FL_DELTA_AIMENT			(1 << 25)
+#define FL_DELTA_HEALTH			(1 << 26)
+#define FL_DELTA_COLORMAP		(1 << 27)
+#define FL_DELTA_CLASSIFYGOD	(1 << 28)
 
 enum netedict_types {
 	NETED_INVALID, // don't render or update this entity
@@ -62,10 +59,8 @@ struct netedict {
 	uint8_t		sequence;		// animation sequence
 	uint8_t		gaitsequence;	// movement animation sequence for player (0 for none)
 	uint8_t		frame;			// % playback position in animation sequences (0..255)
-	uint8_t		animtime;		// world time when frame was set
 	int8_t		framerate;		// animation playback rate (-8x to 8x) (4.4 fixed point)
 	uint8_t		controller[4];	// bone controller setting (0..255)
-	uint8_t		blending[2];	// blending amount between sub-sequences (0..255)
 
 	uint16_t	scale;			// rendering scale (0..255) (8.8 fixed point)
 
