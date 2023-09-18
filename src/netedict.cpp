@@ -314,7 +314,8 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	}
 
 	// calculate instantaneous velocity for gait calculations
-	vars.velocity = vars.origin - oldorigin;
+	if (edtype == NETED_PLAYER)
+		vars.velocity = (vars.origin - oldorigin);
 }
 
 bool netedict::readDeltas(mstream& reader) {

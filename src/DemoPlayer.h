@@ -12,6 +12,7 @@
 // - apache bullets
 // - sentences (scientist)
 // - model animation interpolation
+// - turret red dot
 
 class DemoPlayer {
 public:
@@ -50,15 +51,20 @@ private:
 	DemoPlayerEnt* fileplayerinfos = NULL; // last infos read from file
 	netedict* fileedicts = NULL; // last edicts read from file
 
+	float frameProgress; // for interpolation (0-1 progress to next frame)
+
 	void closeReplayFile();
 
 	// returns true if more frames are needed to catch up with current playback time
 	bool readDemoFrame();
+
 	bool applyEntDeltas(DemoFrame& header);
 	bool readEntDeltas(mstream& reader);
 	bool readPlayerDeltas(mstream& reader);
 	bool readNetworkMessages(mstream& reader);
 	bool readClientCommands(mstream& reader);
+
+	void interpolateEdicts();
 
 	// update network message data to point to the proper entities
 	// return false if message should not be sent

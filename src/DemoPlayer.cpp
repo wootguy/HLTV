@@ -330,29 +330,38 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		
 		int oldModelIdx = ent->v.modelindex;
 		int oldSeq = ent->v.sequence;
+		float lastFrame = ent->v.frame;
 
 		fileedicts[i].apply(ent, replayEnts);
+		// interpolation setup
+		if (fileedicts[i].edtype != NETED_MONSTER) {
+			ent->v.vuser3 = ent->v.vuser4; // previous origin
+			ent->v.vuser4 = ent->v.origin; // target origin
+			ent->v.vuser1 = ent->v.vuser2; // previous angles
+			ent->v.vuser2 = ent->v.angles; // target angles
+			ent->v.fuser1 = ent->v.fuser2; // previous frame
+			ent->v.fuser2 = ent->v.frame; // target frame
+			ent->v.iuser1 = oldSeq; // previous sequence
+		}
+		else if (fileedicts[i].edtype == NETED_MONSTER) {
+			// monster data is updated at a framerate independent of the server
+			// TODO: add a delta for this instead of trying to detect an update
+			if (fabs(ent->v.fuser2 - ent->v.frame) > 0.1f || (ent->v.vuser4 - ent->v.origin).Length() > 0.1f) {
+				ent->v.vuser3 = ent->v.vuser4; // previous origin
+				ent->v.vuser4 = ent->v.origin; // target origin
+				ent->v.vuser1 = ent->v.vuser2; // previous angles
+				ent->v.vuser2 = ent->v.angles; // target angles
+
+				ent->v.fuser1 = ent->v.fuser2; // previous frame
+				ent->v.fuser2 = ent->v.frame; // target frame
+				
+				ent->v.starttime = clampf(gpGlobals->time - ent->v.fuser4, 0, 0.1f); // expected time between frames
+				ent->v.fuser4 = gpGlobals->time; // previous animation start time (for next next update)
+				ent->v.iuser1 = oldSeq;
+			}
+		}
+		ent->v.fuser3 = ent->v.framerate;
 		ent->v.framerate = 0.00001f;
-
-		if (oldSeq != ent->v.sequence && (ent->v.flags & FL_MONSTER) && false) {
-			CBaseMonster* anim = (CBaseMonster*)replayEnts[i].GetEntity();
-			anim->m_Activity = ACT_RELOAD;
-
-			void* pmodel = GET_MODEL_PTR(anim->edict());
-			studiohdr_t* header = (studiohdr_t*)pmodel;
-			if (!header || header->id != 1414743113 || header->version != 10) {
-				println("Invalid studio model for edict %d (%s): %s", ENTINDEX(anim->edict()), STRING(ent->v.classname), STRING(ent->v.model));
-			}
-			else {
-				anim->ResetSequenceInfo();
-			}
-		}
-
-		// player entity
-		if (fileedicts[i].edtype == NETED_PLAYER) {
-			float dt = (header.demoTime - lastReplayFrame.demoTime) / 1000.0f;
-			updatePlayerModelRotations(ent, dt);
-		}
 
 		if (oldModelIdx != ent->v.modelindex) {
 			string newModel = getReplayModel(ent->v.modelindex);
@@ -376,6 +385,8 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		}
 		*/
 	}
+
+	interpolateEdicts();
 
 	return true;
 }
@@ -810,7 +821,7 @@ bool DemoPlayer::readClientCommands(mstream& reader) {
 }
 
 bool DemoPlayer::readDemoFrame() {
-	uint32_t t = getEpochMillis() - replayStartTime;
+	uint32_t t = (getEpochMillis() - replayStartTime) * 1.0f;
 
 	fseek(replayFile, nextFrameOffset, SEEK_SET);
 
@@ -820,8 +831,15 @@ bool DemoPlayer::readDemoFrame() {
 		closeReplayFile();
 		return false;
 	}
+
+	frameProgress = 1.0f;
+	if (header.demoTime > lastReplayFrame.demoTime) {
+		frameProgress = 1.0f - ((header.demoTime - t) / (float)(header.demoTime - lastReplayFrame.demoTime));
+	}
+
 	if (header.demoTime > t) {
 		//println("Wait %u > %u", header.demoTime, t);
+		interpolateEdicts();
 		return false;
 	}
 	if (header.frameSize > 1024 * 1024 * 32 || header.frameSize == 0) {
@@ -882,6 +900,93 @@ bool DemoPlayer::readDemoFrame() {
 	return true;
 }
 
+inline float lerp(float start, float end, float t) {
+	return start + (end - start) * t;
+}
+
+inline int anglelerp16(int start, int end, float t) {
+	// 65536 = 360 deg
+	int shortest_angle = ((((end - start) % 65536) + 98304) % 65536) - 32768;
+
+	return start + shortest_angle * t;
+}
+
+inline int anglelerp(int start, int end, float t) {
+	int shortest_angle = ((((end - start) % 360) + 540) % 360) - 180;
+
+	return start + shortest_angle * t;
+}
+
+void DemoPlayer::interpolateEdicts() {
+	static uint64_t lastTime = 0;
+	uint64_t now = getEpochMillis();
+	float dt = TimeDifference(lastTime, now);
+	lastTime = now;
+
+	for (int i = 0; i < replayEnts.size(); i++) {
+		if (fileedicts[i].edtype == NETED_INVALID) {
+			continue;
+		}
+
+		if (!replayEnts[i].IsValid() || replayEnts[i].GetEdict()->v.effects & EF_NODRAW) {
+			continue;
+		}
+
+		edict_t* ent = replayEnts[i];
+
+		if (fileedicts[i].edtype == NETED_MONSTER) {
+			float t = 1;
+			if (ent->v.iuser1 == ent->v.sequence && ent->v.starttime > 0) {
+				t = clampf((gpGlobals->time - ent->v.fuser4) / ent->v.starttime, 0, 1);
+			}
+
+			float targetFrame = ent->v.fuser2;
+			if (ent->v.fuser3 >= 0 && targetFrame < ent->v.fuser1) {
+				targetFrame += 255;
+			}
+			if (ent->v.fuser3 <= 0 && targetFrame > ent->v.fuser1) {
+				targetFrame -= 255;
+			}
+
+			ent->v.origin[0] = lerp(ent->v.vuser3[0], ent->v.vuser4[0], t);
+			ent->v.origin[1] = lerp(ent->v.vuser3[1], ent->v.vuser4[1], t);
+			ent->v.origin[2] = lerp(ent->v.vuser3[2], ent->v.vuser4[2], t);
+
+			ent->v.angles[0] = anglelerp(ent->v.vuser1[0], ent->v.vuser2[0], t);
+			ent->v.angles[1] = anglelerp(ent->v.vuser1[1], ent->v.vuser2[1], t);
+			ent->v.angles[2] = anglelerp(ent->v.vuser1[2], ent->v.vuser2[2], t);
+
+			ent->v.frame = lerp(ent->v.fuser1, targetFrame, t);
+
+			if (ent->v.frame > 255) {
+				ent->v.frame -= 255;
+			}
+			if (ent->v.frame < 0) {
+				ent->v.frame += 255;
+			}
+		}
+		else {
+			float frameDelta = ent->v.fuser2 - ent->v.fuser1;
+			bool sameDir = (frameDelta >= 0) == (ent->v.fuser3 >= 0);
+			if (ent->v.iuser1 == ent->v.sequence && sameDir) {
+				ent->v.frame = lerp(ent->v.fuser1, ent->v.fuser2, frameProgress);
+			}
+
+			ent->v.origin[0] = lerp(ent->v.vuser3[0], ent->v.vuser4[0], frameProgress);
+			ent->v.origin[1] = lerp(ent->v.vuser3[1], ent->v.vuser4[1], frameProgress);
+			ent->v.origin[2] = lerp(ent->v.vuser3[2], ent->v.vuser4[2], frameProgress);
+
+			ent->v.angles[0] = anglelerp(ent->v.vuser1[0], ent->v.vuser2[0], frameProgress);
+			ent->v.angles[1] = anglelerp(ent->v.vuser1[1], ent->v.vuser2[1], frameProgress);
+			ent->v.angles[2] = anglelerp(ent->v.vuser1[2], ent->v.vuser2[2], frameProgress);
+
+			if (fileedicts[i].edtype == NETED_PLAYER) {
+				updatePlayerModelRotations(ent, dt);
+			}
+		}
+	}
+}
+
 void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 	// blending and pitch calculations (best guess)
 	{
@@ -903,7 +1008,7 @@ void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 
 	// TODO: calculate demoFileFps
 	Vector gaitspeed = Vector(ent->v.velocity[0], ent->v.velocity[1], 0) * demoFileFps;
-	float& gaityaw = ent->v.fuser1;
+	float& gaityaw = ent->v.fuser4;
 
 	float dtScale = 1.0f / dt;
 	const float PI = 3.1415f;
@@ -961,6 +1066,11 @@ void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 	memset(ent->v.controller, torso, 4);
 	ent->v.angles.y = gaityaw;
 
+	if (ent->v.gaitsequence == 0) {
+		ent->v.gaitsequence = ent->v.sequence;
+	}
+
+	/*
 	static uint8_t crouching_anims[256] = {
 		0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, // 0-15
 		0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, // 16-31
@@ -983,6 +1093,7 @@ void DemoPlayer::updatePlayerModelRotations(edict_t* ent, float dt) {
 	if (crouching_anims[clamp(ent->v.gaitsequence, 0, 255)]) {
 		ent->v.origin.z += 18;
 	}
+	*/
 }
 
 void DemoPlayer::playDemo() {
