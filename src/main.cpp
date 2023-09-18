@@ -427,6 +427,7 @@ bool doCommand(edict_t* plr) {
 		}
 		return true;
 	}
+	*/
 	if (args.ArgC() > 0 && lowerArg == ".kick") {
 		for (int i = 1; i <= 32; i++) {
 			edict_t* ent = INDEXENT(i);
@@ -438,7 +439,6 @@ bool doCommand(edict_t* plr) {
 		g_engfuncs.pfnServerExecute();
 		return true;
 	}
-	*/
 	return false;
 }
 

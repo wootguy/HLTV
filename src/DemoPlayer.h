@@ -7,19 +7,18 @@
 // TODO:
 // - shocktrooper beam
 // - gonome/hgrunt gait
-// - garg red eye
-// - voltigore beam
 // - apache bullets
-// - sentences (scientist)
-// - model animation interpolation
-// - turret red dot
+// - sentence mouth controller (scientist)
+// - check chat color
+// - some sounds have no attn?
+// - say commands wrong
+// - player footsteps (+swimming effects?)
 
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
-	bool clearMapForPlayback = true; // map may crash if entities are not cleared first
+	bool clearMapForPlayback = false; // map may crash if entities are not cleared first
 	bool useBots = true; // try to use bots for player entites
-	bool botInitDone = false;
 
 	DemoPlayer();
 	~DemoPlayer();
@@ -46,7 +45,6 @@ private:
 	uint32_t nextFrameOffset = 0;
 	uint64_t nextFrameTime = 0;
 	vector<EHandle> replayEnts;
-	vector<EHandle> bots;
 	map<int, string> replayModelPath; // maps model index in demo file to a path
 	DemoHeader demoHeader;
 	DemoFrame lastReplayFrame;

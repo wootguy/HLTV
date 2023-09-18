@@ -287,7 +287,15 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 				// aiment causing hard-to-troubleshoot crashes, so just set origin
 
 				edict_t* copyent = simEnts[aiment];
-				memcpy(&vars.origin, &copyent->v.origin, 3 * sizeof(float));
+
+				if (edtype == NETED_MODEL && vars.skin && vars.body) {
+					GET_ATTACHMENT(copyent, vars.body-1, vars.origin, vars.angles);
+					vars.skin = 0;
+					vars.body = 0;
+				}
+				else {
+					vars.origin = copyent->v.origin;
+				}
 			}
 		}
 		else {

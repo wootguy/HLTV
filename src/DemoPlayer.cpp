@@ -167,8 +167,7 @@ void DemoPlayer::prepareDemo() {
 		}
 	}
 
-	botInitDone = false;
-
+	replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
 	replayFrame = 0;
 	nextFrameOffset = ftell(replayFile);
 	nextFrameTime = 0;
@@ -202,20 +201,19 @@ void DemoPlayer::closeReplayFile() {
 	}
 
 	for (int i = 0; i < replayEnts.size(); i++) {
-		if (replayEnts[i].IsValid() && (replayEnts[i].GetEdict()->v.flags & FL_CLIENT) == 0)
-			REMOVE_ENTITY(replayEnts[i]);
-	}
-	replayEnts.clear();
-
-	for (int i = 0; i < bots.size(); i++) {
-		if (!bots[i].IsValid()) {
+		edict_t* ent = replayEnts[i];
+		if (!ent) {
 			continue;
 		}
-		int userid = g_engfuncs.pfnGetPlayerUserId(bots[i]);
-		g_engfuncs.pfnServerCommand(UTIL_VarArgs("kick #%d\n", userid));
+
+		if (ent->v.flags & FL_FAKECLIENT) {
+			kickPlayer(ent);
+		}
+		else {
+			REMOVE_ENTITY(replayEnts[i]);
+		}			
 	}
-	g_engfuncs.pfnServerExecute();
-	bots.clear();
+	replayEnts.clear();
 }
 
 bool DemoPlayer::readEntDeltas(mstream& reader) {
@@ -311,18 +309,43 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 
 		edict_t* ent = replayEnts[i];
 
-		if (useBots && (i-1) < bots.size() && fileedicts[i].edtype == NETED_PLAYER && (ent->v.flags & FL_CLIENT) == 0) {
-			REMOVE_ENTITY(replayEnts[i]);
-			replayEnts[i] = ent = bots[i-1];
-			ent->v.solid = SOLID_SLIDEBOX;
+		bool playerSlotFree = true; // todo
+		bool isPlayer = fileedicts[i].edtype == NETED_PLAYER && i < MAX_PLAYERS;
+		if (useBots && playerSlotFree && isPlayer && (ent->v.flags & FL_CLIENT) == 0 && fileplayerinfos[i-1].isConnected) {
+			DemoPlayerEnt& info = fileplayerinfos[i - 1];
+			edict_t* bot = g_engfuncs.pfnCreateFakeClient(info.name);
+
+			if (bot) {
+				int eidx = ENTINDEX(bot);
+				REMOVE_ENTITY(replayEnts[i]);
+				gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot);
+				char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
+				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
+				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
+				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
+				bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel).c_str());
+				bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel).c_str());
+				bot->v.frags = info.frags;
+				bot->v.weaponanim = info.weaponanim;
+				bot->v.armorvalue = info.armorvalue;
+				bot->v.view_ofs.z = info.view_ofs / 16.0f;
+				bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
+				bot->v.takedamage = DAMAGE_NO;
+				bot->v.movetype = MOVETYPE_NOCLIP;
+				bot->v.solid = SOLID_SLIDEBOX;
+
+				replayEnts[i] = ent = bot;
+			}
+			else {
+				println("Failed to create bot");
+			}
 		}
 		else if (fileedicts[i].edtype == NETED_BEAM && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
 			map<string, string> keys;
 			CBaseEntity* newEnt = CreateEntity("beam", keys, true);
 
 			if (ent->v.flags & FL_CLIENT) {
-				ent->v.effects |= EF_NODRAW;
-				ent->v.solid = SOLID_NOT;
+				kickPlayer(ent);
 			}
 			else {
 				REMOVE_ENTITY(replayEnts[i]);
@@ -340,8 +363,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			CBaseEntity* newEnt = CreateEntity(model_entity, keys, true);
 
 			if (ent->v.flags & FL_CLIENT) {
-				ent->v.effects |= EF_NODRAW;
-				ent->v.solid = SOLID_NOT;
+				kickPlayer(ent);
 			}
 			else {
 				REMOVE_ENTITY(replayEnts[i]);
@@ -479,9 +501,13 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 		}
 
 		DemoPlayerDelta deltas = fileplayerinfos[i].readDeltas(reader);
+		numPlayerDeltas++;
 
-		if (i < bots.size()) {
-			edict_t* bot = bots[i];
+		if (i+1 < replayEnts.size()) {
+			edict_t* bot = replayEnts[i+1];
+			if (!bot || (bot->v.flags & FL_FAKECLIENT) == 0) {
+				continue;
+			}
 			int eidx = ENTINDEX(bot);
 			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
 			DemoPlayerEnt& info = fileplayerinfos[i];
@@ -508,8 +534,6 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 			bot->v.view_ofs.z = info.view_ofs / 16.0f;
 			bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
 		}
-
-		numPlayerDeltas++;
 	}
 
 	//println("Got %d player deltas", numPlayerDeltas);
@@ -769,8 +793,11 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 	case SVC_TEMPENTITY:
 		return processTempEntityMessage(msg);
 	case MSG_StartSound: {
-		uint16_t& soundIdx = *(uint16_t*)(args + (msg.header.sz - 2));
-		convReplaySoundIdx(soundIdx);
+		uint16_t& flags = *(uint16_t*)(args);
+		if ((flags & SND_SENTENCE) == 0) {
+			uint16_t& soundIdx = *(uint16_t*)(args + (msg.header.sz - 2));
+			convReplaySoundIdx(soundIdx);
+		} // plugins can't change sentences(?), so client should match server
 		return true;
 	}
 	default:
@@ -1139,12 +1166,10 @@ void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 	memset(ent->v.controller, torso, 4);
 	ent->v.angles.y = gaityaw;
 	
-
 	if (ent->v.gaitsequence == 0) {
 		ent->v.gaitsequence = ent->v.sequence;
 	}
 
-	/*
 	static uint8_t crouching_anims[256] = {
 		0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, // 0-15
 		0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, // 16-31
@@ -1167,46 +1192,11 @@ void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 	if (crouching_anims[clamp(ent->v.gaitsequence, 0, 255)]) {
 		ent->v.origin.z += 18;
 	}
-	*/
-}
-
-bool DemoPlayer::initBots() {
-	edict_t* bot = g_engfuncs.pfnCreateFakeClient(UTIL_VarArgs("bot%d", bots.size()));
-	if (!bot) {
-		println("Failed to create bot %d", bots.size());
-		return true; // now start setting user info
-	}
-	else {
-		gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot);
-		char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
-		g_engfuncs.pfnSetClientKeyValue(ENTINDEX(bot), infoBuffer, "model", "player");
-		bot->v.solid = SOLID_NOT;
-		bot->v.takedamage = DAMAGE_NO;
-		bot->v.movetype = MOVETYPE_NOCLIP;
-		bot->v.effects |= EF_NODRAW;
-
-		bots.push_back(bot);
-		if (bots.size() == demoHeader.maxPlayers) {
-			return true;
-		}
-	}
-
-	return false;
 }
 
 void DemoPlayer::playDemo() {
 	if (!replayFile) {
 		return;
-	}
-
-	if (!botInitDone) {
-		if (!useBots || initBots()) {
-			botInitDone = true;
-			replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
-		}
-		else {
-			return;
-		}
 	}
 
 	while (readDemoFrame());
