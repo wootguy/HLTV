@@ -4,6 +4,8 @@
 #include <set>
 #include "DemoStats.h"
 
+class DemoPlayer;
+
 using namespace std;
 
 #define MAX_EDICTS 8192 // sven co-op
@@ -14,6 +16,8 @@ void ClientLeave(edict_t* plr);
 
 extern map<int, string> g_indexToModel;
 extern set<string> g_playerModels;
+
+extern DemoPlayer* g_demoPlayer;
 
 extern cvar_t* g_auto_demo_file;
 extern cvar_t* g_demo_file_path;

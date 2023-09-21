@@ -1,6 +1,7 @@
 #include "netedict.h"
 #include "DemoFile.h"
 #include "main.h"
+#include "DemoPlayer.h"
 
 using namespace std;
 
@@ -220,7 +221,7 @@ void netedict::load(const edict_t& ed) {
 	}
 }
 
-void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
+void netedict::apply(edict_t* ed) {
 	entvars_t& vars = ed->v;
 
 	if (!edflags) {
@@ -259,13 +260,13 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 		uint16_t endIdx = ((uint16_t*)controller)[0] & 0xfff;
 
 		if (startIdx) {
-			if (startIdx < simEnts.size()) {
-				edict_t* copyent = simEnts[startIdx];
+			edict_t* copyent = g_demoPlayer->getReplayEntity(startIdx);
+			if (copyent) {
 				vars.sequence = (aiment & 0xf000) | ENTINDEX(copyent);
 				vars.origin = copyent->v.origin; // must be set even if not used
 			}
 			else {
-				println("Invalid beam start entity %d / %d", startIdx, (int)simEnts.size());
+				println("Invalid beam start entity %d", startIdx);
 			}
 		}
 		else {
@@ -274,12 +275,12 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 			vars.origin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
 		}
 		if (endIdx) {
-			if (endIdx < simEnts.size()) {
-				edict_t* copyent = simEnts[endIdx];
-				vars.skin = (((uint16_t*)controller)[0] & 0xf000) | ENTINDEX(simEnts[endIdx]);
+			edict_t* copyent = g_demoPlayer->getReplayEntity(endIdx);
+			if (copyent) {
+				vars.skin = (((uint16_t*)controller)[0] & 0xf000) | ENTINDEX(copyent);
 			}
 			else {
-				println("Invalid beam end entity %d / %d", endIdx, (int)simEnts.size());
+				println("Invalid beam end entity %d", endIdx);
 			}
 		}
 		else {
@@ -290,16 +291,15 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	}
 	else {
 		if (aiment) {
-			if (aiment >= simEnts.size()) {
-				println("Invalid aiment %d / %d", aiment, (int)simEnts.size());
+			edict_t* copyent = g_demoPlayer->getReplayEntity(aiment);
+			if (!copyent) {
+				println("Invalid aiment %d", aiment);
 				vars.movetype = MOVETYPE_NONE;
 				return;
 			}
 			else {
 				//vars.aiment = simEnts[aiment];
 				// aiment causing hard-to-troubleshoot crashes, so just set origin
-
-				edict_t* copyent = simEnts[aiment];
 
 				if (!(edflags & (EDFLAG_MONSTER|EDFLAG_PLAYER)) && vars.skin && vars.body) {
 					GET_ATTACHMENT(copyent, vars.body-1, vars.origin, vars.angles);
@@ -337,6 +337,7 @@ bool netedict::readDeltas(mstream& reader) {
 		g_stats.entBigUpdates++;
 	}
 
+	deltaBitsLast = deltaBits;
 	g_stats.entUpdateCount++;
 
 	if (deltaBits == 0) {
@@ -477,6 +478,8 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CLASSIFYGOD, classifyGod, 1);
 
+	deltaBitsLast = 0;
+
 	if (writer.eom()) {
 		writer.seek(startOffset);
 		return EDELTA_OVERFLOW;
@@ -542,6 +545,8 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		writer.seek(endOffset);
 		g_stats.entBigUpdates++;
 	}
+
+	deltaBitsLast = deltaBits;
 
 	return EDELTA_WRITE;
 }

@@ -77,9 +77,11 @@ struct netedict {
 	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
 	uint8_t		classifyGod; // class_ovverride (7 bits), GODMODE/DAMAGE_NO (LSB)
 
+	uint32_t deltaBitsLast; // last delta bits read/written
+
 	netedict();
 	void load(const edict_t& ed);
-	void apply(edict_t* ed, std::vector<EHandle>& simEnts);
+	void apply(edict_t* ed);
 	bool matches(netedict& other);
 
 	// returns false if entity was deleted (no deltas)

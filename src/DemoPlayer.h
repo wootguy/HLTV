@@ -15,11 +15,39 @@
 // - player footsteps (+swimming effects?)
 // - save cvars to demo
 
+struct InterpInfo {
+	Vector originStart;
+	Vector originEnd;
+
+	Vector anglesStart;
+	Vector anglesEnd;
+
+	float frameStart;
+	float frameEnd; // used as a reference point for monsters
+	float interpFrame; // for resetting when predicted frame is close enough to the real one
+
+	float framerateEnt; // framerate modifier set in the entity
+	float framerateSmd; // framerate of the model animation
+	float groundspeed; // movement speed of the model animation on the ground
+	float animTime; // world time when frame was set
+	float lastMovementTime; // last time origin/angles were changed
+	float estimatedUpdateDelay; // used to guess a framerate for origin/angle interpolation
+
+	int sequenceStart;
+	int sequenceEnd;
+};
+
+struct ReplayEntity {
+	EHandle h_ent;
+	InterpInfo interp;
+};
+
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
 	bool clearMapForPlayback = false; // map may crash if entities are not cleared first
 	bool useBots = false; // try to use bots for player entites
+	float replaySpeed = 0.2f;
 
 	DemoPlayer();
 	~DemoPlayer();
@@ -36,6 +64,8 @@ public:
 
 	void stopReplay();
 
+	edict_t* getReplayEntity(int idx);
+
 private:
 	// vars for replaying a demo file
 	FILE* replayFile = NULL;
@@ -45,7 +75,7 @@ private:
 	uint32_t replayFrame = 0;
 	uint32_t nextFrameOffset = 0;
 	uint64_t nextFrameTime = 0;
-	vector<EHandle> replayEnts;
+	vector<ReplayEntity> replayEnts;
 	map<int, string> replayModelPath; // maps model index in demo file to a path
 	DemoHeader demoHeader;
 	DemoFrame lastReplayFrame;
@@ -56,18 +86,28 @@ private:
 	float offsetSeconds;
 	float frameProgress; // for interpolation (0-1 progress to next frame)
 
-	bool initBots();
-
 	void closeReplayFile();
 
 	// returns true if more frames are needed to catch up with current playback time
 	bool readDemoFrame();
 
-	bool applyEntDeltas(DemoFrame& header);
+	bool simulate(DemoFrame& header); // create entities and replay the demo through them
 	bool readEntDeltas(mstream& reader);
 	bool readPlayerDeltas(mstream& reader);
 	bool readNetworkMessages(mstream& reader);
 	bool readClientCommands(mstream& reader);
+	
+	// converts a simulated entity into a class best suited for the demo entity
+	// i = index into replayEntities
+	edict_t* convertEdictType(edict_t* ent, int i);
+
+	// creates new generic demo entities until reaching count
+	// returns false on fatal error
+	bool createReplayEntities(int count);
+
+	// set new interpolation start/end points for the given entity
+	// i = index into replayEntities
+	void setupInterpolation(edict_t* ent, int i);
 
 	void interpolateEdicts();
 

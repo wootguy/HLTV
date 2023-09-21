@@ -2,6 +2,8 @@
 #include "mmlib.h"
 #include "SvenTV.h"
 
+const char* model_entity = "env_sprite";
+
 DemoPlayer::DemoPlayer() {
 	fileedicts = new netedict[MAX_EDICTS];
 	fileplayerinfos = new DemoPlayerEnt[32];
@@ -205,7 +207,7 @@ void DemoPlayer::closeReplayFile() {
 	}
 
 	for (int i = 0; i < replayEnts.size(); i++) {
-		edict_t* ent = replayEnts[i];
+		edict_t* ent = replayEnts[i].h_ent;
 		if (!ent) {
 			continue;
 		}
@@ -214,7 +216,7 @@ void DemoPlayer::closeReplayFile() {
 			kickPlayer(ent);
 		}
 		else {
-			REMOVE_ENTITY(replayEnts[i]);
+			REMOVE_ENTITY(replayEnts[i].h_ent);
 		}			
 	}
 	replayEnts.clear();
@@ -227,6 +229,10 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 	reader.read(&numEntDeltas, 2);
 
 	//println("Reading %d deltas", (int)numEntDeltas);
+
+	for (int i = 0; i < MAX_EDICTS; i++) {
+		fileedicts[i].deltaBitsLast = 0;
+	}
 
 	int loop = -1;
 	uint16_t fullIndex = 0;
@@ -280,170 +286,235 @@ bool DemoPlayer::validateEdicts() {
 	return true;
 }
 
-bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
+edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
+	bool playerSlotFree = true; // todo
+	bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER);
+
+	if (useBots && playerSlotFree && isPlayer && (ent->v.flags & FL_CLIENT) == 0 && fileplayerinfos[i - 1].flags) {
+		DemoPlayerEnt& info = fileplayerinfos[i - 1];
+		edict_t* bot = g_engfuncs.pfnCreateFakeClient(info.name);
+
+		if (bot) {
+			int eidx = ENTINDEX(bot);
+			REMOVE_ENTITY(replayEnts[i].h_ent);
+			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
+			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
+			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
+			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
+			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
+			bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel).c_str());
+			bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel).c_str());
+			bot->v.frags = info.frags;
+			bot->v.weaponanim = info.weaponanim;
+			bot->v.armorvalue = info.armorvalue;
+			bot->v.view_ofs.z = info.view_ofs / 16.0f;
+			bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
+			bot->v.takedamage = DAMAGE_NO;
+			bot->v.movetype = MOVETYPE_NOCLIP;
+			bot->v.solid = SOLID_SLIDEBOX;
+
+			replayEnts[i].h_ent = ent = bot;
+		}
+		else {
+			println("Failed to create bot");
+		}
+	}
+	else if ((fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
+		map<string, string> keys;
+		CBaseEntity* newEnt = CreateEntity("beam", keys, true);
+
+		if (ent->v.flags & FL_CLIENT) {
+			kickPlayer(ent);
+		}
+		else {
+			REMOVE_ENTITY(replayEnts[i].h_ent);
+		}
+
+		replayEnts[i].h_ent = ent = newEnt->edict();
+		ent->v.flags |= FL_CUSTOMENTITY;
+		ent->v.effects |= EF_NODRAW;
+		SET_MODEL(ent, "sprites/error.spr");
+	}
+	else if (!(fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT)) == 0) {
+		map<string, string> keys;
+		keys["model"] = "sprites/error.spr";
+
+		CBaseEntity* newEnt = CreateEntity(model_entity, keys, true);
+
+		if (ent->v.flags & FL_CLIENT) {
+			kickPlayer(ent);
+		}
+		else {
+			REMOVE_ENTITY(replayEnts[i].h_ent);
+		}
+
+		replayEnts[i].h_ent = ent = newEnt->edict();
+		ent->v.solid = SOLID_NOT;
+		ent->v.effects |= EF_NODRAW;
+		ent->v.movetype = MOVETYPE_NONE;
+		ent->v.flags |= FL_MONSTER;
+	}
+
+	return ent;
+}
+
+bool DemoPlayer::createReplayEntities(int count) {
+	while (count >= replayEnts.size()) {
+		map<string, string> keys;
+		keys["model"] = "sprites/error.spr";
+
+		CBaseEntity* ent = CreateEntity(model_entity, keys, true);
+		ent->pev->solid = SOLID_NOT;
+		ent->pev->effects |= EF_NODRAW;
+		ent->pev->movetype = MOVETYPE_NONE;
+		ent->pev->flags |= FL_MONSTER;
+
+		if (!ent) {
+			println("Entity overflow at %d\n", (int)replayEnts.size());
+			for (int i = 0; i < replayEnts.size(); i++) {
+				REMOVE_ENTITY(replayEnts[i].h_ent);
+			}
+			closeReplayFile();
+			return false;
+		}
+
+		ReplayEntity rent;
+		memset(&rent, 0, sizeof(ReplayEntity));
+		rent.h_ent = ent;
+
+		replayEnts.push_back(rent);
+	}
+
+	return true;
+}
+
+void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
+	InterpInfo& interp = replayEnts[i].interp;
+
+	// interpolation setup
+	if (!(fileedicts[i].edflags & EDFLAG_MONSTER)) {
+		interp.originStart = interp.originEnd;
+		interp.originEnd = ent->v.origin;
+
+		interp.anglesStart = interp.anglesEnd;
+		interp.anglesEnd = ent->v.angles;
+
+		interp.frameStart = interp.frameEnd;
+		interp.frameEnd = ent->v.frame;
+
+		interp.sequenceStart = interp.sequenceEnd;
+		interp.sequenceEnd = ent->v.sequence;
+	}
+	else if (fileedicts[i].edflags & EDFLAG_MONSTER) {
+		// TODO: load last deltabits or smth
+		if (fileedicts[i].deltaBitsLast & FL_DELTA_FRAME) {
+			float framerate = interp.framerateSmd * interp.framerateEnt;
+			float secondsPerFrame = framerate ? (1.0f / framerate) : 0;
+			int8_t error = (int8_t)ent->v.frame - (int8_t)interp.interpFrame; // uint8_t will handle looping
+			float estimateError = error * secondsPerFrame;
+
+			bool sequenceChanged = interp.sequenceEnd != ent->v.sequence;
+			bool shouldUpdateInterp = fabs(estimateError) > 0.1f || sequenceChanged;			
+
+			println("ESTIMATE ERROR: (%d - %d) = %.2f",
+				(int)((uint8_t)ent->v.frame), (int)((uint8_t)interp.interpFrame), estimateError);
+
+			if (shouldUpdateInterp) {
+				interp.frameEnd = ent->v.frame;
+				interp.animTime = gpGlobals->time;
+				if (sequenceChanged) {
+					println("(ZOMG SEQUENCE CHANGE)");
+				}
+				else {
+					if (estimateError > 0.2f) {
+						println("((WTF WAY WRONG))");
+					}
+					println("(ZOMG SYNC IT)");
+				}
+			}
+			else {
+				ent->v.frame = interp.interpFrame;
+			}
+
+			if (sequenceChanged || interp.framerateSmd == 0) {
+				CBaseAnimating* anim = (CBaseAnimating*)GET_PRIVATE(ent);
+
+				if (anim) {
+					void* pmodel = GET_MODEL_PTR(ent);
+
+					studiohdr_t* pstudiohdr;
+					pstudiohdr = (studiohdr_t*)pmodel;
+					if (pstudiohdr && pstudiohdr->id == 1414743113 && pstudiohdr->version == 10) {
+						GetSequenceInfo(pmodel, &ent->v, &interp.framerateSmd, &interp.groundspeed);
+					}
+					else {
+						println("Invalid studio model: %s", STRING(ent->v.model));
+					}
+				}
+				else {
+					println("Not normal anim");
+				}
+			}
+
+			interp.sequenceStart = interp.sequenceEnd;
+			interp.sequenceEnd = ent->v.sequence;
+		}
+
+		// monster data is updated at a framerate independent of the server
+		uint32_t originMask = FL_DELTA_ORIGIN_X | FL_DELTA_ORIGIN_Y | FL_DELTA_ORIGIN_Z;
+		uint32_t anglesMask = FL_DELTA_ANGLES_X | FL_DELTA_ANGLES_Y | FL_DELTA_ANGLES_Z;
+		if (fileedicts[i].deltaBitsLast & (originMask|anglesMask)) {
+			interp.originStart = interp.originEnd;
+			interp.originEnd = ent->v.origin;
+
+			interp.anglesStart = interp.anglesEnd;
+			interp.anglesEnd = ent->v.angles;
+
+			interp.estimatedUpdateDelay = clampf(gpGlobals->time - interp.lastMovementTime, 0, 0.1f); // expected time between frames
+			interp.lastMovementTime = gpGlobals->time;
+		}
+	}
+	interp.framerateEnt = ent->v.framerate;
+	ent->v.framerate = 0.000001f; // prevent the game trying to interpolate
+}
+
+edict_t* DemoPlayer::getReplayEntity(int idx) {
+	if (idx < replayEnts.size()) {
+		return replayEnts[idx].h_ent;
+	}
+	return NULL;
+}
+
+bool DemoPlayer::simulate(DemoFrame& header) {
 	int errorSprIdx = g_engfuncs.pfnModelIndex("sprites/error.spr");
-	const char* model_entity = "env_sprite";
 
 	for (int i = 1; i < MAX_EDICTS; i++) {
 		if (!fileedicts[i].edflags) {
 			if (i < replayEnts.size()) {
-				replayEnts[i].GetEdict()->v.effects |= EF_NODRAW;
+				replayEnts[i].h_ent.GetEdict()->v.effects |= EF_NODRAW;
 			}
 			continue;
 		}
 
 		// create ents until the client has enough to handle this demo frame
-		while (i >= replayEnts.size()) {
-			map<string, string> keys;
-			keys["model"] = "sprites/error.spr";
-
-			CBaseEntity* ent = CreateEntity(model_entity, keys, true);
-			ent->pev->solid = SOLID_NOT;
-			ent->pev->effects |= EF_NODRAW;
-			ent->pev->movetype = MOVETYPE_NONE;
-			ent->pev->flags |= FL_MONSTER;
-
-			if (!ent) {
-				println("Entity overflow at %d\n", (int)replayEnts.size());
-				for (int i = 0; i < replayEnts.size(); i++) {
-					REMOVE_ENTITY(replayEnts[i]);
-				}
-				closeReplayFile();
-				return false;
-			}
-
-			replayEnts.push_back(ent);
+		if (!createReplayEntities(i)) {
+			return false;
 		}
 
-		edict_t* ent = replayEnts[i];
-
-		bool playerSlotFree = true; // todo
-		bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER) && i < MAX_PLAYERS;
-		if (useBots && playerSlotFree && isPlayer && (ent->v.flags & FL_CLIENT) == 0 && fileplayerinfos[i-1].flags) {
-			DemoPlayerEnt& info = fileplayerinfos[i - 1];
-			edict_t* bot = g_engfuncs.pfnCreateFakeClient(info.name);
-
-			if (bot) {
-				int eidx = ENTINDEX(bot);
-				REMOVE_ENTITY(replayEnts[i]);
-				gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
-				char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
-				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
-				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
-				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
-				bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel).c_str());
-				bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel).c_str());
-				bot->v.frags = info.frags;
-				bot->v.weaponanim = info.weaponanim;
-				bot->v.armorvalue = info.armorvalue;
-				bot->v.view_ofs.z = info.view_ofs / 16.0f;
-				bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
-				bot->v.takedamage = DAMAGE_NO;
-				bot->v.movetype = MOVETYPE_NOCLIP;
-				bot->v.solid = SOLID_SLIDEBOX;
-
-				replayEnts[i] = ent = bot;
-			}
-			else {
-				println("Failed to create bot");
-			}
-		}
-		else if ((fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
-			map<string, string> keys;
-			CBaseEntity* newEnt = CreateEntity("beam", keys, true);
-
-			if (ent->v.flags & FL_CLIENT) {
-				kickPlayer(ent);
-			}
-			else {
-				REMOVE_ENTITY(replayEnts[i]);
-			}
-			
-			replayEnts[i] = ent = newEnt->edict();
-			ent->v.flags |= FL_CUSTOMENTITY;
-			ent->v.effects |= EF_NODRAW;
-			SET_MODEL(ent, "sprites/error.spr");
-		}
-		else if (!(fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER|FL_CLIENT)) == 0) {
-			map<string, string> keys;
-			keys["model"] = "sprites/error.spr";
-
-			CBaseEntity* newEnt = CreateEntity(model_entity, keys, true);
-
-			if (ent->v.flags & FL_CLIENT) {
-				kickPlayer(ent);
-			}
-			else {
-				REMOVE_ENTITY(replayEnts[i]);
-			}
-
-			replayEnts[i] = ent = newEnt->edict();
-			ent->v.solid = SOLID_NOT;
-			ent->v.effects |= EF_NODRAW;
-			ent->v.movetype = MOVETYPE_NONE;
-			ent->v.flags |= FL_MONSTER;
-		}
+		edict_t* ent = replayEnts[i].h_ent;
+		ent = convertEdictType(ent, i);
 		
 		int oldModelIdx = ent->v.modelindex;
-		int oldSeq = ent->v.sequence;
-		float lastFrame = ent->v.frame;
 
-		fileedicts[i].apply(ent, replayEnts);
-		
-		/* footsteps
-		if (ent->v.flags & FL_FAKECLIENT) {
-			float dt = 0.0167; // time between frames
-			if (ent->v.flags & FL_FAKECLIENT) {
-				ent->v.flags |= FL_ONGROUND;
-				ent->v.movetype = MOVETYPE_WALK;
-				float speed = ent->v.velocity.Length();
-				uint8_t msec = clampf(dt * 1000, 0, 255);
-				println("SPEED %.1f %d", speed, msec);
-				Vector oldVel = ent->v.velocity;
-				Vector oldOri = ent->v.origin;
-				Vector oldAngles = ent->v.angles;
-				g_engfuncs.pfnRunPlayerMove(ent, ent->v.angles, speed, 0, 0, 0, 0, msec);
-				ent->v.velocity = oldVel;
-				ent->v.origin = oldOri;
-				ent->v.angles = oldAngles;
-				ent->v.movetype = MOVETYPE_NOCLIP;
-			}
-		}
-		*/
+		fileedicts[i].apply(ent);
 
-		// interpolation setup
-		if (!(fileedicts[i].edflags & EDFLAG_MONSTER)) {
-			ent->v.vuser3 = ent->v.vuser4; // previous origin
-			ent->v.vuser4 = ent->v.origin; // target origin
-			ent->v.vuser1 = ent->v.vuser2; // previous angles
-			ent->v.vuser2 = ent->v.angles; // target angles
-			ent->v.fuser1 = ent->v.fuser2; // previous frame
-			ent->v.fuser2 = ent->v.frame; // target frame
-			ent->v.iuser4 = oldSeq; // previous sequence
-		}
-		else if (fileedicts[i].edflags & EDFLAG_MONSTER) {
-			// monster data is updated at a framerate independent of the server
-			// TODO: add a delta for this instead of trying to detect an update
-			if (fabs(ent->v.fuser2 - ent->v.frame) > 0.1f || (ent->v.vuser4 - ent->v.origin).Length() > 0.1f) {
-				ent->v.vuser3 = ent->v.vuser4; // previous origin
-				ent->v.vuser4 = ent->v.origin; // target origin
-				ent->v.vuser1 = ent->v.vuser2; // previous angles
-				ent->v.vuser2 = ent->v.angles; // target angles
-
-				ent->v.fuser1 = ent->v.fuser2; // previous frame
-				ent->v.fuser2 = ent->v.frame; // target frame
-				
-				ent->v.starttime = clampf(gpGlobals->time - ent->v.fuser4, 0, 0.1f); // expected time between frames
-				ent->v.fuser4 = gpGlobals->time; // previous animation start time (for next next update)
-				ent->v.iuser4 = oldSeq;
-			}
-		}
-		ent->v.fuser3 = ent->v.framerate;
-		ent->v.framerate = 0.00001f;		
+		setupInterpolation(ent, i);
 
 		if (oldModelIdx != ent->v.modelindex) {
 			string newModel = getReplayModel(ent->v.modelindex);
-			if ((fileedicts[i].edflags & EDFLAG_BEAM) && newModel.find(".spr") == string::npos) {
+			bool isSprite = newModel.find(".spr") != string::npos;
+
+			if ((fileedicts[i].edflags & EDFLAG_BEAM) && isSprite) {
 				println("Invalid model set on beam: %s", newModel.c_str());
 			}
 			else if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
@@ -495,7 +566,7 @@ void DemoPlayer::convReplayEntIdx(uint16_t& eidx) {
 		println("Invalid replay ent idx %d", (int)eidx);
 		eidx = 0;
 	}
-	eidx = ENTINDEX(replayEnts[eidx]);
+	eidx = ENTINDEX(replayEnts[eidx].h_ent);
 }
 
 void DemoPlayer::convReplayModelIdx(uint16_t& modelIdx) {
@@ -535,7 +606,7 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 		numPlayerDeltas++;
 
 		if (i+1 < replayEnts.size()) {
-			edict_t* bot = replayEnts[i+1];
+			edict_t* bot = replayEnts[i+1].h_ent;
 			if (!bot || (bot->v.flags & FL_FAKECLIENT) == 0) {
 				continue;
 			}
@@ -856,12 +927,12 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 			continue;
 		}
 
-		if (msg.header.hasEdict && replayEnts[msg.eidx].GetEdict() && !(replayEnts[msg.eidx].GetEdict()->v.flags & FL_CLIENT)) {
+		if (msg.header.hasEdict && replayEnts[msg.eidx].h_ent.GetEdict() && !(replayEnts[msg.eidx].h_ent.GetEdict()->v.flags & FL_CLIENT)) {
 			continue; // target is not a player (bots disabled probably)
 		}
 
 		const float* ori = msg.header.hasOrigin ? forigin : NULL;
-		edict_t* ent = msg.header.hasEdict ? replayEnts[msg.eidx].GetEdict() : NULL;
+		edict_t* ent = msg.header.hasEdict ? replayEnts[msg.eidx].h_ent.GetEdict() : NULL;
 		if (!processDemoNetMessage(msg)) {
 			continue;
 		}
@@ -946,7 +1017,7 @@ bool DemoPlayer::readClientCommands(mstream& reader) {
 }
 
 bool DemoPlayer::readDemoFrame() {
-	uint32_t t = (getEpochMillis() - replayStartTime) * 1.0f;
+	uint32_t t = (getEpochMillis() - replayStartTime) * replaySpeed;
 
 	fseek(replayFile, nextFrameOffset, SEEK_SET);
 
@@ -999,7 +1070,7 @@ bool DemoPlayer::readDemoFrame() {
 
 	g_stats.entDeltaCurrentSz = g_stats.plrDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = 0;
 
-	if (header.hasEntityDeltas && (!readEntDeltas(reader) || !applyEntDeltas(header))) {
+	if (header.hasEntityDeltas && (!readEntDeltas(reader) || !simulate(header))) {
 		delete[] frameData;
 		return false;
 	}
@@ -1027,6 +1098,14 @@ bool DemoPlayer::readDemoFrame() {
 	delete[] frameData;
 
 	return true;
+}
+
+inline Vector lerp(Vector start, Vector end, float t) {
+	Vector out;
+	out[0] = start[0] + (end[0] - start[0]) * t;
+	out[1] = start[1] + (end[1] - start[1]) * t;
+	out[2] = start[2] + (end[2] - start[2]) * t;
+	return out;
 }
 
 inline float lerp(float start, float end, float t) {
@@ -1057,56 +1136,48 @@ void DemoPlayer::interpolateEdicts() {
 			continue;
 		}
 
-		if (!replayEnts[i].IsValid() || replayEnts[i].GetEdict()->v.effects & EF_NODRAW) {
+		if (!replayEnts[i].h_ent.IsValid() || replayEnts[i].h_ent.GetEdict()->v.effects & EF_NODRAW) {
 			continue;
 		}
 
-		edict_t* ent = replayEnts[i];
+		edict_t* ent = replayEnts[i].h_ent;
+		InterpInfo& interp = replayEnts[i].interp;
 
 		if ((fileedicts[i].edflags & EDFLAG_MONSTER)) {
 			float t = 1;
-			if (ent->v.iuser4 == ent->v.sequence && ent->v.starttime > 0) {
-				t = clampf((gpGlobals->time - ent->v.fuser4) / ent->v.starttime, 0, 1);
+			if (interp.sequenceEnd == ent->v.sequence && interp.estimatedUpdateDelay > 0) {
+				float deltaTime = (gpGlobals->time - interp.lastMovementTime) * replaySpeed;
+				t = clampf(deltaTime / interp.estimatedUpdateDelay, 0, 1);
 			}
 
-			float targetFrame = ent->v.fuser2;
-			if (ent->v.fuser3 >= 0 && targetFrame < ent->v.fuser1) {
-				targetFrame += 255;
-			}
-			if (ent->v.fuser3 <= 0 && targetFrame > ent->v.fuser1) {
-				targetFrame -= 255;
-			}
+			ent->v.origin = lerp(interp.originStart, interp.originEnd, t);
 
-			ent->v.origin[0] = lerp(ent->v.vuser3[0], ent->v.vuser4[0], t);
-			ent->v.origin[1] = lerp(ent->v.vuser3[1], ent->v.vuser4[1], t);
-			ent->v.origin[2] = lerp(ent->v.vuser3[2], ent->v.vuser4[2], t);
+			ent->v.angles[0] = anglelerp(interp.anglesStart[0], interp.anglesEnd[0], t);
+			ent->v.angles[1] = anglelerp(interp.anglesStart[1], interp.anglesEnd[1], t);
+			ent->v.angles[2] = anglelerp(interp.anglesStart[2], interp.anglesEnd[2], t);
 
-			ent->v.angles[0] = anglelerp(ent->v.vuser1[0], ent->v.vuser2[0], t);
-			ent->v.angles[1] = anglelerp(ent->v.vuser1[1], ent->v.vuser2[1], t);
-			ent->v.angles[2] = anglelerp(ent->v.vuser1[2], ent->v.vuser2[2], t);
+			float animTime = (gpGlobals->time - interp.animTime) * replaySpeed;
+			float inc = (animTime * interp.framerateEnt * interp.framerateSmd);
 
-			ent->v.frame = lerp(ent->v.fuser1, targetFrame, t);
+			ent->v.frame = interp.frameEnd + inc;
+			//println("ANIM TIME %.2f %.2f %.2f", (gpGlobals->time - interp.lastMovementTime) * replaySpeed, t, interp.estimatedUpdateDelay);
 
-			if (ent->v.frame > 255) {
-				ent->v.frame -= 255;
-			}
-			if (ent->v.frame < 0) {
-				ent->v.frame += 255;
-			}
+			// TODO: check if anim loops
+			ent->v.frame = normalizeRangef(ent->v.frame, 0, 255);
+
+			interp.interpFrame = ent->v.frame;
 		}
 		else {
-			float frameDelta = ent->v.fuser2 - ent->v.fuser1;
-			bool sameDir = (frameDelta >= 0) == (ent->v.fuser3 >= 0);
-			if (ent->v.iuser4 == ent->v.sequence && sameDir) {
-				ent->v.frame = lerp(ent->v.fuser1, ent->v.fuser2, frameProgress);
+			float frameDelta = interp.frameEnd - interp.frameStart;
+			bool sameDir = (frameDelta >= 0) == (interp.framerateEnt >= 0);
+			if (interp.sequenceEnd == ent->v.sequence && sameDir) {
+				ent->v.frame = lerp(interp.frameStart, interp.frameEnd, frameProgress);
 			}
 
-			ent->v.origin[0] = lerp(ent->v.vuser3[0], ent->v.vuser4[0], frameProgress);
-			ent->v.origin[1] = lerp(ent->v.vuser3[1], ent->v.vuser4[1], frameProgress);
-			ent->v.origin[2] = lerp(ent->v.vuser3[2], ent->v.vuser4[2], frameProgress);
+			ent->v.origin = lerp(interp.originStart, interp.originEnd, frameProgress);
 
-			ent->v.angles[0] = anglelerp(ent->v.vuser1[0], ent->v.vuser2[0], frameProgress);
-			ent->v.angles[1] = anglelerp(ent->v.vuser1[1], ent->v.vuser2[1], frameProgress);
+			ent->v.angles[0] = anglelerp(interp.anglesStart[0], interp.anglesEnd[0], frameProgress);
+			ent->v.angles[1] = anglelerp(interp.anglesStart[1], interp.anglesEnd[1], frameProgress);
 
 			// fixes hud info
 			g_engfuncs.pfnSetOrigin(ent, ent->v.origin);
