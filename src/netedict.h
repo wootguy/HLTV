@@ -5,7 +5,7 @@
 #include <vector>
 
 // flags for indicating which edict fields were updated
-#define FL_DELTA_EDTYPE			(1 << 0)
+#define FL_DELTA_EDFLAGS		(1 << 0)
 #define FL_DELTA_ORIGIN_X		(1 << 1)
 #define FL_DELTA_ORIGIN_Y		(1 << 2)
 #define FL_DELTA_ORIGIN_Z		(1 << 3)
@@ -35,17 +35,14 @@
 #define FL_DELTA_COLORMAP		(1 << 27)
 #define FL_DELTA_CLASSIFYGOD	(1 << 28)
 
-enum netedict_types {
-	NETED_INVALID, // don't render or update this entity
-	NETED_MODEL,   // generic entity that uses a model (BSP/mdl/spr)
-	NETED_MONSTER, // should display health/name
-	NETED_PLAYER,  // special model loading and rendering
-	NETED_BEAM,    // lasers and stuff
-};
+#define EDFLAG_VALID 1		// if no other flag is set, then it's a generic model entity (BSP/mdl/spr)
+#define EDFLAG_MONSTER 2	// should display health/name
+#define EDFLAG_PLAYER 4		// special model loading and rendering
+#define EDFLAG_BEAM 8		// lasers and stuff
 
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
-	uint8_t		edtype;			// netedict_types
+	uint8_t		edflags;		// EDFLAG_*  (0 == invalid/deleted edict)
 	uint32_t	origin[3];		// 21.3 fixed point (beams), or 19.5 fixed point (everything else)
 	uint32_t	health;
 	uint32_t	angles[3];		// 21.3 fixed point (beams), or 0-360 scaled to uint16_t (everything else)

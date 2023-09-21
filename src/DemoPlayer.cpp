@@ -272,7 +272,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 
 bool DemoPlayer::validateEdicts() {
 	for (int i = 0; i < MAX_EDICTS; i++) {
-		if (fileedicts[i].edtype != NETED_INVALID && fileedicts[i].edtype != NETED_BEAM && fileedicts[i].aiment > 8192) {
+		if (fileedicts[i].edflags && !(fileedicts[i].edflags & EDFLAG_BEAM) && fileedicts[i].aiment > 8192) {
 			println("Invalid edict %d has %d", i, (int)fileedicts[i].aiment);
 			return false;
 		}
@@ -285,7 +285,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 	const char* model_entity = "env_sprite";
 
 	for (int i = 1; i < MAX_EDICTS; i++) {
-		if (!fileedicts[i].edtype) {
+		if (!fileedicts[i].edflags) {
 			if (i < replayEnts.size()) {
 				replayEnts[i].GetEdict()->v.effects |= EF_NODRAW;
 			}
@@ -318,7 +318,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		edict_t* ent = replayEnts[i];
 
 		bool playerSlotFree = true; // todo
-		bool isPlayer = fileedicts[i].edtype == NETED_PLAYER && i < MAX_PLAYERS;
+		bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER) && i < MAX_PLAYERS;
 		if (useBots && playerSlotFree && isPlayer && (ent->v.flags & FL_CLIENT) == 0 && fileplayerinfos[i-1].isConnected) {
 			DemoPlayerEnt& info = fileplayerinfos[i - 1];
 			edict_t* bot = g_engfuncs.pfnCreateFakeClient(info.name);
@@ -348,7 +348,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 				println("Failed to create bot");
 			}
 		}
-		else if (fileedicts[i].edtype == NETED_BEAM && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
+		else if ((fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
 			map<string, string> keys;
 			CBaseEntity* newEnt = CreateEntity("beam", keys, true);
 
@@ -364,7 +364,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			ent->v.effects |= EF_NODRAW;
 			SET_MODEL(ent, "sprites/error.spr");
 		}
-		else if (fileedicts[i].edtype != NETED_BEAM && (ent->v.flags & (FL_MONSTER|FL_CLIENT)) == 0) {
+		else if (!(fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER|FL_CLIENT)) == 0) {
 			map<string, string> keys;
 			keys["model"] = "sprites/error.spr";
 
@@ -412,7 +412,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 		*/
 
 		// interpolation setup
-		if (fileedicts[i].edtype != NETED_MONSTER) {
+		if (!(fileedicts[i].edflags & EDFLAG_MONSTER)) {
 			ent->v.vuser3 = ent->v.vuser4; // previous origin
 			ent->v.vuser4 = ent->v.origin; // target origin
 			ent->v.vuser1 = ent->v.vuser2; // previous angles
@@ -421,7 +421,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			ent->v.fuser2 = ent->v.frame; // target frame
 			ent->v.iuser4 = oldSeq; // previous sequence
 		}
-		else if (fileedicts[i].edtype == NETED_MONSTER) {
+		else if (fileedicts[i].edflags & EDFLAG_MONSTER) {
 			// monster data is updated at a framerate independent of the server
 			// TODO: add a delta for this instead of trying to detect an update
 			if (fabs(ent->v.fuser2 - ent->v.frame) > 0.1f || (ent->v.vuser4 - ent->v.origin).Length() > 0.1f) {
@@ -443,10 +443,10 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 
 		if (oldModelIdx != ent->v.modelindex) {
 			string newModel = getReplayModel(ent->v.modelindex);
-			if (fileedicts[i].edtype == NETED_BEAM && newModel.find(".spr") == string::npos) {
+			if ((fileedicts[i].edflags & EDFLAG_BEAM) && newModel.find(".spr") == string::npos) {
 				println("Invalid model set on beam: %s", newModel.c_str());
 			}
-			else if (fileedicts[i].edtype != NETED_PLAYER) {
+			else if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
 				SET_MODEL(ent, newModel.c_str());
 			}
 		}
@@ -1043,7 +1043,7 @@ void DemoPlayer::interpolateEdicts() {
 	lastTime = now;
 
 	for (int i = 0; i < replayEnts.size(); i++) {
-		if (fileedicts[i].edtype == NETED_INVALID) {
+		if (!fileedicts[i].edflags) {
 			continue;
 		}
 
@@ -1053,7 +1053,7 @@ void DemoPlayer::interpolateEdicts() {
 
 		edict_t* ent = replayEnts[i];
 
-		if (fileedicts[i].edtype == NETED_MONSTER) {
+		if ((fileedicts[i].edflags & EDFLAG_MONSTER)) {
 			float t = 1;
 			if (ent->v.iuser4 == ent->v.sequence && ent->v.starttime > 0) {
 				t = clampf((gpGlobals->time - ent->v.fuser4) / ent->v.starttime, 0, 1);
@@ -1101,7 +1101,7 @@ void DemoPlayer::interpolateEdicts() {
 			// fixes hud info
 			g_engfuncs.pfnSetOrigin(ent, ent->v.origin);
 
-			if (fileedicts[i].edtype == NETED_PLAYER) {
+			if (fileedicts[i].edflags & EDFLAG_PLAYER) {
 				updatePlayerModelPitchBlend(ent);
 
 				if ((ent->v.flags & FL_CLIENT) == 0) {

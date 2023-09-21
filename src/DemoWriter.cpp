@@ -306,7 +306,7 @@ bool DemoWriter::isFileOpen() {
 
 bool DemoWriter::validateEdicts() {
 	for (int i = 0; i < MAX_EDICTS; i++) {
-		if (fileedicts[i].edtype != NETED_INVALID && fileedicts[i].edtype != NETED_BEAM && fileedicts[i].aiment > 8192) {
+		if (fileedicts[i].edflags && !(fileedicts[i].edflags & EDFLAG_BEAM) && fileedicts[i].aiment > 8192) {
 			println("Invalid edict %d has %d", i, (int)fileedicts[i].aiment);
 			return false;
 		}

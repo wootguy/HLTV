@@ -21,11 +21,11 @@ using namespace std;
 	}
 
 netedict::netedict() {
-	memset(&edtype, 0, sizeof(netedict));
+	memset(&edflags, 0, sizeof(netedict));
 }
 
 bool netedict::matches(netedict& other) {
-	if (edtype != other.edtype) {
+	if (edflags != other.edflags) {
 		println("Mismatch isValid");
 		return false;
 	}
@@ -154,7 +154,7 @@ void netedict::load(const edict_t& ed) {
 	bool isValid = !ed.free && ed.pvPrivateData && (vars.effects & EF_NODRAW) == 0 && vars.modelindex;
 
 	if (!isValid) {
-		memset(&edtype, 0, sizeof(netedict));
+		memset(&edflags, 0, sizeof(netedict));
 		return; // no need to update other values. Only the isFree var will be sent from now on
 	}
 
@@ -182,14 +182,16 @@ void netedict::load(const edict_t& ed) {
 	colormap = vars.colormap;
 	health = vars.health > 0 ? Min(vars.health, UINT32_MAX) : 0;
 
+	edflags |= EDFLAG_VALID;
+
 	if (ed.v.flags & FL_CLIENT) {
 		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f));
 		angles[1] = (uint16_t)(normalizeRangef(vars.v_angle.y, 0, 360) * (65535.0f / 360.0f));
 		angles[2] = (uint16_t)(normalizeRangef(vars.v_angle.z, 0, 360) * (65535.0f / 360.0f));
-		edtype = NETED_PLAYER;
+		edflags |= EDFLAG_PLAYER;
 	}
 	else if (ed.v.flags & FL_CUSTOMENTITY) {
-		edtype = NETED_BEAM;
+		edflags |= EDFLAG_BEAM;
 		angles[0] = clamp(FLOAT_TO_FIXED(ed.v.angles[0], 21, 3), INT24_MIN, INT24_MAX);
 		angles[1] = clamp(FLOAT_TO_FIXED(ed.v.angles[1], 21, 3), INT24_MIN, INT24_MAX);
 		angles[2] = clamp(FLOAT_TO_FIXED(ed.v.angles[2], 21, 3), INT24_MIN, INT24_MAX);
@@ -206,10 +208,7 @@ void netedict::load(const edict_t& ed) {
 		angles[2] = (uint16_t)(normalizeRangef(vars.angles.z, 0, 360) * (65535.0f / 360.0f));
 
 		if (ed.v.flags & FL_MONSTER) {
-			edtype = NETED_MONSTER;
-		}
-		else {
-			edtype = NETED_MODEL;
+			edflags |= EDFLAG_MONSTER;
 		}
 	}
 
@@ -224,7 +223,7 @@ void netedict::load(const edict_t& ed) {
 void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	entvars_t& vars = ed->v;
 
-	if (edtype == NETED_INVALID) {
+	if (!edflags) {
 		return; // no need to update other values. Only the isFree var will be sent from now on
 	}
 
@@ -255,7 +254,7 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 
 	//vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NONE;
 
-	if (edtype == NETED_BEAM) {
+	if (edflags & EDFLAG_BEAM) {
 		uint16_t startIdx = aiment & 0xfff;
 		uint16_t endIdx = ((uint16_t*)controller)[0] & 0xfff;
 
@@ -302,7 +301,7 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 
 				edict_t* copyent = simEnts[aiment];
 
-				if (edtype == NETED_MODEL && vars.skin && vars.body) {
+				if ((edflags & (EDFLAG_MONSTER|EDFLAG_PLAYER)) == 0 && vars.skin && vars.body) {
 					GET_ATTACHMENT(copyent, vars.body-1, vars.origin, vars.angles);
 					vars.skin = 0;
 					vars.body = 0;
@@ -323,7 +322,7 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	}
 
 	// calculate instantaneous velocity for gait calculations
-	if (edtype == NETED_PLAYER)
+	if (edflags == EDFLAG_PLAYER)
 		vars.velocity = (vars.origin - oldorigin);
 }
 
@@ -332,23 +331,23 @@ bool netedict::readDeltas(mstream& reader) {
 	reader.read(&deltaBits, 4);
 
 	if (deltaBits == 0) {
-		edtype = NETED_INVALID;
+		edflags = 0;
 		return false;
 	}
 
-	uint8_t oldEdtype = edtype;
-	uint8_t newEdtype = edtype;
+	uint8_t oldedflags = edflags;
+	uint8_t newedflags = edflags;
 
-	READ_DELTA(reader, deltaBits, FL_DELTA_EDTYPE, newEdtype, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_EDFLAGS, newedflags, 1);
 
-	if (oldEdtype == NETED_INVALID && newEdtype != NETED_INVALID) {
+	if (!oldedflags && newedflags) {
 		// new entity created. Start deltas from a fresh state.
 		memset(this, 0, sizeof(netedict));
 	}
 
-	edtype = newEdtype;
+	edflags = newedflags;
 
-	int angleSz = edtype == NETED_BEAM ? 3 : 2;
+	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
 	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
@@ -387,10 +386,10 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	uint32_t deltaBits = 0; // flags which fields were changed
 
-	uint8_t newEdtype = edtype;
+	uint8_t newedflags = edflags;
 
-	if (old.edtype != newEdtype) {
-		if (!edtype) {
+	if (old.edflags != newedflags) {
+		if (!edflags) {
 			// 0 deltas indicates edict was deleted
 			writer.write(&deltaBits, 4);
 
@@ -401,20 +400,20 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 			return EDELTA_WRITE;
 		}
-		if (!old.edtype) {
+		if (!old.edflags) {
 			// new entity created. Start from a fresh state.
 			// some vars may have changed while we didn't send deltas but still memcpy()'d
 			// to fileedicts as if the client knows the latest state.
 			memset(this, 0, sizeof(netedict));
-			edtype = newEdtype;
+			edflags = newedflags;
 		}
 	}
 
 	writer.skip(4); // write delta bits later
 
-	int angleSz = edtype == NETED_BEAM ? 3 : 2;
+	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_EDTYPE, edtype, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_EDFLAGS, edflags, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);

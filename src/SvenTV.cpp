@@ -507,7 +507,7 @@ void SvenTV::think_tvThread() {
 
 bool SvenTV::validateEdicts() {
 	for (int i = 0; i < MAX_EDICTS; i++) {
-		if (frame.netedicts[i].edtype != NETED_INVALID && frame.netedicts[i].aiment > 8192) {
+		if (frame.netedicts[i].edflags && frame.netedicts[i].aiment > 8192) {
 			println("Invalid edict %d has %d", i, (int)frame.netedicts[i].aiment);
 			return false;
 		}
