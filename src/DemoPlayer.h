@@ -18,7 +18,7 @@
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
-	bool clearMapForPlayback = true; // map may crash if entities are not cleared first
+	bool clearMapForPlayback = false; // map may crash if entities are not cleared first
 	bool useBots = false; // try to use bots for player entites
 
 	DemoPlayer();

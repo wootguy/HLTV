@@ -710,7 +710,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_PLAYERSPRITES: {
 		convReplayEntIdx(args16[0]);
 		edict_t* plr = INDEXENT(args16[0]);
-		if (plr && (plr->v.flags & FL_CLIENT) == 0) {
+		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			args16[0] = 1; // prevent fatal error
 		}
 		convReplayModelIdx(args16[1]);
@@ -729,7 +729,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		convReplayEntIdx(entIdx);
 		convReplayModelIdx(modelIdx);
 		edict_t* plr = INDEXENT(entIdx);
-		if (plr && (plr->v.flags & FL_CLIENT) == 0) {
+		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			entIdx = 1; // prevent fatal error
 		}
 		args[0] = (uint8_t)entIdx;
@@ -740,7 +740,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		uint16_t entIdx = args[0];
 		convReplayEntIdx(entIdx);
 		edict_t* plr = INDEXENT(entIdx);
-		if (plr && (plr->v.flags & FL_CLIENT) == 0) {
+		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			entIdx = 1; // prevent fatal error
 		}
 		args[0] = (uint8_t)entIdx;
@@ -848,6 +848,10 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 		if (msg.eidx >= replayEnts.size()) {
 			println("Invalid msg ent %d", (int)msg.eidx);
 			continue;
+		}
+
+		if (msg.header.hasEdict && replayEnts[msg.eidx].GetEdict() && !(replayEnts[msg.eidx].GetEdict()->v.flags & FL_CLIENT)) {
+			continue; // target is not a player (bots disabled probably)
 		}
 
 		const float* ori = msg.header.hasOrigin ? msg.origin : NULL;
