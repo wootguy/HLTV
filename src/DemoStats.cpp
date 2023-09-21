@@ -174,7 +174,8 @@ void DemoStats::showStats(edict_t* ent) {
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
 		string sumStr = formatSize(sum);
-		txt = UTIL_VarArgs("ent deltas (%s):\n", sumStr.c_str());
+		txt = UTIL_VarArgs("ent deltas (%u, %u, %s):\n", g_stats.entBigUpdates, 
+			g_stats.entUpdateCount- g_stats.entBigUpdates, sumStr.c_str());
 		for (int i = 0; i < deltaStats.size() && i < 10; i++) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}

@@ -133,7 +133,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 	uint16_t numEntDeltas = 0;
 	uint32_t indexWriteSz = 0;
-	uint32_t entityUpdateCount = 0;
 	for (uint16_t i = 0; i < MAX_EDICTS; i++) {
 		netedict& now = frame.netedicts[i];
 
@@ -237,7 +236,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	g_stats.msgCount += frame.netmessage_count;
 	g_stats.cmdCount += frame.cmds_count;
 	g_stats.entIndexTotalSz += indexWriteSz;
-	g_stats.entUpdateCount += entityUpdateCount;
 	g_stats.incTotals();
 
 	uint8_t frameCountDelta = clamp(frame.serverFrameCount - lastServerFrameCount, 0, 255);
@@ -272,7 +270,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
 	}
 
-	bool showstats = true;
+	bool showstats = false;
 	if (showstats) {
 		int actualSz = ftell(demoFile);
 		if (actualSz != g_stats.totalWriteSz) {

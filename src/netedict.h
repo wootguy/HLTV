@@ -5,7 +5,11 @@
 #include <vector>
 
 // flags for indicating which edict fields were updated
-#define FL_BIGENTDELTA			(1 << 0) // if set, deltaBits = 4bytes, else 1 byte
+
+// if set, deltaBits = 4bytes, and origin values are 19.5 fixed point and replace the previous origin
+// otherwise, deltaBits = 1byte, and origin values are 11.5 fixed point and added to the previous origin
+#define FL_BIGENTDELTA			(1 << 0)
+
 #define FL_DELTA_EDFLAGS		(1 << 1)
 #define FL_DELTA_FRAME			(1 << 2)
 #define FL_DELTA_ORIGIN_X		(1 << 3)
@@ -47,7 +51,7 @@
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
 	uint8_t		edflags;		// EDFLAG_*  (0 == invalid/deleted edict)
-	uint32_t	origin[3];		// 21.3 fixed point (beams), or 19.5 fixed point (everything else)
+	int32_t		origin[3];		// 21.3 fixed point (beams), or 19.5 fixed point (everything else)
 	uint32_t	health;
 	uint32_t	angles[3];		// 21.3 fixed point (beams), or 0-360 scaled to uint16_t (everything else)
 	uint16_t	modelindex;

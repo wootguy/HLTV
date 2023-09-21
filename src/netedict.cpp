@@ -158,9 +158,9 @@ void netedict::load(const edict_t& ed) {
 		return; // no need to update other values. Only the isFree var will be sent from now on
 	}
 
-	origin[0] = clamp(FLOAT_TO_FIXED(ed.v.origin[0], 19, 5), INT24_MIN, INT24_MAX);
-	origin[1] = clamp(FLOAT_TO_FIXED(ed.v.origin[1], 19, 5), INT24_MIN, INT24_MAX);
-	origin[2] = clamp(FLOAT_TO_FIXED(ed.v.origin[2], 19, 5), INT24_MIN, INT24_MAX);
+	origin[0] = FLOAT_TO_FIXED(ed.v.origin[0], 19, 5);
+	origin[1] = FLOAT_TO_FIXED(ed.v.origin[1], 19, 5);
+	origin[2] = FLOAT_TO_FIXED(ed.v.origin[2], 19, 5);
 
 	modelindex = vars.modelindex;
 	skin = vars.skin;
@@ -192,9 +192,9 @@ void netedict::load(const edict_t& ed) {
 	}
 	else if (ed.v.flags & FL_CUSTOMENTITY) {
 		edflags |= EDFLAG_BEAM;
-		angles[0] = clamp(FLOAT_TO_FIXED(ed.v.angles[0], 21, 3), INT24_MIN, INT24_MAX);
-		angles[1] = clamp(FLOAT_TO_FIXED(ed.v.angles[1], 21, 3), INT24_MIN, INT24_MAX);
-		angles[2] = clamp(FLOAT_TO_FIXED(ed.v.angles[2], 21, 3), INT24_MIN, INT24_MAX);
+		angles[0] = FLOAT_TO_FIXED(ed.v.angles[0], 21, 3);
+		angles[1] = FLOAT_TO_FIXED(ed.v.angles[1], 21, 3);
+		angles[2] = FLOAT_TO_FIXED(ed.v.angles[2], 21, 3);
 		// not enough bits in sequence/skin so using aiment/owner instead
 		// these vars set the start/end entity and attachment points
 		aiment = vars.sequence;
@@ -334,7 +334,10 @@ bool netedict::readDeltas(mstream& reader) {
 		uint32_t upperBits = 0;
 		reader.read(&upperBits, 3);
 		deltaBits = deltaBits | (upperBits << 8);
+		g_stats.entBigUpdates++;
 	}
+
+	g_stats.entUpdateCount++;
 
 	if (deltaBits == 0) {
 		edflags = 0;
@@ -356,9 +359,21 @@ bool netedict::readDeltas(mstream& reader) {
 	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
-	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
-	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
+	if (deltaBits & FL_BIGENTDELTA) {
+		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
+		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
+		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
+	}
+	else {
+		int16_t dx = 0, dy = 0, dz = 0;
+		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_X, dx, 2);
+		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, dy, 2);
+		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Z, dz, 2);
+		origin[0] += dx;
+		origin[1] += dy;
+		origin[2] += dz;
+	}
+	
 	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_X, angles[0], angleSz);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Y, angles[1], angleSz);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Z, angles[2], angleSz);
@@ -419,8 +434,17 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
+	bool canWriteSmallOriginDeltas = true;
+	for (int i = 0; i < 3; i++) {
+		if (abs(origin[i] - old.origin[i]) > INT16_MAX) {
+			canWriteSmallOriginDeltas = false;
+			break;
+		}
+	}
+
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_EDFLAGS, edflags, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAME, frame, 1);
+	uint32_t originOffset = writer.tell();
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
@@ -458,24 +482,65 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		return EDELTA_OVERFLOW;
 	}
 
-	uint64_t currentOffset = writer.tell();
+	uint64_t endOffset = writer.tell();
 	writer.seek(startOffset);
 
 	if (deltaBits == 0) {
 		return EDELTA_NONE;
 	}
 
-	if ((deltaBits & 0xff) == deltaBits) {
+	g_stats.entUpdateCount++;
+
+	if ((deltaBits & 0xff) == deltaBits && canWriteSmallOriginDeltas) {
+		if (canWriteSmallOriginDeltas) {
+			// shrink the origin deltas
+			writer.seek(originOffset);
+			int originPartsWritten = 0;
+			if (old.origin[0] != origin[0]) {
+				deltaBits |= FL_DELTA_ORIGIN_X;
+				g_stats.entDeltaSz[bitoffset(FL_DELTA_ORIGIN_X)] -= 1;
+				int16_t delta = origin[0] - old.origin[0];
+				writer.write((void*)&delta, 2);
+				originPartsWritten++;
+			}
+			if (old.origin[1] != origin[1]) {
+				deltaBits |= FL_DELTA_ORIGIN_Y;
+				g_stats.entDeltaSz[bitoffset(FL_DELTA_ORIGIN_Y)] -= 1;
+				int16_t delta = origin[1] - old.origin[1];
+				writer.write((void*)&delta, 2);
+				originPartsWritten++;
+			}
+			if (old.origin[2] != origin[2]) {
+				deltaBits |= FL_DELTA_ORIGIN_Z;
+				g_stats.entDeltaSz[bitoffset(FL_DELTA_ORIGIN_Z)] -= 1;
+				int16_t delta = origin[2] - old.origin[2];
+				writer.write((void*)&delta, 2);
+				originPartsWritten++;
+			}
+			uint32_t smallOriginsEnd = originOffset + (originPartsWritten * 2);
+			uint32_t bigOriginsEnd = originOffset + (originPartsWritten * 3);
+			if (originPartsWritten) {
+				memmove(writer.getBuffer() + smallOriginsEnd,
+						writer.getBuffer() + bigOriginsEnd,
+						endOffset - bigOriginsEnd);
+				endOffset -= bigOriginsEnd - smallOriginsEnd;
+			}
+			writer.seek(startOffset);
+		}
+
 		// delta bits can fit in a single byte. Move the deltas back 3 bytes.
-		int moveBytes = (currentOffset - ENT_DELTA_BYTES) - startOffset;
-		memmove(writer.getBuffer() + startOffset + 1, writer.getBuffer() + startOffset + ENT_DELTA_BYTES, moveBytes);
+		int moveBytes = endOffset - (startOffset + ENT_DELTA_BYTES);
+		memmove(writer.getBuffer() + startOffset + 1,
+				writer.getBuffer() + startOffset + ENT_DELTA_BYTES,
+				moveBytes);
 		writer.write((void*)&deltaBits, 1);
-		writer.seek(currentOffset - (ENT_DELTA_BYTES-1));
+		writer.seek(endOffset - (ENT_DELTA_BYTES-1));
 	}
 	else {
 		deltaBits |= FL_BIGENTDELTA;
 		writer.write((void*)&deltaBits, ENT_DELTA_BYTES);
-		writer.seek(currentOffset);
+		writer.seek(endOffset);
+		g_stats.entBigUpdates++;
 	}
 
 	return EDELTA_WRITE;

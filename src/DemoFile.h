@@ -5,16 +5,27 @@
 
 // Convert floats to/from signed fixed-point integers.
 // Use this when the number of bits needed in the fixed-point representation is less than a standard type.
-// For example, if you want 24 bits instead of 32 (part of int32), or 12 instead of 16 (part of int16)
+// For example, if you want 24 bits instead of 32 (part of int32), or 12 instead of 16 (part of int16).
 // Simpler conversion logic can be used otherwise.
-// TODO: clamp values bigger than can fit in the fixed int
-#define FLOAT_TO_FIXED(v, whole_bits, frac_bits) \
-	((uint32_t)(fabs(v) * (1 << frac_bits)) | (v < 0 ? (1 << (whole_bits-1)) : 0))
-#define FIXED_TO_FLOAT(v, whole_bits, frac_bits) \
-	((v & (1 << (whole_bits-1)) ? -1.0f : 1.0f) * ( (v & (~(1 << (whole_bits-1)))) / (float)(1 << frac_bits)))
+// result will be sign-extended to fit an int32_t.
+// values that don't fit in the specified number of bits will be clamped.
+inline int32_t FLOAT_TO_FIXED(float x, int whole_bits, int frac_bits) {
+	int32_t maxVal = ((1 << (whole_bits + frac_bits - 1)) - 1);
+	int32_t minVal = -(maxVal+1);
+	int32_t r = clampf(x, minVal, maxVal) * (1 << frac_bits);
+	return r;
+}
+// x should not be sign extended to fit the int32_t it was stored in. That will be done in this function
+inline float FIXED_TO_FLOAT(int x, int whole_bits, int frac_bits) {
+	// https://graphics.stanford.edu/~seander/bithacks.html#VariableSignExtend
+	uint32_t b = whole_bits + frac_bits;
+	int m = 1U << (b - 1); // sign bit mask
 
-#define INT24_MIN -8388608
-#define INT24_MAX 8388607
+	x = x & ((1U << b) - 1); // remove sign bit
+	int r = (x ^ m) - m; // sign extended version of x
+
+	return r / (float)(1 << frac_bits);
+}
 
 #define MAX_CMD_FRAME 1024 // max client commands per frame
 #define MAX_NETMSG_FRAME 1024 // max network messages per frame
