@@ -319,7 +319,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 
 		bool playerSlotFree = true; // todo
 		bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER) && i < MAX_PLAYERS;
-		if (useBots && playerSlotFree && isPlayer && (ent->v.flags & FL_CLIENT) == 0 && fileplayerinfos[i-1].isConnected) {
+		if (useBots && playerSlotFree && isPlayer && (ent->v.flags & FL_CLIENT) == 0 && fileplayerinfos[i-1].flags) {
 			DemoPlayerEnt& info = fileplayerinfos[i - 1];
 			edict_t* bot = g_engfuncs.pfnCreateFakeClient(info.name);
 

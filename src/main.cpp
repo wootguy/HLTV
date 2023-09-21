@@ -72,7 +72,7 @@ const char* te_names[TE_NAMES] = {
 
 void ClientLeave(edict_t* ent) {
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
-	plr.isConnected = false;
+	plr.flags = 0;
 	demoStatPlayers[ENTINDEX(ent)] = false;
 	RETURN_META(MRES_IGNORED);
 }
@@ -261,7 +261,7 @@ void StartFrame() {
 			edict_t* ent = INDEXENT(i);
 			
 			if (!isValidPlayer(ent)) {
-				plr.isConnected = false;
+				plr.flags = 0;
 				continue;
 			}
 			
@@ -272,7 +272,7 @@ void StartFrame() {
 
 			if (plr.steamid64 == 0) {
 				// plugin reloaded mid-map
-				plr.isConnected = true;
+				plr.flags |= PLR_FL_CONNECTED;
 				plr.steamid64 = getSteamId64(ent);
 				char* infobuffer = g_engfuncs.pfnGetInfoKeyBuffer(ent);
 				loadPlayerInfo(ent, infobuffer);
@@ -290,7 +290,7 @@ void StartFrame() {
 void ClientJoin(edict_t* ent) {
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.steamid64 = getSteamId64(ent);
-	plr.isConnected = true;
+	plr.flags |= PLR_FL_CONNECTED;
 
 	RETURN_META(MRES_IGNORED);
 }

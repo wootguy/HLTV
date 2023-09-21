@@ -37,6 +37,8 @@
 #define FL_DELTA_COLORMAP		(1 << 28)
 #define FL_DELTA_CLASSIFYGOD	(1 << 29)
 
+#define ENT_DELTA_BYTES 4 // size of a "big" ent delta
+
 #define EDFLAG_VALID 1		// if no other flag is set, then it's a generic model entity (BSP/mdl/spr)
 #define EDFLAG_MONSTER 2	// should display health/name
 #define EDFLAG_PLAYER 4		// special model loading and rendering

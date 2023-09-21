@@ -441,13 +441,14 @@ void SvenTV::think_tvThread() {
 			for (int i = 1; i <= gpGlobals->maxClients; i++) {
 				DemoPlayerEnt& dplr = frame.playerinfos[i - 1];
 				edict_t* ent = INDEXENT(i);
+				CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
 
-				if (!isValidPlayer(ent)) {
+				if (!isValidPlayer(ent) || !plr) {
 					continue;
 				}
 
 				dplr.armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
-				dplr.button = ent->v.button & 0xffff;
+				dplr.button = (plr->m_afButtonLast | plr->m_afButtonPressed | plr->m_afButtonReleased | ent->v.button) & 0xffff;
 				dplr.fov = clamp(ent->v.fov + 0.5f, 0, 255);
 				dplr.frags = clamp(ent->v.frags, 0, UINT16_MAX);
 				dplr.punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
@@ -460,13 +461,16 @@ void SvenTV::think_tvThread() {
 				dplr.observer = ((uint8_t)ent->v.iuser2 << 6) | ((ent->v.iuser1 & 0x3) << 1) | (ent->v.deadflag != DEAD_NO);
 
 				int fl = ent->v.flags;
-				dplr.flags = (fl & FL_INWATER ? PLR_FL_INWATER : 0)
-					| (fl & FL_NOTARGET ? PLR_FL_NOTARGET : 0)
-					| (fl & (FL_ONGROUND|FL_PARTIALGROUND) ? PLR_FL_ONGROUND : 0)
-					| (fl & FL_WATERJUMP ? PLR_FL_WATERJUMP : 0)
-					| (fl & FL_FROZEN ? PLR_FL_FROZEN : 0)
-					| (fl & FL_DUCKING ? PLR_FL_DUCKING : 0)
-					| (fl & FL_NOWEAPONS ? PLR_FL_NOWEAPONS : 0);
+				if (dplr.flags & PLR_FL_CONNECTED) {
+					dplr.flags = (fl & FL_INWATER ? PLR_FL_INWATER : 0)
+						| (fl & FL_NOTARGET ? PLR_FL_NOTARGET : 0)
+						| (fl & (FL_ONGROUND | FL_PARTIALGROUND) ? PLR_FL_ONGROUND : 0)
+						| (fl & FL_WATERJUMP ? PLR_FL_WATERJUMP : 0)
+						| (fl & FL_FROZEN ? PLR_FL_FROZEN : 0)
+						| (fl & FL_DUCKING ? PLR_FL_DUCKING : 0)
+						| (fl & FL_NOWEAPONS ? PLR_FL_NOWEAPONS : 0)
+						| PLR_FL_CONNECTED;
+				}
 			}
 			loadNewData = false;
 		}

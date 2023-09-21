@@ -415,7 +415,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		}
 	}
 
-	writer.skip(4); // write delta bits later
+	writer.skip(ENT_DELTA_BYTES); // write delta bits later
 
 	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
@@ -465,16 +465,16 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		return EDELTA_NONE;
 	}
 
-	if ((deltaBits & 0xff) == deltaBits && false) {
+	if ((deltaBits & 0xff) == deltaBits) {
 		// delta bits can fit in a single byte. Move the deltas back 3 bytes.
-		int moveBytes = (currentOffset - 4) - startOffset;
-		memmove(writer.getBuffer() + startOffset + 1, writer.getBuffer() + startOffset + 4, moveBytes);
+		int moveBytes = (currentOffset - ENT_DELTA_BYTES) - startOffset;
+		memmove(writer.getBuffer() + startOffset + 1, writer.getBuffer() + startOffset + ENT_DELTA_BYTES, moveBytes);
 		writer.write((void*)&deltaBits, 1);
-		writer.seek(currentOffset-3);
+		writer.seek(currentOffset - (ENT_DELTA_BYTES-1));
 	}
 	else {
 		deltaBits |= FL_BIGENTDELTA;
-		writer.write((void*)&deltaBits, 4);
+		writer.write((void*)&deltaBits, ENT_DELTA_BYTES);
 		writer.seek(currentOffset);
 	}
 

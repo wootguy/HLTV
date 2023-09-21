@@ -156,15 +156,15 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_COLORMAP);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CLASSIFYGOD);
 
-		uint32_t sum = 0;
-		for (int i = 0; i < deltaStats.size(); i++) {
-			sum += deltaStats[i].bytes;
-		}
-
 		DeltaStat indexStat;
 		indexStat.field = "indexes";
 		indexStat.bytes = g_stats.entIndexTotalSz;
 		deltaStats.push_back(indexStat);
+
+		uint32_t sum = 0;
+		for (int i = 0; i < deltaStats.size(); i++) {
+			sum += deltaStats[i].bytes;
+		}
 
 		DeltaStat headerStat;
 		headerStat.field = "headers";
@@ -175,7 +175,7 @@ void DemoStats::showStats(edict_t* ent) {
 
 		string sumStr = formatSize(sum);
 		txt = UTIL_VarArgs("ent deltas (%s):\n", sumStr.c_str());
-		for (int i = 0; i < deltaStats.size() && i < 8; i++) {
+		for (int i = 0; i < deltaStats.size() && i < 10; i++) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}
 
@@ -187,14 +187,13 @@ void DemoStats::showStats(edict_t* ent) {
 
 	{
 		vector<DeltaStat> deltaStats;
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_CONNECTED);
+		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FLAGS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_NAME);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_MODEL);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_STEAMID);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_COLORS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PING);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PMMOVE);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FLAGS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_X);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Y);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Z);
@@ -226,7 +225,7 @@ void DemoStats::showStats(edict_t* ent) {
 
 		string sumStr = formatSize(sum);
 		txt = UTIL_VarArgs("plr deltas (%s):\n", sumStr.c_str());
-		for (int i = 0; i < deltaStats.size() && i < 8; i++) {
+		for (int i = 0; i < deltaStats.size() && i < 10; i++) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}
 
@@ -262,7 +261,7 @@ void DemoStats::showStats(edict_t* ent) {
 
 		string sumStr = formatSize(sum);
 		txt = UTIL_VarArgs("msg data (%d, %s):\n", g_stats.msgCount, sumStr.c_str());
-		for (int i = 0; i < deltaStats.size() && i < 8; i++) {
+		for (int i = 0; i < deltaStats.size() && i < 10; i++) {
 			//txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}
