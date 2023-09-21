@@ -110,7 +110,7 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 	if ((deltaBits & 0xff) == deltaBits) {
 		// delta bits can fit in a single byte. Move the deltas back a few bytes.
 		int moveBytes = (currentOffset - PLR_DELTA_BYTES) - startOffset;
-		memmove(writer.getBuffer() + startOffset + 1, writer.getBuffer() + startOffset + 3, moveBytes);
+		memmove(writer.getBuffer() + startOffset + 1, writer.getBuffer() + startOffset + PLR_DELTA_BYTES, moveBytes);
 		writer.write((void*)&deltaBits, 1);
 		writer.seek(currentOffset - (PLR_DELTA_BYTES-1));
 	}

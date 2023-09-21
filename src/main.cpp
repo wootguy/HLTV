@@ -320,7 +320,9 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 	msg.header.type = msg_type;
 	if (pOrigin) {
 		msg.header.hasOrigin = 1;
-		memcpy(msg.origin, pOrigin, 3 * sizeof(float));
+		msg.origin[0] = clamp(FLOAT_TO_FIXED(pOrigin[0], 19, 5), INT24_MIN, INT24_MAX);
+		msg.origin[1] = clamp(FLOAT_TO_FIXED(pOrigin[1], 19, 5), INT24_MIN, INT24_MAX);
+		msg.origin[2] = clamp(FLOAT_TO_FIXED(pOrigin[2], 19, 5), INT24_MIN, INT24_MAX);
 	}
 	else {
 		msg.header.hasOrigin = 0;

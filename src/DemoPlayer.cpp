@@ -832,9 +832,15 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 
 	for (int i = 0; i < numMessages; i++) {
 		reader.read(&msg.header, sizeof(DemoNetMessage));
+		float forigin[3];
 
 		if (msg.header.hasOrigin) {
-			reader.read(&msg.origin, sizeof(float) * 3);
+			reader.read(&msg.origin[0], 3);
+			reader.read(&msg.origin[1], 3);
+			reader.read(&msg.origin[2], 3);
+			forigin[0] = FIXED_TO_FLOAT(msg.origin[0], 19, 5);
+			forigin[1] = FIXED_TO_FLOAT(msg.origin[1], 19, 5);
+			forigin[2] = FIXED_TO_FLOAT(msg.origin[2], 19, 5);
 		}
 		if (msg.header.hasEdict) {
 			reader.read(&msg.eidx, 2);
@@ -854,7 +860,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 			continue; // target is not a player (bots disabled probably)
 		}
 
-		const float* ori = msg.header.hasOrigin ? msg.origin : NULL;
+		const float* ori = msg.header.hasOrigin ? forigin : NULL;
 		edict_t* ent = msg.header.hasEdict ? replayEnts[msg.eidx].GetEdict() : NULL;
 		if (!processDemoNetMessage(msg)) {
 			continue;

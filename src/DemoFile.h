@@ -77,7 +77,7 @@ struct DemoNetMessage {
 	uint8_t hasOrigin : 1;
 	uint8_t hasEdict : 1;
 	// if hasOrigin:
-	//     float[3] = origin
+	//     uint24[3] = origin (stored as 19.5 fixed point)
 	// if hasEdict:
 	//     uint16_t = edict index
 	// byte[] = message bytes
@@ -85,7 +85,7 @@ struct DemoNetMessage {
 
 struct NetMessageData {
 	DemoNetMessage header;
-	float origin[3];
+	uint32_t origin[3]; // 19.5 fixed point
 	uint16_t eidx;
 	uint8_t data[512];
 

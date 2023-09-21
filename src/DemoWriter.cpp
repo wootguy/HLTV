@@ -200,7 +200,9 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		}
 
 		if (dat.header.hasOrigin) {
-			msgbuffer.write(dat.origin, sizeof(float) * 3);
+			msgbuffer.write(&dat.origin[0], 3);
+			msgbuffer.write(&dat.origin[1], 3);
+			msgbuffer.write(&dat.origin[2], 3);
 		}
 		if (dat.header.hasEdict) {
 			msgbuffer.write(&dat.eidx, sizeof(uint16_t));
