@@ -11,6 +11,7 @@ set(SOURCE_FILES
 	src/DemoWriter.h src/DemoWriter.cpp
 	src/DemoPlayer.h src/DemoPlayer.cpp
 	src/DemoPlayerEnt.h src/DemoPlayerEnt.cpp
+	src/DemoStats.h src/DemoStats.cpp
 	src/NetClient.h src/NetClient.cpp
 	src/netedict.h src/netedict.cpp
 	src/DemoFile.h

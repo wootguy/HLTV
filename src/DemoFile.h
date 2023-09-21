@@ -89,7 +89,10 @@ struct NetMessageData {
 	uint16_t eidx;
 	uint8_t data[512];
 
-	//bool processDemoNetMessage();
+	int getSize() { 
+		return sizeof(DemoNetMessage) + (header.hasOrigin*3*sizeof(float)) 
+			+ (header.hasEdict*sizeof(uint16_t)) + header.sz;
+	}
 };
 
 // File layout:

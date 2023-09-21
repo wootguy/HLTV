@@ -1,129 +1,97 @@
 #include "DemoPlayerEnt.h"
 #include "mmlib.h"
 #include "DemoFile.h"
+#include "main.h"
 
 using namespace std;
 
 #undef read
 #undef write
 
+#define READ_DELTA(reader, deltaBits, deltaFlag, field, sz) \
+	if (deltaBits & deltaFlag) { \
+		g_stats.plrDeltaSz[bitoffset(deltaFlag)] += sz; \
+		reader.read((void*)&field, sz); \
+	}
+
+#define WRITE_DELTA(writer, deltaBits, deltaFlag, field, sz) \
+	if (old.field != field) { \
+		deltaBits |= deltaFlag; \
+		g_stats.plrDeltaSz[bitoffset(deltaFlag)] += sz; \
+		writer.write((void*)&field, sz); \
+	}
+
+#define READ_DELTA_STR(reader, deltaBits, deltaFlag, field) \
+	if (deltaBits & deltaFlag) { \
+		uint8_t len; \
+		reader.read(&len, 1); \
+		if (len >= sizeof(field)) { \
+			println("Invalid ##field length %d", (int)len); \
+			len = sizeof(field)-1; \
+		} \
+		reader.read(strBuffer, len); \
+		strBuffer[len] = '\0'; \
+		memcpy(field, strBuffer, len + 1); \
+		g_stats.plrDeltaSz[bitoffset(deltaFlag)] += len+1; \
+	}
+
+#define WRITE_DELTA_STR(writer, deltaBits, deltaFlag, field) \
+	if (strcmp(old.field, field)) { \
+		deltaBits |= deltaFlag; \
+		uint8_t len = strlen(field); \
+		g_stats.plrDeltaSz[bitoffset(deltaFlag)] += len+1; \
+		writer.write((void*)&len, 1); \
+		writer.write((void*)field, len); \
+	}
+
 int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 	uint64_t startOffset = writer.tell();
 
-	DemoPlayerDelta deltaBits; // flags which fields were changed
-	memset(&deltaBits, 0, sizeof(DemoPlayerDelta));
+	uint32_t deltaBits = 0; // flags which fields were changed
 
-	writer.skip(sizeof(DemoPlayerDelta)); // write delta bits later
+	writer.skip(3); // write delta bits later
 	uint64_t deltaStartOffset = writer.tell();
 
-	if (old.isConnected != isConnected) {
-		deltaBits.isConnectedChanged = 1;
-		writer.write((void*)&isConnected, 1);
-	}
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONNECTED, isConnected, 1);
+
 	if (isConnected) {
 		if (!old.isConnected) {
 			// new player. Start from a fresh state
 			memset((void*)(&old), 0, sizeof(DemoPlayerEnt));
 		}
 
-		if (strcmp(old.name, name) != 0) {
-			deltaBits.nameChanged = 1;
-			uint8_t len = strlen(name);
-			writer.write((void*)&len, 1);
-			writer.write((void*)&name, len);
-		}
-		if (strcmp(old.model, model) != 0) {
-			deltaBits.modelChanged = 1;
-			uint8_t len = strlen(model);
-			writer.write((void*)&len, 1);
-			writer.write((void*)&model, len);
-		}
-		if (old.steamid64 != steamid64) {
-			deltaBits.steamIdChanged = 1;
-			writer.write((void*)&steamid64, 8);
-		}
+		WRITE_DELTA_STR(writer, deltaBits, FL_DELTA_NAME, name);
+		WRITE_DELTA_STR(writer, deltaBits, FL_DELTA_MODEL, model);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_STEAMID, steamid64, 8);
 		if (old.topColor != topColor || old.bottomColor != bottomColor) {
-			deltaBits.colorsChanged = 1;
+			deltaBits |= FL_DELTA_COLORS;
 			writer.write((void*)&topColor, 1);
 			writer.write((void*)&bottomColor, 1);
 		}
-		if (old.ping != ping) {
-			deltaBits.pingChanged = 1;
-			writer.write((void*)&ping, 2);
-		}
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_PING, ping, 2);
 		if (old.pmMoveCounter != pmMoveCounter) {
-			deltaBits.pmMoveChanged = 1;
+			deltaBits |= FL_DELTA_PMMOVE;
 			uint8_t delta = clamp(pmMoveCounter - old.pmMoveCounter, 0, 255);
+			g_stats.plrDeltaSz[bitoffset(FL_DELTA_PMMOVE)] += 1; \
 			writer.write((void*)&delta, 1);
 		}
-		if (old.flags != flags) {
-			deltaBits.flagsChanged = 1;
-			writer.write((void*)&flags, 1);
-		}
-		if (old.punchangle[0] != punchangle[0]) {
-			deltaBits.punchAngleXChanged = 1;
-			writer.write((void*)&punchangle[0], 2);
-		}
-		if (old.punchangle[1] != punchangle[1]) {
-			deltaBits.punchAngleYChanged = 1;
-			writer.write((void*)&punchangle[1], 2);
-		}
-		if (old.punchangle[2] != punchangle[2]) {
-			deltaBits.punchAngleZChanged = 1;
-			writer.write((void*)&punchangle[2], 2);
-		}
-		if (old.viewmodel != viewmodel) {
-			deltaBits.viewmodelChanged = 1;
-			writer.write((void*)&viewmodel, 2);
-		}
-		if (old.weaponmodel != weaponmodel) {
-			deltaBits.weaponmodelChanged = 1;
-			writer.write((void*)&weaponmodel, 2);
-		}
-		if (old.weaponanim != weaponanim) {
-			deltaBits.weaponanimChanged = 1;
-			writer.write((void*)&weaponanim, 2);
-		}
-		if (old.armorvalue != armorvalue) {
-			deltaBits.armorvalueChanged = 1;
-			writer.write((void*)&armorvalue, 2);
-		}
-		if (old.button != button) {
-			deltaBits.buttonChanged = 1;
-			writer.write((void*)&button, 2);
-		}
-		if (old.view_ofs != view_ofs) {
-			deltaBits.view_ofsChanged = 1;
-			writer.write((void*)&view_ofs, 2);
-		}
-		if (old.frags != frags) {
-			deltaBits.fragsChanged = 1;
-			writer.write((void*)&frags, 2);
-		}
-		if (old.fov != fov) {
-			deltaBits.fovChanged = 1;
-			writer.write((void*)&fov, 1);
-		}
-		if (old.clip != clip) {
-			deltaBits.clipChanged = 1;
-			writer.write((void*)&clip, 2);
-		}
-		if (old.clip2 != clip2) {
-			deltaBits.clip2Changed = 1;
-			writer.write((void*)&clip2, 2);
-		}
-		if (old.ammo != ammo) {
-			deltaBits.ammoChanged = 1;
-			writer.write((void*)&ammo, 2);
-		}
-		if (old.ammo2 != ammo2) {
-			deltaBits.ammo2Changed = 1;
-			writer.write((void*)&ammo2, 2);
-		}
-		if (old.observer != observer) {
-			deltaBits.observerChanged = 1;
-			writer.write((void*)&observer, 1);
-		}
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_FLAGS, flags, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_PUNCHANGLE_X, punchangle[0], 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_PUNCHANGLE_Y, punchangle[1], 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_PUNCHANGLE_Z, punchangle[2], 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_VIEWMODEL, viewmodel, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_WEAPONMODEL, weaponmodel, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_WEAPONANIM, weaponanim, 1);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_ARMORVALUE, armorvalue, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_BUTTON, button, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_VIEWOFS, view_ofs, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAGS, frags, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_FOV, fov, 1);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_CLIP, clip, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_CLIP2, clip2, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_AMMO, ammo, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_AMMO2, ammo2, 2);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_OBSERVER, observer, 1);
 	}
 
 	if (writer.eom()) {
@@ -138,23 +106,21 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 		return EDELTA_NONE;
 	}
 
-	writer.write((void*)&deltaBits, sizeof(DemoPlayerDelta));
+	writer.write((void*)&deltaBits, 3);
 	writer.seek(currentOffset);
 
 	return EDELTA_WRITE;
 }
 
-DemoPlayerDelta DemoPlayerEnt::readDeltas(mstream& reader) {
-	DemoPlayerDelta deltaBits;
-	reader.read(&deltaBits, sizeof(DemoPlayerDelta));
+uint32_t DemoPlayerEnt::readDeltas(mstream& reader) {
+	uint32_t deltaBits;
+	reader.read(&deltaBits, 3);
 	static char strBuffer[256];
 
 	bool oldConnected = isConnected;
 	bool newConnected = isConnected;
 
-	if (deltaBits.isConnectedChanged) {
-		reader.read(&newConnected, 1);
-	}
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONNECTED, newConnected, 1);
 
 	if (!oldConnected && newConnected) {
 		// new player joined. Start from a fresh state.
@@ -166,92 +132,32 @@ DemoPlayerDelta DemoPlayerEnt::readDeltas(mstream& reader) {
 		return deltaBits;
 	}
 
-	if (deltaBits.nameChanged) {
-		uint8_t len;
-		reader.read(&len, 1);
-		if (len > 31) {
-			println("Invalid name length %d", (int)len);
-			len = 31;
-		}
-		reader.read(strBuffer, len);
-		strBuffer[len] = '\0';
-		memcpy(name, strBuffer, len + 1);
-	}
-	if (deltaBits.modelChanged) {
-		uint8_t len;
-		reader.read(&len, 1);
-		if (len > 22) {
-			println("Invalid name length %d", (int)len);
-			len = 22;
-		}
-		reader.read(strBuffer, len);
-		strBuffer[len] = '\0';
-		memcpy(model, strBuffer, len + 1);
-	}
-	if (deltaBits.steamIdChanged) {
-		reader.read(&steamid64, 8);
-	}
-	if (deltaBits.colorsChanged) {
+	READ_DELTA_STR(reader, deltaBits, FL_DELTA_NAME, name);
+	READ_DELTA_STR(reader, deltaBits, FL_DELTA_MODEL, model);
+	READ_DELTA(reader, deltaBits, FL_DELTA_STEAMID, steamid64, 8);
+	if (deltaBits & FL_DELTA_COLORS) {
 		reader.read(&topColor, 1);
 		reader.read(&bottomColor, 1);
 	}
-	if (deltaBits.pingChanged) {
-		reader.read(&ping, 2);
-	}
-	if (deltaBits.pmMoveChanged) {
-		reader.read(&pmMoveCounter, 1);
-	}
-	if (deltaBits.flagsChanged) {
-		reader.read(&flags, 1);
-	}
-	if (deltaBits.punchAngleXChanged) {
-		reader.read(&punchangle[0], 2);
-	}
-	if (deltaBits.punchAngleYChanged) {
-		reader.read(&punchangle[1], 2);
-	}
-	if (deltaBits.punchAngleZChanged) {
-		reader.read(&punchangle[2], 2);
-	}
-	if (deltaBits.viewmodelChanged) {
-		reader.read(&viewmodel, 2);
-	}
-	if (deltaBits.weaponmodelChanged) {
-		reader.read(&weaponmodel, 2);
-	}
-	if (deltaBits.weaponanimChanged) {
-		reader.read(&weaponanim, 2);
-	}
-	if (deltaBits.armorvalueChanged) {
-		reader.read(&armorvalue, 2);
-	}
-	if (deltaBits.buttonChanged) {
-		reader.read(&button, 2);
-	}
-	if (deltaBits.view_ofsChanged) {
-		reader.read(&view_ofs, 2);
-	}
-	if (deltaBits.fragsChanged) {
-		reader.read(&frags, 2);
-	}
-	if (deltaBits.fovChanged) {
-		reader.read(&fov, 1);
-	}
-	if (deltaBits.clipChanged) {
-		reader.read(&clip, 2);
-	}
-	if (deltaBits.clip2Changed) {
-		reader.read(&clip2, 2);
-	}
-	if (deltaBits.ammoChanged) {
-		reader.read(&ammo, 2);
-	}
-	if (deltaBits.ammo2Changed) {
-		reader.read(&ammo2, 2);
-	}
-	if (deltaBits.observerChanged) {
-		reader.read(&observer, 1);
-	}
+	READ_DELTA(reader, deltaBits, FL_DELTA_PING, ping, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_PMMOVE, pmMoveCounter, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_FLAGS, flags, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_PUNCHANGLE_X, punchangle[0], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_PUNCHANGLE_Y, punchangle[1], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_PUNCHANGLE_Z, punchangle[2], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_VIEWMODEL, viewmodel, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_WEAPONMODEL, weaponmodel, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_WEAPONANIM, weaponanim, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_ARMORVALUE, weaponanim, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_BUTTON, button, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_VIEWOFS, view_ofs, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_FRAGS, frags, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_FOV, fov, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CLIP, clip, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CLIP2, clip2, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_AMMO, ammo, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_AMMO2, ammo2, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_OBSERVER, observer, 1);
 
 	return deltaBits;
 }

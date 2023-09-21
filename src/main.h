@@ -2,6 +2,7 @@
 #include "meta_utils.h"
 #include <map>
 #include <set>
+#include "DemoStats.h"
 
 using namespace std;
 
@@ -19,6 +20,13 @@ extern cvar_t* g_demo_file_path;
 
 extern int g_copyTime;
 extern volatile int g_thinkTime;
+
+extern DemoStats g_stats;
+
+#define TE_NAMES TE_USERTRACER+1
+extern const char* te_names[TE_NAMES];
+
+int bitoffset(uint32_t flag);
 
 typedef struct usercmd_s
 {

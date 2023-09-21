@@ -56,7 +56,6 @@ void DemoWriter::initDemoFile() {
 	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 
 	fileDeltaBuffer = new char[fileDeltaBufferSize];
-	numFileDeltas = 0;
 
 	uint64_t now = getEpochMillis();
 
@@ -96,6 +95,9 @@ void DemoWriter::initDemoFile() {
 	header.modelLen = modelData.size();
 	header.soundLen = soundData.size();
 
+	memset(&g_stats, 0, sizeof(DemoStats));
+	g_stats.totalWriteSz = sizeof(DemoHeader) + header.modelLen + header.soundLen;
+
 	fwrite(&header, sizeof(DemoHeader), 1, demoFile);
 
 	if (modelData.size())
@@ -130,12 +132,15 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	uint8_t offset = 0; // always write full index for first entity delta
 
 	uint16_t numEntDeltas = 0;
+	uint32_t indexWriteSz = 0;
+	uint32_t entityUpdateCount = 0;
 	for (uint16_t i = 0; i < MAX_EDICTS; i++) {
 		netedict& now = frame.netedicts[i];
 
 		uint64_t startOffset = entbuffer.tell();
 
 		entbuffer.write(&offset, 1); // entity index the delta is for (offset from previous)
+
 		if (offset == 0) {
 			// last edict was 256+ slots away. Write full index.
 			entbuffer.write(&i, 2);
@@ -157,6 +162,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		else {
 			// delta written
 			//println("Write edict %d offset %d bytes %d", i, (int)offset, (int)(entbuffer.tell() - startOffset));
+			indexWriteSz += offset == 0 ? 3 : 1;
 			offset = 1;
 			numEntDeltas++;
 		}
@@ -188,6 +194,11 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		NetMessageData& dat = frame.netmessages[i];
 		msgbuffer.write(&dat.header, sizeof(DemoNetMessage));
 
+		g_stats.msgSz[dat.header.type] += dat.header.sz;
+		if (dat.header.type == SVC_TEMPENTITY) {
+			g_stats.msgSz[256 + dat.data[0]] += dat.header.sz;
+		}
+
 		if (dat.header.hasOrigin) {
 			msgbuffer.write(dat.origin, sizeof(float) * 3);
 		}
@@ -217,13 +228,15 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
 	memcpy(fileplayerinfos, frame.playerinfos, 32 * sizeof(DemoPlayerEnt));
 
-	int entDeltaSz = entbuffer.tell() + (entbuffer.tell() ? 2 : 0);
-	int plrDeltaSz = plrbuffer.tell() + (plrbuffer.tell() ? 4 : 0);
-	int msgSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
-	int cmdSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 2 : 0);
-	int totalSz = entDeltaSz + plrDeltaSz + msgSz + cmdSz + sizeof(DemoFrame);
-	numFileDeltas++;
-	deltaWriteSz += (uint64_t)totalSz;
+	g_stats.entDeltaCurrentSz = entbuffer.tell() + (entbuffer.tell() ? 2 : 0);
+	g_stats.plrDeltaCurrentSz = plrbuffer.tell() + (plrbuffer.tell() ? 4 : 0);
+	g_stats.msgCurrentSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
+	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 2 : 0);
+	g_stats.msgCount += frame.netmessage_count;
+	g_stats.cmdCount += frame.cmds_count;
+	g_stats.entIndexTotalSz += indexWriteSz;
+	g_stats.entUpdateCount += entityUpdateCount;
+	g_stats.incTotals();
 
 	uint8_t frameCountDelta = clamp(frame.serverFrameCount - lastServerFrameCount, 0, 255);
 	lastServerFrameCount = frame.serverFrameCount;
@@ -236,7 +249,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	header.hasPlayerDeltas = plrDeltaBits > 0;
 	header.hasCommands = frame.cmds_count > 0;
 	header.isKeyFrame = isKeyframe;
-	header.frameSize = totalSz;
+	header.frameSize = g_stats.currentWriteSz;
 
 	fwrite(&header, sizeof(DemoFrame), 1, demoFile);
 
@@ -257,12 +270,16 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
 	}
 
-	bool showstats = false;
+	bool showstats = true;
 	if (showstats) {
+		int actualSz = ftell(demoFile);
+		if (actualSz != g_stats.totalWriteSz) {
+			println("%d != %d", (int)g_stats.totalWriteSz, actualSz);
+		}
 		println("%4de %2dp %4dm %4dc    |  %4d + %4d + %4d + %4d = %4d B  |  %.1f MB file  |  %dms copy, %dms think",
 			numEntDeltas, numPlayerDeltas, frame.netmessage_count, frame.cmds_count,
-			entDeltaSz, plrDeltaSz, msgSz, cmdSz, totalSz,
-			(float)((double)deltaWriteSz / (1024.0 * 1024.0)),
+			g_stats.entDeltaCurrentSz, g_stats.plrDeltaCurrentSz, g_stats.msgCurrentSz, g_stats.cmdCurrentSz, g_stats.currentWriteSz,
+			(float)((double)g_stats.totalWriteSz / (1024.0 * 1024.0)),
 			g_copyTime, g_thinkTime);
 	}
 

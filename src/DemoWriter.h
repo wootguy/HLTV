@@ -5,6 +5,8 @@
 
 class DemoWriter {
 public:
+	int showStats = 0;
+
 	DemoWriter();
 	~DemoWriter();
 
@@ -24,9 +26,6 @@ private:
 	uint64_t nextDemoUpdate = 0;
 	float demoFileFps = 60;
 	FILE* demoFile = NULL;
-	int numFileDeltas = 0;
-	uint64_t deltaWriteSz = 0;
-	uint64_t netMsgWriteSz = 0;
 	uint64_t nextDemoKeyframe = 0;
 	uint32_t lastServerFrameCount = 0;
 	uint64_t demoStartTime = 0;

@@ -42,9 +42,38 @@ cvar_t* g_demo_file_path;
 
 const char* stateFilePath = "svencoop/addons/metamod/store/sventv.txt";
 
+DemoStats g_stats;
+bool demoStatPlayers[33] = { false };
+
+const char* te_names[TE_NAMES] = {
+	"TE_BEAMPOINTS", "TE_BEAMENTPOINT", "TE_GUNSHOT", "TE_EXPLOSION",
+	"TE_TAREXPLOSION", "TE_SMOKE", "TE_TRACER", "TE_LIGHTNING",
+	"TE_BEAMENTS", "TE_SPARKS", "TE_LAVASPLASH", "TE_TELEPORT",
+	"TE_EXPLOSION2", "TE_BSPDECAL", "TE_IMPLOSION", "TE_SPRITETRAIL", 0,
+	"TE_SPRITE", "TE_BEAMSPRITE", "TE_BEAMTORUS", "TE_BEAMDISK",
+	"TE_BEAMCYLINDER", "TE_BEAMFOLLOW", "TE_GLOWSPRITE", "TE_BEAMRING",
+	"TE_STREAK_SPLASH", 0, "TE_DLIGHT", "TE_ELIGHT", "TE_TEXTMESSAGE",
+	"TE_LINE", "TE_BOX",
+
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+
+	"TE_KILLBEAM", "TE_LARGEFUNNEL", "TE_BLOODSTREAM", "TE_SHOWLINE",
+	"TE_BLOOD", "TE_DECAL", "TE_FIZZ", "TE_MODEL",
+	"TE_EXPLODEMODEL", "TE_BREAKMODEL", "TE_GUNSHOTDECAL", "TE_SPRITE_SPRAY",
+	"TE_ARMOR_RICOCHET", "TE_PLAYERDECAL", "TE_BUBBLES", "TE_BUBBLETRAIL",
+	"TE_BLOODSPRITE", "TE_WORLDDECAL", "TE_WORLDDECALHIGH", "TE_DECALHIGH",
+	"TE_PROJECTILE", "TE_SPRAY", "TE_PLAYERSPRITES", "TE_PARTICLEBURST",
+	"TE_FIREFIELD", "TE_PLAYERATTACHMENT", "TE_KILLPLAYERATTACHMENTS",
+	"TE_MULTIGUNSHOT", "TE_USERTRACER"
+};
+
 void ClientLeave(edict_t* ent) {
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.isConnected = false;
+	demoStatPlayers[ENTINDEX(ent)] = false;
 	RETURN_META(MRES_IGNORED);
 }
 
@@ -109,6 +138,7 @@ void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 	}
 	g_demoPlayer->precacheDemo();
 	remove(stateFilePath);
+	memset(demoStatPlayers, 0, sizeof(demoStatPlayers));
 	
 	RETURN_META(MRES_IGNORED);
 }
@@ -187,6 +217,13 @@ void StartFrame() {
 
 	if (!g_sventv->enableDemoFile && g_auto_demo_file->value > 0 && gpGlobals->time > 1.0f) {
 		g_sventv->enableDemoFile = true;
+	}
+
+	for (int i = 1; i <= gpGlobals->maxClients; i++) {
+		edict_t* ent = INDEXENT(i);
+		if (demoStatPlayers[i]) {
+			g_stats.showStats(ent);
+		}
 	}
 
 	g_demoPlayer->playDemo();
@@ -275,7 +312,8 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 		println("[SvenTV] Network message capture overflow!");
 	}
 
-	g_should_write_next_message = msg_dest != MSG_ONE && msg_dest != MSG_ONE_UNRELIABLE && msg_dest != MSG_INIT;
+	//g_should_write_next_message = msg_dest != MSG_ONE && msg_dest != MSG_ONE_UNRELIABLE && msg_dest != MSG_INIT;
+	g_should_write_next_message = true;
 
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	msg.header.dest = msg_dest;
@@ -412,6 +450,10 @@ bool doCommand(edict_t* plr) {
 	}
 	if (args.ArgC() > 0 && lowerArg == ".demo") {
 		g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
+		return true;
+	}
+	if (args.ArgC() > 0 && lowerArg == ".demostats") {
+		demoStatPlayers[ENTINDEX(plr)] = true;
 		return true;
 	}
 	/*

@@ -23,6 +23,8 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	stopReplay();
 	replayFile = fopen(path.c_str(), "rb");
 
+	memset(&g_stats, 0, sizeof(DemoStats));
+
 	if (!replayFile) {
 		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
 		return false;
@@ -121,6 +123,8 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 
 	ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[SvenTV] Opened: %s\n", path.c_str()));
 
+	g_stats.totalWriteSz = sizeof(DemoHeader) + demoHeader.modelLen + demoHeader.soundLen;
+
 	if (skipPrecache) {
 		prepareDemo();
 		return true;
@@ -217,6 +221,8 @@ void DemoPlayer::closeReplayFile() {
 }
 
 bool DemoPlayer::readEntDeltas(mstream& reader) {
+	uint32_t startOffset = reader.tell();
+
 	uint16_t numEntDeltas = 0;
 	reader.read(&numEntDeltas, 2);
 
@@ -258,6 +264,8 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 			return false;
 		}
 	}
+
+	g_stats.entDeltaCurrentSz = reader.tell() - startOffset;
 
 	return true;
 }
@@ -318,7 +326,7 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 			if (bot) {
 				int eidx = ENTINDEX(bot);
 				REMOVE_ENTITY(replayEnts[i]);
-				gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot);
+				gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
 				char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
 				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
 				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
@@ -382,6 +390,27 @@ bool DemoPlayer::applyEntDeltas(DemoFrame& header) {
 
 		fileedicts[i].apply(ent, replayEnts);
 		
+		/* footsteps
+		if (ent->v.flags & FL_FAKECLIENT) {
+			float dt = 0.0167; // time between frames
+			if (ent->v.flags & FL_FAKECLIENT) {
+				ent->v.flags |= FL_ONGROUND;
+				ent->v.movetype = MOVETYPE_WALK;
+				float speed = ent->v.velocity.Length();
+				uint8_t msec = clampf(dt * 1000, 0, 255);
+				println("SPEED %.1f %d", speed, msec);
+				Vector oldVel = ent->v.velocity;
+				Vector oldOri = ent->v.origin;
+				Vector oldAngles = ent->v.angles;
+				g_engfuncs.pfnRunPlayerMove(ent, ent->v.angles, speed, 0, 0, 0, 0, msec);
+				ent->v.velocity = oldVel;
+				ent->v.origin = oldOri;
+				ent->v.angles = oldAngles;
+				ent->v.movetype = MOVETYPE_NOCLIP;
+			}
+		}
+		*/
+
 		// interpolation setup
 		if (fileedicts[i].edtype != NETED_MONSTER) {
 			ent->v.vuser3 = ent->v.vuser4; // previous origin
@@ -491,6 +520,8 @@ void DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 }
 
 bool DemoPlayer::readPlayerDeltas(mstream& reader) {
+	uint32_t startOffset = reader.tell();
+
 	uint32_t includedPlayers = 0;
 	reader.read(&includedPlayers, 4);
 
@@ -500,7 +531,7 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 			continue;
 		}
 
-		DemoPlayerDelta deltas = fileplayerinfos[i].readDeltas(reader);
+		uint32_t deltas = fileplayerinfos[i].readDeltas(reader);
 		numPlayerDeltas++;
 
 		if (i+1 < replayEnts.size()) {
@@ -512,20 +543,20 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
 			DemoPlayerEnt& info = fileplayerinfos[i];
 
-			if (deltas.nameChanged) {
+			if (deltas & FL_DELTA_NAME) {
 				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", info.name);
 			}
-			if (deltas.modelChanged) {
+			if (deltas & FL_DELTA_MODEL) {
 				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
 			}
-			if (deltas.colorsChanged) {
+			if (deltas & FL_DELTA_COLORS) {
 				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
 				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
 			}
-			if (deltas.weaponmodelChanged) {
+			if (deltas & FL_DELTA_WEAPONMODEL) {
 				bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel).c_str());
 			}
-			if (deltas.viewmodelChanged) {
+			if (deltas & FL_DELTA_VIEWMODEL) {
 				bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel).c_str());
 			}
 			bot->v.frags = info.frags;
@@ -537,6 +568,8 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 	}
 
 	//println("Got %d player deltas", numPlayerDeltas);
+
+	g_stats.plrDeltaCurrentSz = reader.tell() - startOffset;
 
 	return !reader.eom();
 }
@@ -622,31 +655,6 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		2, // TE_KILLPLAYERATTACHMENTS
 		35, // TE_MULTIGUNSHOT
 		31 // TE_USERTRACER		
-	};
-
-	static const char* te_names[TE_USERTRACER + 1] = {
-		"TE_BEAMPOINTS", "TE_BEAMENTPOINT", "TE_GUNSHOT", "TE_EXPLOSION",
-		"TE_TAREXPLOSION", "TE_SMOKE", "TE_TRACER", "TE_LIGHTNING",
-		"TE_BEAMENTS", "TE_SPARKS", "TE_LAVASPLASH", "TE_TELEPORT",
-		"TE_EXPLOSION2", "TE_BSPDECAL", "TE_IMPLOSION", "TE_SPRITETRAIL", 0,
-		"TE_SPRITE", "TE_BEAMSPRITE", "TE_BEAMTORUS", "TE_BEAMDISK",
-		"TE_BEAMCYLINDER", "TE_BEAMFOLLOW", "TE_GLOWSPRITE", "TE_BEAMRING",
-		"TE_STREAK_SPLASH", 0, "TE_DLIGHT", "TE_ELIGHT", "TE_TEXTMESSAGE",
-		"TE_LINE", "TE_BOX",
-
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-
-		"TE_KILLBEAM", "TE_LARGEFUNNEL", "TE_BLOODSTREAM", "TE_SHOWLINE",
-		"TE_BLOOD", "TE_DECAL", "TE_FIZZ", "TE_MODEL",
-		"TE_EXPLODEMODEL", "TE_BREAKMODEL", "TE_GUNSHOTDECAL", "TE_SPRITE_SPRAY",
-		"TE_ARMOR_RICOCHET", "TE_PLAYERDECAL", "TE_BUBBLES", "TE_BUBBLETRAIL",
-		"TE_BLOODSPRITE", "TE_WORLDDECAL", "TE_WORLDDECALHIGH", "TE_DECALHIGH",
-		"TE_PROJECTILE", "TE_SPRAY", "TE_PLAYERSPRITES", "TE_PARTICLEBURST",
-		"TE_FIREFIELD", "TE_PLAYERATTACHMENT", "TE_KILLPLAYERATTACHMENTS",
-		"TE_MULTIGUNSHOT", "TE_USERTRACER"
 	};
 
 	int expectedSz = expectedSzLookup[type];
@@ -789,8 +797,11 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 	byte* args = msg.data;
 	uint16_t* args16 = (uint16_t*)args;
 
+	g_stats.msgSz[msg.header.type] += msg.header.sz;
+
 	switch (msg.header.type) {
 	case SVC_TEMPENTITY:
+		g_stats.msgSz[256 + msg.data[0]] += msg.header.sz;
 		return processTempEntityMessage(msg);
 	case MSG_StartSound: {
 		uint16_t& flags = *(uint16_t*)(args);
@@ -807,6 +818,8 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 }
 
 bool DemoPlayer::readNetworkMessages(mstream& reader) {
+	uint32_t startOffset = reader.tell();
+
 	uint16_t numMessages;
 	reader.read(&numMessages, 2);
 
@@ -863,10 +876,15 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 		//println("Read msg %d", (int)msg.type);
 	}
 
+	g_stats.msgCurrentSz = reader.tell() - startOffset;
+	g_stats.msgCount += numMessages;
+
 	return true;
 }
 
 bool DemoPlayer::readClientCommands(mstream& reader) {
+	uint32_t startOffset = reader.tell();
+
 	uint16_t numCommands;
 	reader.read(&numCommands, 2);
 
@@ -910,6 +928,9 @@ bool DemoPlayer::readClientCommands(mstream& reader) {
 
 		println("[SvenTV][Cmd][%s][%s] %s", legacySteamId, plr.name, commandChars);
 	}
+
+	g_stats.cmdCurrentSz = reader.tell() - startOffset;
+	g_stats.cmdCount += numCommands;
 
 	return true;
 }
@@ -966,6 +987,8 @@ bool DemoPlayer::readDemoFrame() {
 		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 	}
 
+	g_stats.entDeltaCurrentSz = g_stats.plrDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = 0;
+
 	if (header.hasEntityDeltas && (!readEntDeltas(reader) || !applyEntDeltas(header))) {
 		delete[] frameData;
 		return false;
@@ -985,6 +1008,8 @@ bool DemoPlayer::readDemoFrame() {
 		delete[] frameData;
 		return false;
 	}
+
+	g_stats.incTotals();
 
 	replayFrame++;
 

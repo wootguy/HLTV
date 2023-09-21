@@ -1,10 +1,24 @@
 #include "netedict.h"
 #include "DemoFile.h"
+#include "main.h"
 
 using namespace std;
 
 #undef read
 #undef write
+
+#define READ_DELTA(reader, deltaBits, deltaFlag, field, sz) \
+	if (deltaBits & deltaFlag) { \
+		g_stats.entDeltaSz[bitoffset(deltaFlag)] += sz; \
+		reader.read((void*)&field, sz); \
+	}
+
+#define WRITE_DELTA(writer, deltaBits, deltaFlag, field, sz) \
+	if (old.field != field) { \
+		deltaBits |= deltaFlag; \
+		g_stats.entDeltaSz[bitoffset(deltaFlag)] += sz; \
+		writer.write((void*)&field, sz); \
+	}
 
 netedict::netedict() {
 	memset(&edtype, 0, sizeof(netedict));
@@ -325,9 +339,7 @@ bool netedict::readDeltas(mstream& reader) {
 	uint8_t oldEdtype = edtype;
 	uint8_t newEdtype = edtype;
 
-	if (deltaBits & FL_DELTA_EDTYPE) {
-		reader.read((void*)&newEdtype, 1);
-	}
+	READ_DELTA(reader, deltaBits, FL_DELTA_EDTYPE, newEdtype, 1);
 
 	if (oldEdtype == NETED_INVALID && newEdtype != NETED_INVALID) {
 		// new entity created. Start deltas from a fresh state.
@@ -338,90 +350,34 @@ bool netedict::readDeltas(mstream& reader) {
 
 	int angleSz = edtype == NETED_BEAM ? 3 : 2;
 
-	if (deltaBits & FL_DELTA_ORIGIN_X) {
-		reader.read((void*)&origin[0], 3);
-	}
-	if (deltaBits & FL_DELTA_ORIGIN_Y) {
-		reader.read((void*)&origin[1], 3);
-	}
-	if (deltaBits & FL_DELTA_ORIGIN_Z) {
-		reader.read((void*)&origin[2], 3);
-	}
-	if (deltaBits & FL_DELTA_ANGLES_X) {
-		reader.read((void*)&angles[0], angleSz);
-	}
-	if (deltaBits & FL_DELTA_ANGLES_Y) {
-		reader.read((void*)&angles[1], angleSz);
-	}
-	if (deltaBits & FL_DELTA_ANGLES_Z) {
-		reader.read((void*)&angles[2], angleSz);
-	}
-	if (deltaBits & FL_DELTA_MODELINDEX) {
-		reader.read((void*)&modelindex, 2);
-	}
-	if (deltaBits & FL_DELTA_SKIN) {
-		reader.read((void*)&skin, 1);
-	}
-	if (deltaBits & FL_DELTA_BODY) {
-		reader.read((void*)&body, 1);
-	}
-	if (deltaBits & FL_DELTA_EFFECTS) {
-		reader.read((void*)&effects, 2);
-	}
-	if (deltaBits & FL_DELTA_SEQUENCE) {
-		reader.read((void*)&sequence, 1);
-	}
-	if (deltaBits & FL_DELTA_GAITSEQUENCE) {
-		reader.read((void*)&gaitsequence, 1);
-	}
-	if (deltaBits & FL_DELTA_FRAME) {
-		reader.read((void*)&frame, 1);
-	}
-	if (deltaBits & FL_DELTA_FRAMERATE) {
-		reader.read((void*)&framerate, 1);
-	}
-	if (deltaBits & FL_DELTA_CONTROLLER_0) {
-		reader.read((void*)&controller[0], 1);
-	}
-	if (deltaBits & FL_DELTA_CONTROLLER_1) {
-		reader.read((void*)&controller[1], 1);
-	}
-	if (deltaBits & FL_DELTA_CONTROLLER_HI) {
-		reader.read((void*)&controller[2], 2);
-	}
-	if (deltaBits & FL_DELTA_SCALE) {
-		reader.read((void*)&scale, 2);
-	}
-	if (deltaBits & FL_DELTA_RENDERMODE) {
-		reader.read((void*)&rendermode, 1);
-	}
-	if (deltaBits & FL_DELTA_RENDERAMT) {
-		reader.read((void*)&renderamt, 1);
-	}
-	if (deltaBits & FL_DELTA_RENDERCOLOR_0) {
-		reader.read((void*)&rendercolor[0], 1);
-	}
-	if (deltaBits & FL_DELTA_RENDERCOLOR_1) {
-		reader.read((void*)&rendercolor[1], 1);
-	}
-	if (deltaBits & FL_DELTA_RENDERCOLOR_2) {
-		reader.read((void*)&rendercolor[2], 1);
-	}
-	if (deltaBits & FL_DELTA_RENDERFX) {
-		reader.read((void*)&renderfx, 1);
-	}
-	if (deltaBits & FL_DELTA_AIMENT) {
-		reader.read((void*)&aiment, 2);
-	}
-	if (deltaBits & FL_DELTA_HEALTH) {
-		reader.read((void*)&health, 4);
-	}
-	if (deltaBits & FL_DELTA_COLORMAP) {
-		reader.read((void*)&colormap, 1);
-	}
-	if (deltaBits & FL_DELTA_CLASSIFYGOD) {
-		reader.read((void*)&classifyGod, 1);
-	}
+	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
+	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
+	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
+	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_X, angles[0], angleSz);
+	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Y, angles[1], angleSz);
+	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Z, angles[2], angleSz);
+	READ_DELTA(reader, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_SKIN, skin, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_BODY, body, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_EFFECTS, effects, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_0, controller[0], 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_1, controller[1], 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller[2], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_SCALE, scale, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERMODE, rendermode, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERFX, renderfx, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_AIMENT, aiment, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_HEALTH, health, 4);
+	READ_DELTA(reader, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CLASSIFYGOD, classifyGod, 1);
 
 	return true;
 }
@@ -458,122 +414,39 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	int angleSz = edtype == NETED_BEAM ? 3 : 2;
 
-	if (old.edtype != edtype) {
-		deltaBits |= FL_DELTA_EDTYPE;
-		writer.write((void*)&edtype, 1);
-	}
-	if (old.origin[0] != origin[0]) {
-		deltaBits |= FL_DELTA_ORIGIN_X;
-		writer.write((void*)&origin[0], 3);
-	}
-	if (old.origin[1] != origin[1]) {
-		deltaBits |= FL_DELTA_ORIGIN_Y;
-		writer.write((void*)&origin[1], 3);
-	}
-	if (old.origin[2] != origin[2]) {
-		deltaBits |= FL_DELTA_ORIGIN_Z;
-		writer.write((void*)&origin[2], 3);
-	}
-	if (old.angles[0] != angles[0]) {
-		deltaBits |= FL_DELTA_ANGLES_X;
-		writer.write((void*)&angles[0], angleSz);
-	}
-	if (old.angles[1] != angles[1]) {
-		deltaBits |= FL_DELTA_ANGLES_Y;
-		writer.write((void*)&angles[1], angleSz);
-	}
-	if (old.angles[2] != angles[2]) {
-		deltaBits |= FL_DELTA_ANGLES_Z;
-		writer.write((void*)&angles[2], angleSz);
-	}
-	if (old.modelindex != modelindex) {
-		deltaBits |= FL_DELTA_MODELINDEX;
-		writer.write((void*)&modelindex, 2);
-	}
-	if (old.skin != skin) {
-		deltaBits |= FL_DELTA_SKIN;
-		writer.write((void*)&skin, 1);
-	}
-	if (old.body != body) {
-		deltaBits |= FL_DELTA_BODY;
-		writer.write((void*)&body, 1);
-	}
-	if (old.effects != effects) {
-		deltaBits |= FL_DELTA_EFFECTS;
-		writer.write((void*)&effects, 2);
-	}
-	if (old.sequence != sequence) {
-		deltaBits |= FL_DELTA_SEQUENCE;
-		writer.write((void*)&sequence, 1);
-	}
-	if (old.gaitsequence != gaitsequence) {
-		deltaBits |= FL_DELTA_GAITSEQUENCE;
-		writer.write((void*)&gaitsequence, 1);
-	}
-	if (old.frame != frame) {
-		deltaBits |= FL_DELTA_FRAME;
-		writer.write((void*)&frame, 1);
-	}
-	if (old.framerate != framerate) {
-		deltaBits |= FL_DELTA_FRAMERATE;
-		writer.write((void*)&framerate, 1);
-	}
-	if (old.controller[0] != controller[0]) {
-		deltaBits |= FL_DELTA_CONTROLLER_0;
-		writer.write((void*)&controller[0], 1);
-	}
-	if (old.controller[1] != controller[1]) {
-		deltaBits |= FL_DELTA_CONTROLLER_1;
-		writer.write((void*)&controller[1], 1);
-	}
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_EDTYPE, edtype, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_ANGLES_X, angles[0], angleSz);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_ANGLES_Y, angles[1], angleSz);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_ANGLES_Z, angles[2], angleSz);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_SKIN, skin, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_BODY, body, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_EFFECTS, effects, 2);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAME, frame, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_0, controller[0], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_1, controller[1], 1);
 	if (old.controller[2] != controller[2] || old.controller[3] != controller[3]) {
 		deltaBits |= FL_DELTA_CONTROLLER_HI;
+		g_stats.entDeltaSz[bitoffset(FL_DELTA_CONTROLLER_HI)] += 2;
 		writer.write((void*)&controller[2], 2);
 	}
-	if (old.scale != scale) {
-		deltaBits |= FL_DELTA_SCALE;
-		writer.write((void*)&scale, 2);
-	}
-	if (old.rendermode != rendermode) {
-		deltaBits |= FL_DELTA_RENDERMODE;
-		writer.write((void*)&rendermode, 1);
-	}
-	if (old.renderamt != renderamt) {
-		deltaBits |= FL_DELTA_RENDERAMT;
-		writer.write((void*)&renderamt, 1);
-	}
-	if (old.rendercolor[0] != rendercolor[0]) {
-		deltaBits |= FL_DELTA_RENDERCOLOR_0;
-		writer.write((void*)&rendercolor[0], 1);
-	}
-	if (old.rendercolor[1] != rendercolor[1]) {
-		deltaBits |= FL_DELTA_RENDERCOLOR_1;
-		writer.write((void*)&rendercolor[1], 1);
-	}
-	if (old.rendercolor[2] != rendercolor[2]) {
-		deltaBits |= FL_DELTA_RENDERCOLOR_2;
-		writer.write((void*)&rendercolor[2], 1);
-	}
-	if (old.renderfx != renderfx) {
-		deltaBits |= FL_DELTA_RENDERFX;
-		writer.write((void*)&renderfx, 1);
-	}
-	if (old.aiment != aiment) {
-		deltaBits |= FL_DELTA_AIMENT;
-		writer.write((void*)&aiment, 2);
-	}
-	if (old.health != health) {
-		deltaBits |= FL_DELTA_HEALTH;
-		writer.write((void*)&health, 4);
-	}
-	if (old.colormap != colormap) {
-		deltaBits |= FL_DELTA_COLORMAP;
-		writer.write((void*)&colormap, 1);
-	}
-	if (old.classifyGod != classifyGod) {
-		deltaBits |= FL_DELTA_CLASSIFYGOD;
-		writer.write((void*)&classifyGod, 1);
-	}
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_SCALE, scale, 2);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERMODE, rendermode, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERFX, renderfx, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_AIMENT, aiment, 2);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_HEALTH, health, 4);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_CLASSIFYGOD, classifyGod, 1);
 
 	if (writer.eom()) {
 		writer.seek(startOffset);

@@ -10,56 +10,30 @@
 #define PLR_FL_DUCKING 32
 #define PLR_FL_NOWEAPONS 64
 
-#pragma pack(push, 1)
-
-struct DemoPlayerDelta {
-	uint8_t isConnectedChanged : 1;
-	uint8_t nameChanged : 1;
-	uint8_t modelChanged : 1;
-	uint8_t steamIdChanged : 1;
-	uint8_t colorsChanged : 1;
-	uint8_t pingChanged : 1;
-	uint8_t pmMoveChanged : 1;
-	uint8_t flagsChanged : 1;
-
-	uint8_t punchAngleXChanged : 1;
-	uint8_t punchAngleYChanged : 1;
-	uint8_t punchAngleZChanged : 1;
-	uint8_t viewmodelChanged : 1;
-	uint8_t weaponmodelChanged : 1;
-	uint8_t weaponanimChanged : 1;
-	uint8_t armorvalueChanged : 1;
-	uint8_t buttonChanged : 1;
-
-	uint8_t view_ofsChanged : 1;
-	uint8_t fragsChanged : 1;
-	uint8_t fovChanged : 1;
-	uint8_t clipChanged : 1;
-	uint8_t clip2Changed : 1;
-	uint8_t ammoChanged : 1;
-	uint8_t ammo2Changed : 1;
-	uint8_t observerChanged : 1;
-
-	// if isConnectedChanged:
-	//     uint8 = is connected
-	// if name changed:
-	//     uint8 = name length
-	//     char[] = name bytes (max 31)
-	// if model changed:
-	//     uint8 = model length
-	//     char[] = model bytes (max 22)
-	// if steamIdChanged:
-	//     uint64_t = steamid64 bytes
-	// if colorsChanged:
-	//     byte = top color
-	//     byte = bottom color
-	// if ping changed:
-	//		uint16 = ping
-	// if pmMoveDeltaChanged:
-	//      uint8 = movement commands since last delta
-};
-
-#pragma pack(pop)
+#define FL_DELTA_CONNECTED		(1 << 0)
+#define FL_DELTA_NAME			(1 << 1)
+#define FL_DELTA_MODEL			(1 << 2)
+#define FL_DELTA_STEAMID		(1 << 3)
+#define FL_DELTA_COLORS			(1 << 4)
+#define FL_DELTA_PING			(1 << 5)
+#define FL_DELTA_PMMOVE			(1 << 6)
+#define FL_DELTA_FLAGS			(1 << 7)
+#define FL_DELTA_PUNCHANGLE_X	(1 << 8)
+#define FL_DELTA_PUNCHANGLE_Y	(1 << 9)
+#define FL_DELTA_PUNCHANGLE_Z	(1 << 10)
+#define FL_DELTA_VIEWMODEL		(1 << 11)
+#define FL_DELTA_WEAPONMODEL	(1 << 12)
+#define FL_DELTA_WEAPONANIM		(1 << 13)
+#define FL_DELTA_ARMORVALUE		(1 << 14)
+#define FL_DELTA_BUTTON			(1 << 15)
+#define FL_DELTA_VIEWOFS		(1 << 16)
+#define FL_DELTA_FRAGS			(1 << 17)
+#define FL_DELTA_FOV			(1 << 18)
+#define FL_DELTA_CLIP			(1 << 19)
+#define FL_DELTA_CLIP2			(1 << 20)
+#define FL_DELTA_AMMO			(1 << 21)
+#define FL_DELTA_AMMO2			(1 << 22)
+#define FL_DELTA_OBSERVER		(1 << 23)
 
 // extra info for player entities (combined with netedict data)
 // TODO: weapon bits?
@@ -93,5 +67,5 @@ struct DemoPlayerEnt {
 	uint16_t	ammo2;
 
 	int writeDeltas(mstream& writer, const DemoPlayerEnt& old);
-	DemoPlayerDelta readDeltas(mstream& reader);
+	uint32_t readDeltas(mstream& reader);
 };
