@@ -301,7 +301,7 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 
 				edict_t* copyent = simEnts[aiment];
 
-				if ((edflags & (EDFLAG_MONSTER|EDFLAG_PLAYER)) == 0 && vars.skin && vars.body) {
+				if (!(edflags & (EDFLAG_MONSTER|EDFLAG_PLAYER)) && vars.skin && vars.body) {
 					GET_ATTACHMENT(copyent, vars.body-1, vars.origin, vars.angles);
 					vars.skin = 0;
 					vars.body = 0;
@@ -322,13 +322,19 @@ void netedict::apply(edict_t* ed, vector<EHandle>& simEnts) {
 	}
 
 	// calculate instantaneous velocity for gait calculations
-	if (edflags == EDFLAG_PLAYER)
+	if (edflags & EDFLAG_PLAYER)
 		vars.velocity = (vars.origin - oldorigin);
 }
 
 bool netedict::readDeltas(mstream& reader) {
-	uint32_t deltaBits;
-	reader.read(&deltaBits, 4);
+	uint32_t deltaBits = 0;
+	reader.read(&deltaBits, 1);
+
+	if (deltaBits & FL_BIGENTDELTA) {
+		uint32_t upperBits = 0;
+		reader.read(&upperBits, 3);
+		deltaBits = deltaBits | (upperBits << 8);
+	}
 
 	if (deltaBits == 0) {
 		edflags = 0;
@@ -349,6 +355,7 @@ bool netedict::readDeltas(mstream& reader) {
 
 	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
+	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
@@ -361,7 +368,6 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_0, controller[0], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_1, controller[1], 1);
@@ -388,10 +394,10 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	uint8_t newedflags = edflags;
 
-	if (old.edflags != newedflags) {
-		if (!edflags) {
+	if ((old.edflags & EDFLAG_VALID) != (newedflags & EDFLAG_VALID)) {
+		if (!(edflags & EDFLAG_VALID)) {
 			// 0 deltas indicates edict was deleted
-			writer.write(&deltaBits, 4);
+			writer.write(&deltaBits, 1);
 
 			if (writer.eom()) {
 				writer.seek(startOffset);
@@ -404,7 +410,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			// new entity created. Start from a fresh state.
 			// some vars may have changed while we didn't send deltas but still memcpy()'d
 			// to fileedicts as if the client knows the latest state.
-			memset(this, 0, sizeof(netedict));
+			memset(&old, 0, sizeof(netedict));
 			edflags = newedflags;
 		}
 	}
@@ -414,6 +420,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_EDFLAGS, edflags, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAME, frame, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
@@ -426,7 +433,6 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAME, frame, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_0, controller[0], 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_1, controller[1], 1);
@@ -459,8 +465,18 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		return EDELTA_NONE;
 	}
 
-	writer.write((void*)&deltaBits, 4);
-	writer.seek(currentOffset);
+	if ((deltaBits & 0xff) == deltaBits && false) {
+		// delta bits can fit in a single byte. Move the deltas back 3 bytes.
+		int moveBytes = (currentOffset - 4) - startOffset;
+		memmove(writer.getBuffer() + startOffset + 1, writer.getBuffer() + startOffset + 4, moveBytes);
+		writer.write((void*)&deltaBits, 1);
+		writer.seek(currentOffset-3);
+	}
+	else {
+		deltaBits |= FL_BIGENTDELTA;
+		writer.write((void*)&deltaBits, 4);
+		writer.seek(currentOffset);
+	}
 
 	return EDELTA_WRITE;
 }
