@@ -144,6 +144,7 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_0);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_1);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_HI);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_BLENDING);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_SCALE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERMODE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERAMT);

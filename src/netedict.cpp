@@ -172,6 +172,7 @@ void netedict::load(const edict_t& ed) {
 	uint16_t newModelindex = vars.modelindex;
 	
 	memcpy(controller, vars.controller, 4);
+	memcpy(&blending, vars.blending, 2);
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermode = vars.rendermode;
 	renderamt = vars.renderamt;
@@ -261,6 +262,7 @@ void netedict::apply(edict_t* ed) {
 	vars.frame = frame;
 	vars.framerate = framerate / 16.0f;
 	memcpy(vars.controller, controller, 4);
+	memcpy(vars.blending, &blending, 2);
 	vars.scale = scale / 256.0f;
 	vars.rendermode = rendermode;
 	vars.renderamt = renderamt;
@@ -410,6 +412,7 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_0, controller[0], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_1, controller[1], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller[2], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_BLENDING, blending, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_SCALE, scale, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERMODE, rendermode, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
@@ -493,6 +496,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		g_stats.entDeltaSz[bitoffset(FL_DELTA_CONTROLLER_HI)] += 2;
 		writer.write((void*)&controller[2], 2);
 	}
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_BLENDING, blending, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SCALE, scale, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERMODE, rendermode, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);

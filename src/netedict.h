@@ -29,17 +29,18 @@
 #define FL_DELTA_CONTROLLER_0	(1 << 16)
 #define FL_DELTA_CONTROLLER_1	(1 << 17)
 #define FL_DELTA_CONTROLLER_HI	(1 << 18)	// rare for something to have more than 2 controllers
-#define FL_DELTA_SCALE			(1 << 19)
-#define FL_DELTA_RENDERMODE		(1 << 20)
-#define FL_DELTA_RENDERAMT		(1 << 21)
-#define FL_DELTA_RENDERCOLOR_0	(1 << 22)
-#define FL_DELTA_RENDERCOLOR_1	(1 << 23)
-#define FL_DELTA_RENDERCOLOR_2	(1 << 24)
-#define FL_DELTA_RENDERFX		(1 << 25)
-#define FL_DELTA_AIMENT			(1 << 26)
-#define FL_DELTA_HEALTH			(1 << 27)
-#define FL_DELTA_COLORMAP		(1 << 28)
-#define FL_DELTA_CLASSIFYGOD	(1 << 29)
+#define FL_DELTA_BLENDING		(1 << 19)
+#define FL_DELTA_SCALE			(1 << 20)
+#define FL_DELTA_RENDERMODE		(1 << 21)
+#define FL_DELTA_RENDERAMT		(1 << 22)
+#define FL_DELTA_RENDERCOLOR_0	(1 << 23)
+#define FL_DELTA_RENDERCOLOR_1	(1 << 24)
+#define FL_DELTA_RENDERCOLOR_2	(1 << 25)
+#define FL_DELTA_RENDERFX		(1 << 26)
+#define FL_DELTA_AIMENT			(1 << 27)
+#define FL_DELTA_HEALTH			(1 << 28)
+#define FL_DELTA_COLORMAP		(1 << 29)
+#define FL_DELTA_CLASSIFYGOD	(1 << 30)
 
 #define ENT_DELTA_BYTES 4 // size of a "big" ent delta
 
@@ -66,6 +67,7 @@ struct netedict {
 	uint8_t		frame;			// % playback position in animation sequences (0..255)
 	int8_t		framerate;		// animation playback rate (-8x to 8x) (4.4 fixed point)
 	uint8_t		controller[4];	// bone controller setting (0..255)
+	uint16_t	blending;		// animation blends (grunts crouching+shooting)
 
 	uint16_t	scale;			// rendering scale (0..255) (8.8 fixed point)
 
