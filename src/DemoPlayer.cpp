@@ -391,6 +391,13 @@ bool DemoPlayer::createReplayEntities(int count) {
 void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 	InterpInfo& interp = replayEnts[i].interp;
 
+	if (fileedicts[i].deltaBitsLast & FL_DELTA_EDFLAGS) {
+		// entity type changed. Don't interpolate first frame
+		interp.originStart = interp.originEnd = ent->v.origin;
+		interp.anglesStart = interp.anglesEnd = ent->v.angles;
+		interp.frameStart = interp.frameEnd = ent->v.frame;
+	}
+
 	// interpolation setup
 	if (!(fileedicts[i].edflags & EDFLAG_MONSTER)) {
 		interp.originStart = interp.originEnd;
@@ -398,68 +405,8 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 
 		interp.anglesStart = interp.anglesEnd;
 		interp.anglesEnd = ent->v.angles;
-
-		interp.frameStart = interp.frameEnd;
-		interp.frameEnd = ent->v.frame;
-
-		interp.sequenceStart = interp.sequenceEnd;
-		interp.sequenceEnd = ent->v.sequence;
 	}
 	else if (fileedicts[i].edflags & EDFLAG_MONSTER) {
-		// TODO: load last deltabits or smth
-		if (fileedicts[i].deltaBitsLast & FL_DELTA_FRAME) {
-			float framerate = interp.framerateSmd * interp.framerateEnt;
-			float secondsPerFrame = framerate ? (1.0f / framerate) : 0;
-			int8_t error = (int8_t)ent->v.frame - (int8_t)interp.interpFrame; // uint8_t will handle looping
-			float estimateError = error * secondsPerFrame;
-
-			bool sequenceChanged = interp.sequenceEnd != ent->v.sequence;
-			bool shouldUpdateInterp = fabs(estimateError) > 0.1f || sequenceChanged;			
-
-			println("ESTIMATE ERROR: (%d - %d) = %.2f",
-				(int)((uint8_t)ent->v.frame), (int)((uint8_t)interp.interpFrame), estimateError);
-
-			if (shouldUpdateInterp) {
-				interp.frameEnd = ent->v.frame;
-				interp.animTime = gpGlobals->time;
-				if (sequenceChanged) {
-					println("(ZOMG SEQUENCE CHANGE)");
-				}
-				else {
-					if (estimateError > 0.2f) {
-						println("((WTF WAY WRONG))");
-					}
-					println("(ZOMG SYNC IT)");
-				}
-			}
-			else {
-				ent->v.frame = interp.interpFrame;
-			}
-
-			if (sequenceChanged || interp.framerateSmd == 0) {
-				CBaseAnimating* anim = (CBaseAnimating*)GET_PRIVATE(ent);
-
-				if (anim) {
-					void* pmodel = GET_MODEL_PTR(ent);
-
-					studiohdr_t* pstudiohdr;
-					pstudiohdr = (studiohdr_t*)pmodel;
-					if (pstudiohdr && pstudiohdr->id == 1414743113 && pstudiohdr->version == 10) {
-						GetSequenceInfo(pmodel, &ent->v, &interp.framerateSmd, &interp.groundspeed);
-					}
-					else {
-						println("Invalid studio model: %s", STRING(ent->v.model));
-					}
-				}
-				else {
-					println("Not normal anim");
-				}
-			}
-
-			interp.sequenceStart = interp.sequenceEnd;
-			interp.sequenceEnd = ent->v.sequence;
-		}
-
 		// monster data is updated at a framerate independent of the server
 		uint32_t originMask = FL_DELTA_ORIGIN_X | FL_DELTA_ORIGIN_Y | FL_DELTA_ORIGIN_Z;
 		uint32_t anglesMask = FL_DELTA_ANGLES_X | FL_DELTA_ANGLES_Y | FL_DELTA_ANGLES_Z;
@@ -474,6 +421,42 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 			interp.lastMovementTime = gpGlobals->time;
 		}
 	}
+
+	// frame prediction
+	if (fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) {
+		uint32_t animMask = FL_DELTA_FRAME | FL_DELTA_SEQUENCE | FL_DELTA_FRAMERATE;
+		if (fileedicts[i].deltaBitsLast & animMask) {
+			bool sequenceChanged = interp.sequenceEnd != ent->v.sequence;
+
+			interp.frameEnd = ent->v.frame; // interpolate from here
+			interp.animTime = gpGlobals->time; // time frame was set
+
+			if (sequenceChanged || interp.framerateSmd == 0) {
+				CBaseAnimating* anim = (CBaseAnimating*)GET_PRIVATE(ent);
+
+				if (anim) {
+					void* pmodel = GET_MODEL_PTR(ent);
+
+					studiohdr_t* pstudiohdr;
+					pstudiohdr = (studiohdr_t*)pmodel;
+					if (pstudiohdr && pstudiohdr->id == 1414743113 && pstudiohdr->version == 10) {
+						GetSequenceInfo(pmodel, &ent->v, &interp.framerateSmd, &interp.groundspeed);
+						interp.sequenceLoops = ((GetSequenceFlags(pmodel, anim->pev) & STUDIO_LOOPING) != 0);
+					}
+					else {
+						println("Invalid studio model: %s", STRING(ent->v.model));
+					}
+				}
+				else {
+					println("Not normal anim");
+				}
+			}
+
+			interp.sequenceStart = interp.sequenceEnd;
+			interp.sequenceEnd = ent->v.sequence;
+		}
+	}
+
 	interp.framerateEnt = ent->v.framerate;
 	ent->v.framerate = 0.000001f; // prevent the game trying to interpolate
 }
@@ -514,7 +497,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 			string newModel = getReplayModel(ent->v.modelindex);
 			bool isSprite = newModel.find(".spr") != string::npos;
 
-			if ((fileedicts[i].edflags & EDFLAG_BEAM) && isSprite) {
+			if ((fileedicts[i].edflags & EDFLAG_BEAM) && !isSprite) {
 				println("Invalid model set on beam: %s", newModel.c_str());
 			}
 			else if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
@@ -1162,17 +1145,18 @@ void DemoPlayer::interpolateEdicts() {
 			ent->v.frame = interp.frameEnd + inc;
 			//println("ANIM TIME %.2f %.2f %.2f", (gpGlobals->time - interp.lastMovementTime) * replaySpeed, t, interp.estimatedUpdateDelay);
 
-			// TODO: check if anim loops
-			ent->v.frame = normalizeRangef(ent->v.frame, 0, 255);
+			if (interp.sequenceLoops)
+				ent->v.frame = normalizeRangef(ent->v.frame, 0, 255);
+			else
+				ent->v.frame = clampf(ent->v.frame, 0, 255);
 
 			interp.interpFrame = ent->v.frame;
 		}
 		else {
-			float frameDelta = interp.frameEnd - interp.frameStart;
-			bool sameDir = (frameDelta >= 0) == (interp.framerateEnt >= 0);
-			if (interp.sequenceEnd == ent->v.sequence && sameDir) {
-				ent->v.frame = lerp(interp.frameStart, interp.frameEnd, frameProgress);
-			}
+			float animTime = (gpGlobals->time - interp.animTime) * replaySpeed;
+			float inc = (animTime * interp.framerateEnt * interp.framerateSmd);
+			ent->v.frame = normalizeRangef(interp.frameEnd + inc, 0, 255);
+			interp.interpFrame = ent->v.frame;
 
 			ent->v.origin = lerp(interp.originStart, interp.originEnd, frameProgress);
 

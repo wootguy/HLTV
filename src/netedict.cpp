@@ -163,14 +163,14 @@ void netedict::load(const edict_t& ed) {
 	origin[1] = FLOAT_TO_FIXED(ed.v.origin[1], 19, 5);
 	origin[2] = FLOAT_TO_FIXED(ed.v.origin[2], 19, 5);
 
-	modelindex = vars.modelindex;
 	skin = vars.skin;
 	body = vars.body;
 	effects = vars.effects;
-	sequence = vars.sequence;
 	gaitsequence = vars.gaitsequence;
-	frame = vars.frame;
-	framerate = clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
+	int8_t newFramerate = clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
+	uint8_t newSequence = vars.sequence;
+	uint16_t newModelindex = vars.modelindex;
+	
 	memcpy(controller, vars.controller, 4);
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermode = vars.rendermode;
@@ -182,6 +182,27 @@ void netedict::load(const edict_t& ed) {
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
 	colormap = vars.colormap;
 	health = vars.health > 0 ? Min(vars.health, UINT32_MAX) : 0;
+
+	CBaseAnimating* anim = (CBaseAnimating*)GET_PRIVATE((&ed));
+	bool animationReset = framerate != newFramerate || newSequence != sequence || newModelindex != modelindex;
+	if (anim) {
+		// probably set in other cases than ResetSequenceInfo, but not in the HLSDK
+		// using this you can catch cases where only the frame has changed (e.g. restarting an attack anim)
+		// monsters update this every think so only checking for 0 frame resets for those ents
+		// players reset to non-zero for things like crowbars or the emotes plugin
+		animationReset |= lastAnimationReset < anim->m_flLastEventCheck && (vars.frame == 0 || (ed.v.flags & FL_CLIENT));
+		lastAnimationReset = anim->m_flLastEventCheck;
+	}
+
+	if (animationReset) {
+		// clients can no longer predict the current frame
+		frame = vars.frame;
+	}
+
+	forceNextFrame = animationReset;
+	framerate = newFramerate;
+	sequence = newSequence;
+	modelindex = newModelindex;
 
 	edflags |= EDFLAG_VALID;
 
@@ -337,11 +358,11 @@ bool netedict::readDeltas(mstream& reader) {
 		g_stats.entBigUpdates++;
 	}
 
-	deltaBitsLast = deltaBits;
 	g_stats.entUpdateCount++;
 
 	if (deltaBits == 0) {
 		edflags = 0;
+		deltaBitsLast = 0;
 		return false;
 	}
 
@@ -355,6 +376,7 @@ bool netedict::readDeltas(mstream& reader) {
 		memset(this, 0, sizeof(netedict));
 	}
 
+	deltaBitsLast = deltaBits;
 	edflags = newedflags;
 
 	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
@@ -444,7 +466,12 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	}
 
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_EDFLAGS, edflags, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAME, frame, 1);
+	if (old.frame != frame || forceNextFrame) {
+		forceNextFrame = false;
+		deltaBits |= FL_DELTA_FRAME;
+		g_stats.entDeltaSz[bitoffset(FL_DELTA_FRAME)] += 1;
+		writer.write((void*)&frame, 1);
+	}
 	uint32_t originOffset = writer.tell();
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_X, origin[0], 3);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);

@@ -77,7 +77,10 @@ struct netedict {
 	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
 	uint8_t		classifyGod; // class_ovverride (7 bits), GODMODE/DAMAGE_NO (LSB)
 
-	uint32_t deltaBitsLast; // last delta bits read/written
+	// internal vars (not networked/written)
+	uint32_t	deltaBitsLast; // last delta bits read/written
+	float lastAnimationReset; // last time animation was reset
+	bool forceNextFrame; // force sending the next frame value, even if unchanged (for animation resets)
 
 	netedict();
 	void load(const edict_t& ed);

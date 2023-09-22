@@ -14,6 +14,8 @@
 // - say commands wrong
 // - player footsteps (+swimming effects?)
 // - save cvars to demo
+// - charging wrench triggers constant animation resets (frame bytes)
+// - do monsters ever reset sequences to a non-zero frame? (undo frame opt)
 
 struct InterpInfo {
 	Vector originStart;
@@ -35,6 +37,7 @@ struct InterpInfo {
 
 	int sequenceStart;
 	int sequenceEnd;
+	bool sequenceLoops;
 };
 
 struct ReplayEntity {
@@ -47,7 +50,7 @@ public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
 	bool clearMapForPlayback = false; // map may crash if entities are not cleared first
 	bool useBots = false; // try to use bots for player entites
-	float replaySpeed = 0.2f;
+	float replaySpeed = 1.0f;
 
 	DemoPlayer();
 	~DemoPlayer();
