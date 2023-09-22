@@ -189,6 +189,51 @@ void DemoStats::showStats(edict_t* ent) {
 
 	{
 		vector<DeltaStat> deltaStats;
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ORIGIN_X);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ORIGIN_Y);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ORIGIN_Z);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ANGLES_X);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ANGLES_Y);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ANGLES_Z);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_MODELINDEX);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SKIN);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_BODY);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_EFFECTS);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SEQUENCE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_GAITSEQUENCE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAME);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAMERATE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_0);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_1);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_HI);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_BLENDING);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SCALE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERMODE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERAMT);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_0);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_1);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_2);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERFX);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_AIMENT);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_HEALTH);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_COLORMAP);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CLASSIFYGOD);
+
+		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
+
+		txt = UTIL_VarArgs("big ent deltas:\n");
+		for (int i = 0; i < deltaStats.size() && i < 10; i++) {
+			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
+		}
+
+		params.x = 0.5f;
+		params.y = 0;
+		params.channel = 4;
+		HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+	}
+
+	{
+		vector<DeltaStat> deltaStats;
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FLAGS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_NAME);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_MODEL);

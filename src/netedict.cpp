@@ -22,7 +22,11 @@ using namespace std;
 	}
 
 netedict::netedict() {
-	memset(&edflags, 0, sizeof(netedict));
+	reset();
+}
+
+void netedict::reset() {
+	memset(this, 0, sizeof(netedict));
 }
 
 bool netedict::matches(netedict& other) {
@@ -155,7 +159,7 @@ void netedict::load(const edict_t& ed) {
 	bool isValid = !ed.free && ed.pvPrivateData && (vars.effects & EF_NODRAW) == 0 && vars.modelindex;
 
 	if (!isValid) {
-		memset(&edflags, 0, sizeof(netedict));
+		reset();
 		return; // no need to update other values. Only the isFree var will be sent from now on
 	}
 
@@ -237,7 +241,7 @@ void netedict::load(const edict_t& ed) {
 
 	if (ed.v.flags & (FL_CLIENT | FL_MONSTER)) {
 		uint8_t godbit = (vars.flags & FL_GODMODE) || vars.takedamage == DAMAGE_NO;
-		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed));
+		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed)); // TODO: not thread safe
 		uint8_t classifyBits = bent && bent->m_fOverrideClass ? bent->m_iClassSelection : 0;
 		classifyGod = (classifyBits << 1) | godbit;
 	}
@@ -275,6 +279,12 @@ void netedict::apply(edict_t* ed) {
 	vars.playerclass = classifyGod >> 1;
 	vars.flags |= (classifyGod & 1) ? FL_GODMODE : 0;
 	vars.aiment = NULL;
+
+	CBaseEntity* baseent = (CBaseEntity*)GET_PRIVATE(ed);
+	if (baseent) {
+		baseent->m_iClassSelection = classifyGod >> 1;
+		baseent->m_fOverrideClass = baseent->m_iClassSelection != 0;
+	}
 
 	//vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NONE;
 
@@ -375,7 +385,7 @@ bool netedict::readDeltas(mstream& reader) {
 
 	if (!oldedflags && newedflags) {
 		// new entity created. Start deltas from a fresh state.
-		memset(this, 0, sizeof(netedict));
+		reset();
 	}
 
 	deltaBitsLast = deltaBits;
@@ -448,10 +458,10 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			return EDELTA_WRITE;
 		}
 		if (!old.edflags) {
-			// new entity created. Start from a fresh state.
+			// new entity created. Start from a fresh previous state.
 			// some vars may have changed while we didn't send deltas but still memcpy()'d
 			// to fileedicts as if the client knows the latest state.
-			memset(&old, 0, sizeof(netedict));
+			old.reset();
 			edflags = newedflags;
 		}
 	}
@@ -571,6 +581,16 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		writer.seek(endOffset - (ENT_DELTA_BYTES-1));
 	}
 	else {
+		if (canWriteSmallOriginDeltas) {
+			uint32_t bigUpdateBits = deltaBits & 0xffffff00;
+			for (int i = 0; i < 32; i++) {
+				uint32_t bit = 1U << i;
+				if (bigUpdateBits & bit)
+					g_stats.entDeltaBigReason[bitoffset(bit)]++;
+			}
+		}
+		
+
 		deltaBits |= FL_BIGENTDELTA;
 		writer.write((void*)&deltaBits, ENT_DELTA_BYTES);
 		writer.seek(endOffset);

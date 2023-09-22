@@ -104,6 +104,8 @@ struct NetMessageData {
 		return sizeof(DemoNetMessage) + (header.hasOrigin*3*sizeof(float)) 
 			+ (header.hasEdict*sizeof(uint16_t)) + header.sz;
 	}
+
+	void send(int msg_dst, edict_t* targetEnt);
 };
 
 // File layout:

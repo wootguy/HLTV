@@ -4,11 +4,54 @@
 
 const char* model_entity = "env_sprite";
 
+void sendScoreInfo(int idx, float score, long deaths, float health, float armor, int classification, short ping, short icon) {
+	MESSAGE_BEGIN(MSG_BROADCAST, MSG_ScoreInfo);
+	WRITE_BYTE(idx);
+	WRITE_BYTE(((byte*)&score)[0]);
+	WRITE_BYTE(((byte*)&score)[1]);
+	WRITE_BYTE(((byte*)&score)[2]);
+	WRITE_BYTE(((byte*)&score)[3]);
+	WRITE_LONG(deaths);
+	WRITE_BYTE(((byte*)&health)[0]);
+	WRITE_BYTE(((byte*)&health)[1]);
+	WRITE_BYTE(((byte*)&health)[2]);
+	WRITE_BYTE(((byte*)&health)[3]);
+	WRITE_BYTE(((byte*)&armor)[0]);
+	WRITE_BYTE(((byte*)&armor)[0]);
+	WRITE_BYTE(((byte*)&armor)[0]);
+	WRITE_BYTE(((byte*)&armor)[0]);
+	WRITE_BYTE(classification);
+	WRITE_SHORT(ping); // (is this really ping? I always see 0)
+	WRITE_SHORT(icon);
+	MESSAGE_END();
+}
+
+void sendScoreInfo(edict_t* ent) {
+	CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
+
+	if (!ent || !plr) {
+		return;
+	}
+
+	float score = ent->v.frags;
+	float health = ent->v.health;
+	float armor = ent->v.armorvalue;
+	int idx = ENTINDEX(ent);
+	int classification = plr->m_fOverrideClass ? plr->m_iClassSelection : CLASS_PLAYER;
+	int deaths = plr->m_iDeaths;
+	int ping = 1337;
+	int icon = 0;
+
+	sendScoreInfo(idx, score, deaths, health, armor, classification, ping, icon);
+}
+
+
+
 DemoPlayer::DemoPlayer() {
 	fileedicts = new netedict[MAX_EDICTS];
 	fileplayerinfos = new DemoPlayerEnt[32];
 
-	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
+	memset(fileplayerinfos, 0, MAX_PLAYERS * sizeof(DemoPlayerEnt));
 }
 
 DemoPlayer::~DemoPlayer() {
@@ -865,6 +908,23 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 		} // plugins can't change sentences(?), so client should match server
 		return true;
 	}
+	case MSG_SayText: {
+		// name coloring doesn't work for bots, so copy the name color to p1 and use them as the source
+		uint16_t idx = args[0];
+		convReplayEntIdx(idx);
+		args[0] = idx;
+		return true;
+	}
+	case MSG_ScoreInfo: {
+		if (useBots) {
+			uint16_t idx = args[0];
+			convReplayEntIdx(idx);
+			args[0] = idx;
+
+			return true;
+		}
+		return false;
+	}
 	default:
 		println("Unhandled netmsg %d", (int)msg.header.type);
 		return false;
@@ -886,15 +946,11 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 
 	for (int i = 0; i < numMessages; i++) {
 		reader.read(&msg.header, sizeof(DemoNetMessage));
-		float forigin[3];
 
 		if (msg.header.hasOrigin) {
 			reader.read(&msg.origin[0], 3);
 			reader.read(&msg.origin[1], 3);
 			reader.read(&msg.origin[2], 3);
-			forigin[0] = FIXED_TO_FLOAT(msg.origin[0], 19, 5);
-			forigin[1] = FIXED_TO_FLOAT(msg.origin[1], 19, 5);
-			forigin[2] = FIXED_TO_FLOAT(msg.origin[2], 19, 5);
 		}
 		if (msg.header.hasEdict) {
 			reader.read(&msg.eidx, 2);
@@ -914,30 +970,18 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 			continue; // target is not a player (bots disabled probably)
 		}
 
-		const float* ori = msg.header.hasOrigin ? forigin : NULL;
 		edict_t* ent = msg.header.hasEdict ? replayEnts[msg.eidx].h_ent.GetEdict() : NULL;
+		if (msg.eidx == netmsgPlrIdx) {
+			// redirect to game player
+			msg.eidx = 1;
+			ent = INDEXENT(1);
+		}
+
 		if (!processDemoNetMessage(msg)) {
 			continue;
 		}
 
-		//println("SEND MSG %d sz %d", (int)msg.header.type, (int)msg.header.sz);
-		MESSAGE_BEGIN(msg.header.dest, msg.header.type, ori, ent);
-
-		int numLongs = msg.header.sz / 4;
-		int numBytes = msg.header.sz % 4;
-
-		for (int i = 0; i < numLongs; i++) {
-			WRITE_LONG(((uint32_t*)msg.data)[i]);
-		}
-
-		int byteOffset = numLongs * 4;
-		for (int i = byteOffset; i < byteOffset + numBytes; i++) {
-			WRITE_BYTE(msg.data[i]);
-		}
-
-		MESSAGE_END();
-
-		//println("Read msg %d", (int)msg.type);
+		msg.send(msg.header.dest, ent);
 	}
 
 	g_stats.msgCurrentSz = reader.tell() - startOffset;

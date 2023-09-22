@@ -11,7 +11,6 @@
 // - sentence mouth controller (scientist)
 // - check chat color
 // - some sounds have no attn?
-// - say commands wrong
 // - player footsteps (+swimming effects?)
 // - save cvars to demo
 // - charging wrench triggers constant animation resets (frame bytes)
@@ -49,8 +48,9 @@ class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
 	bool clearMapForPlayback = false; // map may crash if entities are not cleared first
-	bool useBots = false; // try to use bots for player entites
+	bool useBots = true; // try to use bots for player entites
 	float replaySpeed = 1.0f;
+	int netmsgPlrIdx = 1; // player to replay network messages for
 
 	DemoPlayer();
 	~DemoPlayer();

@@ -14,7 +14,7 @@ set(SOURCE_FILES
 	src/DemoStats.h src/DemoStats.cpp
 	src/NetClient.h src/NetClient.cpp
 	src/netedict.h src/netedict.cpp
-	src/DemoFile.h
+	src/DemoFile.h src/DemoFile.cpp
 )
 
 add_library(${PROJECT_NAME} SHARED)
@@ -41,6 +41,7 @@ if(MSVC)
 	)
 	
 	target_link_libraries(${PROJECT_NAME} WS2_32 IPHLPAPI)
+	set(CMAKE_CXX_FLAGS "/w /EHsc") # fixed :>
 
 else()
 	target_compile_definitions(${PROJECT_NAME} PUBLIC -Dlinux)

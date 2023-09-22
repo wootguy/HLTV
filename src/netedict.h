@@ -95,4 +95,7 @@ struct netedict {
 	// write deltas between this edict and the "old" edict
 	// resets writer position on EDELTA_OVERFLOW 
 	int writeDeltas(mstream& writer, netedict& old);
+
+	// reset to a default state
+	void reset();
 };

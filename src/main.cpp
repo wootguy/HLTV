@@ -493,10 +493,7 @@ void ClientCommand(edict_t* pEntity) {
 		string lowerArg0 = toLowerCase(CMD_ARGV(0));
 		bool isConsoleCmd = lowerArg0 != "say" && lowerArg0 != "say_team";
 		string cmd = CMD_ARGC() > 1 ? CMD_ARGS() : "";
-
-		if (isConsoleCmd) {
-			cmd = CMD_ARGV(0) + string(" ") + cmd;
-		}
+		cmd = CMD_ARGV(0) + string(" ") + cmd;
 
 		if (g_command_count >= MAX_CMD_FRAME) {
 			println("[SvenTV] Command capture overflow!");
