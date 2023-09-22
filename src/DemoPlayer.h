@@ -9,7 +9,6 @@
 // - gonome/hgrunt gait
 // - apache bullets
 // - sentence mouth controller (scientist)
-// - check chat color
 // - some sounds have no attn?
 // - player footsteps (+swimming effects?)
 // - save cvars to demo
@@ -88,6 +87,8 @@ private:
 
 	float offsetSeconds;
 	float frameProgress; // for interpolation (0-1 progress to next frame)
+
+	string oldPlayerNames[MAX_PLAYERS]; // for resetting conflicted names after the replay finishes
 
 	void closeReplayFile();
 

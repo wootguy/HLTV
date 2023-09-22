@@ -45,7 +45,14 @@ void sendScoreInfo(edict_t* ent) {
 	sendScoreInfo(idx, score, deaths, health, armor, classification, ping, icon);
 }
 
-
+void delayRenamePlayer(EHandle h_plr, string name) {
+	edict_t* ent = h_plr;
+	if (!ent) {
+		return;
+	}
+	char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(ent);
+	g_engfuncs.pfnSetClientKeyValue(ENTINDEX(ent), infoBuffer, "name", (char*)name.c_str());
+}
 
 DemoPlayer::DemoPlayer() {
 	fileedicts = new netedict[MAX_EDICTS];
@@ -216,6 +223,10 @@ void DemoPlayer::prepareDemo() {
 		}
 	}
 
+	for (int i = 0; i < MAX_PLAYERS; i++) {
+		oldPlayerNames[i] = "";
+	}
+
 	replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
 	replayFrame = 0;
 	nextFrameOffset = ftell(replayFile);
@@ -263,6 +274,20 @@ void DemoPlayer::closeReplayFile() {
 		}			
 	}
 	replayEnts.clear();
+
+	for (int i = 1; i < gpGlobals->maxClients; i++) {
+		edict_t* ent = INDEXENT(i);
+		if (!isValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
+			continue;
+		}
+
+		
+		if (oldPlayerNames->size()) {
+			// remove (1) prefix if it was added during the demo
+			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(ent);
+			g_engfuncs.pfnSetClientKeyValue(i, infoBuffer, "name", (char*)oldPlayerNames[i - 1].c_str());
+		}
+	}
 }
 
 bool DemoPlayer::readEntDeltas(mstream& reader) {
@@ -272,10 +297,6 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 	reader.read(&numEntDeltas, 2);
 
 	//println("Reading %d deltas", (int)numEntDeltas);
-
-	for (int i = 0; i < MAX_EDICTS; i++) {
-		fileedicts[i].deltaBitsLast = 0;
-	}
 
 	int loop = -1;
 	uint16_t fullIndex = 0;
@@ -332,9 +353,29 @@ bool DemoPlayer::validateEdicts() {
 edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	bool playerSlotFree = true; // todo
 	bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER);
+	bool entIsPlayer = ent->v.flags & FL_CLIENT;
+	bool playerInfoLoaded = (i-1) < MAX_PLAYERS && fileplayerinfos[i - 1].flags;
 
-	if (useBots && playerSlotFree && isPlayer && (ent->v.flags & FL_CLIENT) == 0 && fileplayerinfos[i - 1].flags) {
+	if (useBots && playerSlotFree && isPlayer && !entIsPlayer && playerInfoLoaded) {
 		DemoPlayerEnt& info = fileplayerinfos[i - 1];
+
+		// rename real players so that chat colors work for the bots
+		for (int i = 1; i < gpGlobals->maxClients; i++) {
+			edict_t* ent = INDEXENT(i);
+			if (!isValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
+				continue;
+			}
+
+			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(ent);
+			char* name = g_engfuncs.pfnInfoKeyValue(infoBuffer, "name");
+
+			if (strcasecmp(name, info.name) == 0) {
+				oldPlayerNames[i - 1] = string(info.name);
+				g_engfuncs.pfnSetClientKeyValue(i, infoBuffer, "name", "");
+				g_Scheduler.SetTimeout(delayRenamePlayer, 0.1f, ent, string(name));
+			}
+		}
+		
 		edict_t* bot = g_engfuncs.pfnCreateFakeClient(info.name);
 
 		if (bot) {
@@ -342,6 +383,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			REMOVE_ENTITY(replayEnts[i].h_ent);
 			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
 			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
+			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", info.name);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
@@ -1097,7 +1139,11 @@ bool DemoPlayer::readDemoFrame() {
 
 	g_stats.entDeltaCurrentSz = g_stats.plrDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = 0;
 
-	if (header.hasEntityDeltas && (!readEntDeltas(reader) || !simulate(header))) {
+	for (int i = 0; i < MAX_EDICTS; i++) {
+		fileedicts[i].deltaBitsLast = 0;
+	}
+
+	if (header.hasEntityDeltas && (!readEntDeltas(reader))) {
 		delete[] frameData;
 		return false;
 	}
@@ -1106,13 +1152,15 @@ bool DemoPlayer::readDemoFrame() {
 		delete[] frameData;
 		return false;
 	}
-
 	if (header.hasNetworkMessages && !readNetworkMessages(reader)) {
 		delete[] frameData;
 		return false;
 	}
-
 	if (header.hasCommands && !readClientCommands(reader)) {
+		delete[] frameData;
+		return false;
+	}
+	if (!simulate(header)) {
 		delete[] frameData;
 		return false;
 	}

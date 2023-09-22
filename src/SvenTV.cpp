@@ -436,6 +436,10 @@ void SvenTV::think_tvThread() {
 
 		if (loadNewData) {
 			for (int i = 0; i < MAX_EDICTS; i++) {
+				if (i > 0 && i <= MAX_PLAYERS && (edicts[i].v.flags & FL_CLIENT) == 0) {
+					frame.netedicts[i].reset();
+					continue;
+				}
 				frame.netedicts[i].load(edicts[i]);
 			}
 			for (int i = 1; i <= gpGlobals->maxClients; i++) {
