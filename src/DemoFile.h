@@ -27,6 +27,7 @@ inline float FIXED_TO_FLOAT(int x, int whole_bits, int frac_bits) {
 	return r / (float)(1 << frac_bits);
 }
 
+#define MAX_EVENT_FRAME 1024 // max events per frame
 #define MAX_CMD_FRAME 1024 // max client commands per frame
 #define MAX_NETMSG_FRAME 1024 // max network messages per frame
 #define MAX_NETMSG_DATA 512 // max bytes before overflow message from game
@@ -71,6 +72,7 @@ struct DemoFrame {
 	uint8_t isKeyFrame : 1; // if true, zero out entity and player info for a full update
 	uint8_t hasEntityDeltas : 1;
 	uint8_t hasNetworkMessages : 1;
+	uint8_t hasEvents : 1;
 	uint8_t hasPlayerDeltas : 1;
 	uint8_t hasCommands : 1;
 };
@@ -108,6 +110,34 @@ struct NetMessageData {
 	void send(int msg_dst, edict_t* targetEnt);
 };
 
+struct DemoEvent {
+	uint8_t eventindex;
+	uint16_t entindex : 12;
+	uint16_t flags : 4; // FEV_HOSTONLY/SERVER/CLIENT flags never set for server events(?)
+
+	uint8_t hasOrigin : 1;
+	uint8_t hasAngles : 1;
+	uint8_t hasFparam1 : 1;
+	uint8_t hasFparam2 : 1;
+	uint8_t hasIparam1 : 1;
+	uint8_t hasIparam2 : 1;
+	uint8_t bparam1 : 1;
+	uint8_t bparam2 : 1;
+	// if hasOrigin:
+	//    int32[3] = origin
+	// ...
+};
+
+struct DemoEventData {
+	DemoEvent header;
+	int32_t origin[3];
+	int16_t angles[3];
+	int32_t fparam1;
+	int32_t fparam2;
+	int16_t iparam1;
+	int16_t iparam2;
+};
+
 // File layout:
 // DemoHeader
 // DemoFrame[]
@@ -123,6 +153,9 @@ struct NetMessageData {
 // if hasNetworkMessages:
 //     uint16 = count of DemoNetMessage[]
 //     DemoNetMessage[]
+// if hasEvents:
+//     uint16 = count of DemoEvent[]
+//     DemoEvent[]
 // if hasCommands:
 //    uint16 = count of DemoCommand[]
 //    DemoCommand[]
@@ -135,8 +168,10 @@ struct FrameData {
 	DemoPlayerEnt* playerinfos;
 	NetMessageData* netmessages;
 	CommandData* cmds;
+	DemoEventData* events;
 
-	uint16_t netmessage_count = 0;
-	uint16_t cmds_count = 0;
+	int netmessage_count = 0;
+	int cmds_count = 0;
+	int event_count = 0;
 	uint32_t serverFrameCount = 0;
 };

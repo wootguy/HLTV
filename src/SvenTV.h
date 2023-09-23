@@ -82,4 +82,6 @@ extern NetMessageData* g_netmessages;
 extern int g_netmessage_count;
 extern CommandData* g_cmds;
 extern int g_command_count;
+extern DemoEventData* g_events;
+extern int g_event_count;
 extern uint32_t g_server_frame_count;

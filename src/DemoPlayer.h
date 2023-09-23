@@ -99,6 +99,7 @@ private:
 	bool readEntDeltas(mstream& reader);
 	bool readPlayerDeltas(mstream& reader);
 	bool readNetworkMessages(mstream& reader);
+	bool readEvents(mstream& reader);
 	bool readClientCommands(mstream& reader);
 	
 	// converts a simulated entity into a class best suited for the demo entity

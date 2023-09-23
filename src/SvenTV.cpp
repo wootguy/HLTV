@@ -16,6 +16,7 @@ SvenTV::SvenTV(bool singleThreadMode) {
 	frame.playerinfos = new DemoPlayerEnt[32];
 	frame.netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 	frame.cmds = new CommandData[MAX_CMD_FRAME];
+	frame.events = new DemoEventData[MAX_EVENT_FRAME];
 
 	memset(frame.playerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 
@@ -79,13 +80,16 @@ void SvenTV::think_mainThread() {
 			memcpy(frame.playerinfos, g_demoplayers, gpGlobals->maxClients*sizeof(DemoPlayerEnt));
 			memcpy(frame.netmessages, g_netmessages, g_netmessage_count*sizeof(NetMessageData));
 			memcpy(frame.cmds, g_cmds, g_command_count*sizeof(CommandData));
+			memcpy(frame.events, g_events, g_event_count*sizeof(DemoEventData));
 			frame.netmessage_count = g_netmessage_count;
 			frame.cmds_count = g_command_count;
 			frame.serverFrameCount = g_server_frame_count;
+			frame.event_count = g_event_count;
 
 			// clear the main thread buffers
 			g_netmessage_count = 0;
 			g_command_count = 0;
+			g_event_count = 0;
 
 			int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);

@@ -44,4 +44,7 @@ private:
 
 	char* cmdsBuffer = NULL;
 	int cmdsBufferSize = -1;
+
+	char* eventsBuffer = NULL;
+	int eventsBufferSize = -1;
 };

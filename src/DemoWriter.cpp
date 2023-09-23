@@ -26,14 +26,18 @@ DemoWriter::DemoWriter() {
 
 	cmdsBufferSize = sizeof(CommandData) * MAX_CMD_FRAME;
 	cmdsBuffer = new char[cmdsBufferSize];
+
+	eventsBufferSize = sizeof(DemoEventData) * MAX_EVENT_FRAME;
+	eventsBuffer = new char[eventsBufferSize];
 }
 
 DemoWriter::~DemoWriter() {
+	delete[] fileedicts;
 	delete[] fileDeltaBuffer;
 	delete[] fileplayerinfos;
 	delete[] netmessagesBuffer;
 	delete[] cmdsBuffer;
-	delete[] fileedicts;
+	delete[] eventsBuffer;
 }
 
 void DemoWriter::initDemoFile() {
@@ -226,6 +230,38 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		println("ERROR: Demo file command buffer overflowed. Use a bigger buffer!");
 	}
 
+	mstream evbuffer(eventsBuffer, eventsBufferSize);
+	for (int i = 0; i < frame.event_count; i++) {
+		DemoEventData& dat = frame.events[i];
+		evbuffer.write(&dat.header, sizeof(DemoEvent));
+
+		if (dat.header.hasOrigin) {
+			evbuffer.write(&dat.origin[0], 3);
+			evbuffer.write(&dat.origin[1], 3);
+			evbuffer.write(&dat.origin[2], 3);
+		}
+		if (dat.header.hasAngles) {
+			evbuffer.write(&dat.angles[0], 2);
+			evbuffer.write(&dat.angles[1], 2);
+			evbuffer.write(&dat.angles[2], 2);
+		}
+		if (dat.header.hasFparam1) {
+			evbuffer.write(&dat.fparam1, 3);
+		}
+		if (dat.header.hasFparam2) {
+			evbuffer.write(&dat.fparam2, 3);
+		}
+		if (dat.header.hasIparam1) {
+			evbuffer.write(&dat.iparam1, 2);
+		}
+		if (dat.header.hasIparam2) {
+			evbuffer.write(&dat.iparam2, 2);
+		}
+	}
+	if (evbuffer.eom()) {
+		println("ERROR: Demo file event buffer overflowed (%d > %d). Use a bigger buffer!", frame.event_count, MAX_EVENT_FRAME);
+	}
+
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
 	memcpy(fileplayerinfos, frame.playerinfos, 32 * sizeof(DemoPlayerEnt));
 
@@ -233,8 +269,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	g_stats.plrDeltaCurrentSz = plrbuffer.tell() + (plrbuffer.tell() ? 4 : 0);
 	g_stats.msgCurrentSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
 	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 2 : 0);
+	g_stats.eventCurrentSz = evbuffer.tell() + (evbuffer.tell() ? 2 : 0);
 	g_stats.msgCount += frame.netmessage_count;
 	g_stats.cmdCount += frame.cmds_count;
+	g_stats.eventCount += frame.event_count;
 	g_stats.entIndexTotalSz += indexWriteSz;
 	g_stats.incTotals();
 
@@ -246,6 +284,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	header.demoTime = now - demoStartTime;
 	header.hasEntityDeltas = numEntDeltas > 0;
 	header.hasNetworkMessages = frame.netmessage_count > 0;
+	header.hasEvents = frame.event_count > 0;
 	header.hasPlayerDeltas = plrDeltaBits > 0;
 	header.hasCommands = frame.cmds_count > 0;
 	header.isKeyFrame = isKeyframe;
@@ -264,6 +303,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (header.hasNetworkMessages) {
 		fwrite(&frame.netmessage_count, sizeof(uint16_t), 1, demoFile);
 		fwrite(msgbuffer.getBuffer(), msgbuffer.tell(), 1, demoFile);
+	}
+	if (header.hasEvents) {
+		fwrite(&frame.event_count, sizeof(uint16_t), 1, demoFile);
+		fwrite(evbuffer.getBuffer(), evbuffer.tell(), 1, demoFile);
 	}
 	if (header.hasCommands) {
 		fwrite(&frame.cmds_count, sizeof(uint16_t), 1, demoFile);

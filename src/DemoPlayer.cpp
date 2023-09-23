@@ -633,6 +633,7 @@ void DemoPlayer::convReplayEntIdx(uint16_t& eidx) {
 	if (eidx >= replayEnts.size()) {
 		println("Invalid replay ent idx %d", (int)eidx);
 		eidx = 0;
+		return;
 	}
 	eidx = ENTINDEX(replayEnts[eidx].h_ent);
 }
@@ -997,6 +998,9 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 		if (msg.header.hasEdict) {
 			reader.read(&msg.eidx, 2);
 		}
+		else {
+			msg.eidx = 0;
+		}
 		if (msg.header.sz > MAX_NETMSG_DATA) {
 			println("Invalid net msg size %d", (int)msg.header.sz);
 			return false; // data corrupted, abort before SVC_BAD
@@ -1028,6 +1032,83 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 
 	g_stats.msgCurrentSz = reader.tell() - startOffset;
 	g_stats.msgCount += numMessages;
+
+	return true;
+}
+
+bool DemoPlayer::readEvents(mstream& reader) {
+	uint32_t startOffset = reader.tell();
+
+	uint16_t numEvents;
+	reader.read(&numEvents, 2);
+
+	if (numEvents > MAX_EVENT_FRAME) {
+		println("Invalid net msg count %d", (int)numEvents);
+		return false;
+	}
+
+	for (int i = 0; i < numEvents; i++) {
+		DemoEventData ev;
+		memset(&ev, 0, sizeof(DemoEventData));
+		reader.read(&ev.header, sizeof(DemoEvent));
+		float origin[3];
+		float angles[3];
+		float fparam1 = 0;
+		float fparam2 = 0;
+		memset(origin, 0, sizeof(float) * 3);
+		memset(angles, 0, sizeof(float) * 3);
+
+		if (ev.header.hasOrigin) {
+			reader.read(&ev.origin[0], 3);
+			reader.read(&ev.origin[1], 3);
+			reader.read(&ev.origin[2], 3);
+			for (int k = 0; k < 3; k++)
+				origin[k] = FIXED_TO_FLOAT(ev.origin[k], 21, 3);
+		}
+		if (ev.header.hasAngles) {
+			reader.read(&ev.angles[0], 2);
+			reader.read(&ev.angles[1], 2);
+			reader.read(&ev.angles[2], 2);
+			for (int k = 0; k < 3; k++)
+				angles[k] = ev.angles[k] / 8.0f;
+		}
+		if (ev.header.hasFparam1) {
+			reader.read(&ev.fparam1, 3);
+			fparam1 = ev.fparam1 / 128.0f;
+		}
+		if (ev.header.hasFparam2) {
+			reader.read(&ev.fparam2, 3);
+			fparam2 = ev.fparam2 / 128.0f;
+		}
+		if (ev.header.hasIparam1) {
+			reader.read(&ev.iparam1, 2);
+		}
+		if (ev.header.hasIparam2) {
+			reader.read(&ev.iparam2, 2);
+		}
+
+		uint16_t eidx = ev.header.entindex;
+		convReplayEntIdx(eidx);
+		if (eidx >= replayEnts.size()) {
+			println("Invalid event edict %d", (int)ev.header.entindex);
+			continue;
+		}
+		edict_t* ent = INDEXENT(eidx);
+
+		/*
+		println("PLAY EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d",
+			(int)ev.header.flags, eidx, (int)ev.header.eventindex, 0.0f,
+			origin[0], origin[1], origin[2], angles[0], angles[1], angles[2],
+			fparam1, fparam2, (int)ev.iparam1, (int)ev.iparam2,
+			(int)ev.header.bparam1, (int)ev.header.bparam2);
+		*/
+
+		g_engfuncs.pfnPlaybackEvent(ev.header.flags, ent, ev.header.eventindex, 0.0f, origin, angles,
+			fparam1, fparam2, ev.iparam1, ev.iparam2, ev.header.bparam1, ev.header.bparam2);
+	}
+
+	g_stats.eventCurrentSz = reader.tell() - startOffset;
+	g_stats.eventCount += numEvents;
 
 	return true;
 }
@@ -1137,7 +1218,8 @@ bool DemoPlayer::readDemoFrame() {
 		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 	}
 
-	g_stats.entDeltaCurrentSz = g_stats.plrDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = 0;
+	g_stats.entDeltaCurrentSz = g_stats.plrDeltaCurrentSz 
+		= g_stats.msgCurrentSz = g_stats.cmdCurrentSz = g_stats.eventCurrentSz = 0;
 
 	for (int i = 0; i < MAX_EDICTS; i++) {
 		fileedicts[i].deltaBitsLast = 0;
@@ -1153,6 +1235,10 @@ bool DemoPlayer::readDemoFrame() {
 		return false;
 	}
 	if (header.hasNetworkMessages && !readNetworkMessages(reader)) {
+		delete[] frameData;
+		return false;
+	}
+	if (header.hasEvents && !readEvents(reader)) {
 		delete[] frameData;
 		return false;
 	}

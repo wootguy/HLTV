@@ -64,10 +64,12 @@ void DemoStats::incTotals() {
 	plrDeltaTotalSz += plrDeltaCurrentSz;
 	msgTotalSz += msgCurrentSz;
 	cmdTotalSz += cmdCurrentSz;
+	eventTotalSz += eventCurrentSz;
 
 	plrDeltaCount += plrDeltaCurrentSz != 0;
 
-	currentWriteSz = entDeltaCurrentSz + plrDeltaCurrentSz + msgCurrentSz + cmdCurrentSz + sizeof(DemoFrame);
+	currentWriteSz = entDeltaCurrentSz + plrDeltaCurrentSz + msgCurrentSz 
+		+ cmdCurrentSz + eventCurrentSz + sizeof(DemoFrame);
 	totalWriteSz += currentWriteSz;
 }
 
@@ -114,6 +116,7 @@ void DemoStats::showStats(edict_t* ent) {
 	string entTotal = formatSize(g_stats.entDeltaTotalSz);
 	string plrTotal = formatSize(g_stats.plrDeltaTotalSz);
 	string msgTotal = formatSize(g_stats.msgTotalSz);
+	string evTotal = formatSize(g_stats.eventTotalSz);
 	string cmdTotal = formatSize(g_stats.cmdTotalSz);
 	string totalSz = formatSize(g_stats.totalWriteSz);
 
@@ -121,6 +124,7 @@ void DemoStats::showStats(edict_t* ent) {
 	txt += UTIL_VarArgs("ent: %s (%d)\n", entTotal.c_str(), g_stats.entDeltaCurrentSz);
 	txt += UTIL_VarArgs("plr: %s (%d)\n", plrTotal.c_str(), g_stats.plrDeltaCurrentSz);
 	txt += UTIL_VarArgs("msg: %s (%d)\n", msgTotal.c_str(), g_stats.msgCurrentSz);
+	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);
 	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCurrentSz);
 
 	HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);

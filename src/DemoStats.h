@@ -25,6 +25,10 @@ struct DemoStats {
 	uint32_t msgSz[512]; // indexes at 256+ = temporary entity type - 256
 	uint32_t msgCount; // number of network messages sent
 
+	uint32_t eventTotalSz;
+	uint32_t eventCurrentSz;
+	uint32_t eventCount; // number of events sent
+
 	uint32_t cmdTotalSz;
 	uint32_t cmdCurrentSz;
 	uint32_t cmdCount; // number of commands sent

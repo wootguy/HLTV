@@ -28,6 +28,8 @@ NetMessageData* g_netmessages = NULL;
 int g_netmessage_count = 0;
 CommandData* g_cmds = NULL;
 int g_command_count = 0;
+DemoEventData* g_events = NULL;
+int g_event_count = 0;
 uint32_t g_server_frame_count = 0;
 int g_copyTime = 0;
 volatile int g_thinkTime = 0;
@@ -44,6 +46,16 @@ const char* stateFilePath = "svencoop/addons/metamod/store/sventv.txt";
 
 DemoStats g_stats;
 bool demoStatPlayers[33] = { false };
+
+#define EVT_GAUSS_CHARGE 13
+
+struct GaussChargeEvt {
+	float time;
+	int charge;
+};
+
+// gauss charging spams events too much. Use this to slow them down
+GaussChargeEvt lastGaussCharge[33];
 
 const char* te_names[TE_NAMES] = {
 	"TE_BEAMPOINTS", "TE_BEAMENTPOINT", "TE_GUNSHOT", "TE_EXPLOSION",
@@ -139,6 +151,7 @@ void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 	g_demoPlayer->precacheDemo();
 	remove(stateFilePath);
 	memset(demoStatPlayers, 0, sizeof(demoStatPlayers));
+	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 	
 	RETURN_META(MRES_IGNORED);
 }
@@ -307,12 +320,7 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 		g_should_write_next_message = false;
 		RETURN_META(MRES_IGNORED);
 	}
-	if (g_netmessage_count >= MAX_NETMSG_FRAME) {
-		g_netmessage_count--; // overwrite last message
-		println("[SvenTV] Network message capture overflow!");
-	}
 
-	//g_should_write_next_message = msg_dest != MSG_ONE && msg_dest != MSG_ONE_UNRELIABLE && msg_dest != MSG_INIT;
 	g_should_write_next_message = true;
 
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
@@ -340,8 +348,14 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 }
 
 void MessageEnd() {
-	if (g_should_write_next_message)
+	if (g_should_write_next_message) {
 		g_netmessage_count++;
+
+		if (g_netmessage_count >= MAX_NETMSG_FRAME) {
+			g_netmessage_count--; // overwrite last message
+			println("[SvenTV] Network message capture overflow!");
+		}
+	}
 	RETURN_META(MRES_IGNORED);
 }
 
@@ -495,16 +509,16 @@ void ClientCommand(edict_t* pEntity) {
 		string cmd = CMD_ARGC() > 1 ? CMD_ARGS() : "";
 		cmd = CMD_ARGV(0) + string(" ") + cmd;
 
-		if (g_command_count >= MAX_CMD_FRAME) {
-			println("[SvenTV] Command capture overflow!");
-			g_command_count--; // overwrite last command
-		}
-
 		CommandData& dat = g_cmds[g_command_count];
 		dat.idx = ENTINDEX(pEntity);
 		dat.len = cmd.size();
 		memcpy(dat.data, cmd.c_str(), cmd.size());
+
 		g_command_count++;
+		if (g_command_count >= MAX_CMD_FRAME) {
+			println("[SvenTV] Command capture overflow!");
+			g_command_count--; // overwrite last command
+		}
 	}	
 
 	RETURN_META(ret);
@@ -521,6 +535,75 @@ int PrecacheModel_post(char* m) {
 	int index = MODEL_INDEX(m);
 	g_indexToModel[index] = m;
 	RETURN_META_VALUE(MRES_IGNORED, 0);
+}
+
+void PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex, float delay, 
+	float* origin, float* angles, float fparam1, float fparam2,
+	int iparam1, int iparam2, int bparam1, int bparam2) {
+	
+	if (pInvoker && ENTINDEX(pInvoker) <= gpGlobals->maxClients && eventindex == EVT_GAUSS_CHARGE) {
+		GaussChargeEvt& lastEvent = lastGaussCharge[ENTINDEX(pInvoker)];
+		float dtime = gpGlobals->time - lastEvent.time;
+		if ((lastEvent.charge != iparam1 && dtime > 0.1f) || dtime > 0.2f) {
+			lastEvent.time = gpGlobals->time;
+			lastEvent.charge = iparam1;
+		}
+		else {
+			// reduce event spam from gauss charging
+			RETURN_META(MRES_IGNORED);
+		}
+	}
+
+	println("RECORD EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d",
+		flags, pInvoker ? ENTINDEX(pInvoker) : 0, (int)eventindex, delay,
+		origin[0], origin[1], origin[2], angles[0], angles[1], angles[2],
+		fparam1, fparam2, iparam1, iparam2, bparam1, bparam2);
+
+	DemoEventData& ev = g_events[g_event_count];
+	memset(&ev, 0, (int)sizeof(DemoEventData));
+	
+	ev.header.eventindex = eventindex;
+	ev.header.entindex = pInvoker ? ENTINDEX(pInvoker) : 0;
+	ev.header.flags = flags & (~FEV_NOTHOST); // don't skip sending this to listen server host player
+
+	if (origin[0] != 0 || origin[1] != 0 || origin[2] != 0) {
+		ev.header.hasOrigin = 1;
+		ev.origin[0] = FLOAT_TO_FIXED(origin[0], 21, 3);
+		ev.origin[1] = FLOAT_TO_FIXED(origin[1], 21, 3);
+		ev.origin[2] = FLOAT_TO_FIXED(origin[2], 21, 3);
+	}
+	if (angles[0] != 0 || angles[1] != 0 || angles[2] != 0) {
+		ev.header.hasAngles = 1;
+		ev.angles[0] = angles[0] * 8;
+		ev.angles[1] = angles[1] * 8;
+		ev.angles[2] = angles[2] * 8;
+	}
+	if (fparam1 != 0) {
+		ev.header.hasFparam1 = 1;
+		ev.fparam1 = fparam1 * 128;
+	}
+	if (fparam2 != 0) {
+		ev.header.hasFparam2 = 1;
+		ev.fparam2 = fparam2 * 128;
+	}
+	if (iparam1 != 0) {
+		ev.header.hasIparam1 = 1;
+		ev.iparam1 = iparam1;
+	}
+	if (iparam2 != 0) {
+		ev.header.hasIparam2 = 1;
+		ev.iparam2 = iparam2;
+	}
+	ev.header.bparam1 = bparam1;
+	ev.header.bparam2 = bparam2;
+
+	g_event_count++;
+	if (g_event_count >= MAX_EVENT_FRAME) {
+		println("[SvenTV] Event capture overflow!");
+		g_event_count--; // overwrite last event
+	}
+
+	RETURN_META(MRES_IGNORED);
 }
 
 void PluginInit() {
@@ -547,6 +630,8 @@ void PluginInit() {
 	g_engine_hooks.pfnWriteString = WriteString;
 	g_engine_hooks.pfnMessageEnd = MessageEnd;
 
+	g_engine_hooks.pfnPlaybackEvent = PlaybackEvent;
+
 	g_engine_hooks_post.pfnSetModel = SetModel;
 	g_engine_hooks_post.pfnPrecacheModel = PrecacheModel_post;
 
@@ -569,7 +654,9 @@ void PluginInit() {
 	g_demoplayers = new DemoPlayerEnt[32];
 	g_netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 	g_cmds = new CommandData[MAX_CMD_FRAME];
+	g_events = new DemoEventData[MAX_EVENT_FRAME];
 	memset(g_demoplayers, 0, 32*sizeof(DemoPlayerEnt));
+	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 }
 
 void PluginExit() {
@@ -579,6 +666,7 @@ void PluginExit() {
 	delete[] g_demoplayers;
 	delete[] g_netmessages;
 	delete[] g_cmds;
+	delete[] g_events;
 
 	println("Plugin exit finish");
 }
