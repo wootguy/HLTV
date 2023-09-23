@@ -69,9 +69,21 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_BUTTON, button, 2);
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_PING, ping, 2);
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_CLIP, clip, 2);
-		WRITE_DELTA(writer, deltaBits, FL_DELTA_PUNCHANGLE_X, punchangle[0], 2);
-		WRITE_DELTA(writer, deltaBits, FL_DELTA_PUNCHANGLE_Y, punchangle[1], 2);
-		WRITE_DELTA(writer, deltaBits, FL_DELTA_PUNCHANGLE_Z, punchangle[2], 2);
+		if ((abs(old.punchangle[0]) < abs(punchangle[0])) || (punchangle[0] == 0 && old.punchangle[0] != 0)) {
+			deltaBits |= FL_DELTA_PUNCHANGLE_X;
+			g_stats.plrDeltaSz[bitoffset(FL_DELTA_PUNCHANGLE_X)] += 2;
+			writer.write((void*)&punchangle[0], 2);
+		}
+		if ((abs(old.punchangle[1]) < abs(punchangle[1])) || (punchangle[01] == 0 && old.punchangle[1] != 0)) {
+			deltaBits |= FL_DELTA_PUNCHANGLE_Y;
+			g_stats.plrDeltaSz[bitoffset(FL_DELTA_PUNCHANGLE_Y)] += 2;
+			writer.write((void*)&punchangle[1], 2);
+		}
+		if ((abs(old.punchangle[2]) < abs(punchangle[2])) || (punchangle[2] == 0 && old.punchangle[2] != 0)) {
+			deltaBits |= FL_DELTA_PUNCHANGLE_Z;
+			g_stats.plrDeltaSz[bitoffset(FL_DELTA_PUNCHANGLE_Z)] += 2;
+			writer.write((void*)&punchangle[2], 2);
+		}
 		WRITE_DELTA_STR(writer, deltaBits, FL_DELTA_NAME, name);
 		WRITE_DELTA_STR(writer, deltaBits, FL_DELTA_MODEL, model);
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_STEAMID, steamid64, 8);

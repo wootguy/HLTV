@@ -9,11 +9,12 @@
 // - gonome/hgrunt gait
 // - apache bullets
 // - sentence mouth controller (scientist)
-// - some sounds have no attn?
+// - some sounds have no attn? (gib sound)
 // - player footsteps (+swimming effects?)
 // - save cvars to demo
 // - charging wrench triggers constant animation resets (frame bytes)
 // - do monsters ever reset sequences to a non-zero frame? (undo frame opt)
+// - punchangle prediction
 
 struct InterpInfo {
 	Vector originStart;
@@ -77,6 +78,7 @@ private:
 	uint32_t replayFrame = 0;
 	uint32_t nextFrameOffset = 0;
 	uint64_t nextFrameTime = 0;
+	uint32_t lastFrameDemoTime = 0;
 	vector<ReplayEntity> replayEnts;
 	map<int, string> replayModelPath; // maps model index in demo file to a path
 	DemoHeader demoHeader;

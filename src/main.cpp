@@ -254,9 +254,10 @@ void StartFrame() {
 		}
 
 		CBasePlayerWeapon* wep = (CBasePlayerWeapon*)plr->m_hActiveItem.GetEntity();
+		DemoPlayerEnt& dplr = g_demoplayers[i - 1];
+		dplr.button |= (plr->m_afButtonLast | plr->m_afButtonPressed | plr->m_afButtonReleased | ent->v.button) & 0xffff;
 
 		if (wep) {
-			DemoPlayerEnt& dplr = g_demoplayers[i - 1];
 			int pammo = wep->m_iPrimaryAmmoType;
 			int sammo = wep->m_iSecondaryAmmoType;
 			dplr.clip = clamp(wep->m_iClip, 0, 65535);
@@ -553,12 +554,12 @@ void PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex
 			RETURN_META(MRES_IGNORED);
 		}
 	}
-
+	/*
 	println("RECORD EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d",
 		flags, pInvoker ? ENTINDEX(pInvoker) : 0, (int)eventindex, delay,
 		origin[0], origin[1], origin[2], angles[0], angles[1], angles[2],
 		fparam1, fparam2, iparam1, iparam2, bparam1, bparam2);
-
+		*/
 	DemoEventData& ev = g_events[g_event_count];
 	memset(&ev, 0, (int)sizeof(DemoEventData));
 	

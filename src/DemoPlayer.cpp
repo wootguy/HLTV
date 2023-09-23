@@ -1039,8 +1039,8 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 bool DemoPlayer::readEvents(mstream& reader) {
 	uint32_t startOffset = reader.tell();
 
-	uint16_t numEvents;
-	reader.read(&numEvents, 2);
+	uint8_t numEvents;
+	reader.read(&numEvents, 1);
 
 	if (numEvents > MAX_EVENT_FRAME) {
 		println("Invalid net msg count %d", (int)numEvents);
@@ -1116,8 +1116,8 @@ bool DemoPlayer::readEvents(mstream& reader) {
 bool DemoPlayer::readClientCommands(mstream& reader) {
 	uint32_t startOffset = reader.tell();
 
-	uint16_t numCommands;
-	reader.read(&numCommands, 2);
+	uint8_t numCommands;
+	reader.read(&numCommands, 1);
 
 	static char commandChars[MAX_CMD_LENGTH + 1];
 
@@ -1177,23 +1177,42 @@ bool DemoPlayer::readDemoFrame() {
 		closeReplayFile();
 		return false;
 	}
-
-	frameProgress = 1.0f;
-	if (header.demoTime > lastReplayFrame.demoTime) {
-		frameProgress = 1.0f - ((header.demoTime - t) / (float)(header.demoTime - lastReplayFrame.demoTime));
+	uint32_t demoTime = 0;
+	uint32_t frameSize = 0;
+	uint32_t headerSz = sizeof(DemoFrame);
+	if (header.isBigFrame) {
+		fread(&demoTime, sizeof(uint32_t), 1, replayFile);
+		fread(&frameSize, sizeof(uint32_t), 1, replayFile);
+		headerSz += 8;
+	}
+	else {
+		fread(&demoTime, sizeof(uint8_t), 1, replayFile);
+		fread(&frameSize, sizeof(uint16_t), 1, replayFile);
+		demoTime = lastFrameDemoTime + demoTime;
+		headerSz += 3;
 	}
 
-	if (header.demoTime > t) {
+	frameProgress = 1.0f;
+	if (demoTime > lastFrameDemoTime) {
+		frameProgress = 1.0f - ((demoTime - t) / (float)(demoTime - lastFrameDemoTime));
+	}
+
+	if (demoTime > t) {
 		//println("Wait %u > %u", header.demoTime, t);
 		interpolateEdicts();
 		return false;
 	}
-	if (header.frameSize > 1024 * 1024 * 32 || header.frameSize == 0) {
+
+	g_stats.bigFrameCount += header.isBigFrame;
+	lastFrameDemoTime = demoTime;
+
+	if (frameSize > 1024 * 1024 * 32 || frameSize == 0) {
 		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Invalid frame size\n");
 		closeReplayFile();
 		return false;
 	}
-	nextFrameOffset = ftell(replayFile) + (header.frameSize - sizeof(DemoFrame));
+	nextFrameOffset += frameSize;
+	frameSize -= headerSz;
 
 	//println("Frame %d (%.1f kb), Time: %.1f", replayFrame, header.frameSize / 1024.0f, (float)TimeDifference(0, header.demoTime));
 
@@ -1203,15 +1222,15 @@ bool DemoPlayer::readDemoFrame() {
 	}
 	*/
 
-	char* frameData = new char[header.frameSize];
-	if (!fread(frameData, header.frameSize, 1, replayFile)) {
+	char* frameData = new char[frameSize];
+	if (!fread(frameData, frameSize, 1, replayFile)) {
 		delete[] frameData;
 		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
 	}
 
-	mstream reader = mstream(frameData, header.frameSize);
+	mstream reader = mstream(frameData, frameSize);
 
 	if (header.isKeyFrame) {
 		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
@@ -1304,19 +1323,7 @@ void DemoPlayer::interpolateEdicts() {
 		edict_t* ent = replayEnts[i].h_ent;
 		InterpInfo& interp = replayEnts[i].interp;
 
-		if ((fileedicts[i].edflags & EDFLAG_MONSTER)) {
-			float t = 1;
-			if (interp.sequenceEnd == ent->v.sequence && interp.estimatedUpdateDelay > 0) {
-				float deltaTime = (gpGlobals->time - interp.lastMovementTime) * replaySpeed;
-				t = clampf(deltaTime / interp.estimatedUpdateDelay, 0, 1);
-			}
-
-			ent->v.origin = lerp(interp.originStart, interp.originEnd, t);
-
-			ent->v.angles[0] = anglelerp(interp.anglesStart[0], interp.anglesEnd[0], t);
-			ent->v.angles[1] = anglelerp(interp.anglesStart[1], interp.anglesEnd[1], t);
-			ent->v.angles[2] = anglelerp(interp.anglesStart[2], interp.anglesEnd[2], t);
-
+		if (fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) {
 			float animTime = (gpGlobals->time - interp.animTime) * replaySpeed;
 			float inc = (animTime * interp.framerateEnt * interp.framerateSmd);
 
@@ -1330,16 +1337,26 @@ void DemoPlayer::interpolateEdicts() {
 
 			interp.interpFrame = ent->v.frame;
 		}
-		else {
-			float animTime = (gpGlobals->time - interp.animTime) * replaySpeed;
-			float inc = (animTime * interp.framerateEnt * interp.framerateSmd);
-			ent->v.frame = normalizeRangef(interp.frameEnd + inc, 0, 255);
-			interp.interpFrame = ent->v.frame;
 
+		if ((fileedicts[i].edflags & EDFLAG_MONSTER)) {
+			float t = 1;
+			if (interp.sequenceEnd == ent->v.sequence && interp.estimatedUpdateDelay > 0) {
+				float deltaTime = (gpGlobals->time - interp.lastMovementTime) * replaySpeed;
+				t = clampf(deltaTime / interp.estimatedUpdateDelay, 0, 1);
+			}
+
+			ent->v.origin = lerp(interp.originStart, interp.originEnd, t);
+
+			ent->v.angles[0] = anglelerp(interp.anglesStart[0], interp.anglesEnd[0], t);
+			ent->v.angles[1] = anglelerp(interp.anglesStart[1], interp.anglesEnd[1], t);
+			ent->v.angles[2] = anglelerp(interp.anglesStart[2], interp.anglesEnd[2], t);
+		}
+		else {
 			ent->v.origin = lerp(interp.originStart, interp.originEnd, frameProgress);
 
 			ent->v.angles[0] = anglelerp(interp.anglesStart[0], interp.anglesEnd[0], frameProgress);
 			ent->v.angles[1] = anglelerp(interp.anglesStart[1], interp.anglesEnd[1], frameProgress);
+			//ent->v.angles[2] = anglelerp(interp.anglesStart[2], interp.anglesEnd[1], frameProgress);
 
 			// fixes hud info
 			g_engfuncs.pfnSetOrigin(ent, ent->v.origin);

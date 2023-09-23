@@ -27,9 +27,9 @@ inline float FIXED_TO_FLOAT(int x, int whole_bits, int frac_bits) {
 	return r / (float)(1 << frac_bits);
 }
 
-#define MAX_EVENT_FRAME 1024 // max events per frame
-#define MAX_CMD_FRAME 1024 // max client commands per frame
-#define MAX_NETMSG_FRAME 1024 // max network messages per frame
+#define MAX_EVENT_FRAME 256 // max events per frame
+#define MAX_CMD_FRAME 256 // max client commands per frame
+#define MAX_NETMSG_FRAME 4096 // max network messages per frame
 #define MAX_NETMSG_DATA 512 // max bytes before overflow message from game
 #define MAX_CMD_LENGTH 128
 #define KEYFRAME_INTERVAL 60ULL // seconds between keyframes in demo files
@@ -63,18 +63,23 @@ struct DemoCommand {
 	// byte[] = command bytes
 };
 
+
 struct DemoFrame {
-	uint32_t demoTime; // milliseconds since recording started
-	uint32_t frameSize; // total size of this frame, including this header
-
-	uint8_t deltaFrames; // server frames since last demoFrame (for server fps)
-
 	uint8_t isKeyFrame : 1; // if true, zero out entity and player info for a full update
+	uint8_t isBigFrame : 1; // time delta or frame size does not fit in a byte
 	uint8_t hasEntityDeltas : 1;
 	uint8_t hasNetworkMessages : 1;
 	uint8_t hasEvents : 1;
 	uint8_t hasPlayerDeltas : 1;
 	uint8_t hasCommands : 1;
+	uint8_t reserved1 : 1;
+	uint8_t deltaFrames; // server frames since last demoFrame (for server fps)
+	// if bigFrame:
+	//     uint32_t demoTime = milliseconds since recording started
+	//     uint32_t frameSize = total size of this frame, excluding this header
+	// else:
+	//     uint8_t demoTimeDelta = milliseconds since the last frame
+	//     uint16_t frameSize = total size of this frame, excluding this header
 };
 
 struct CommandData {
@@ -154,11 +159,11 @@ struct DemoEventData {
 //     uint16 = count of DemoNetMessage[]
 //     DemoNetMessage[]
 // if hasEvents:
-//     uint16 = count of DemoEvent[]
+//     uint8 = count of DemoEvent[]
 //     DemoEvent[]
 // if hasCommands:
-//    uint16 = count of DemoCommand[]
-//    DemoCommand[]
+//     uint8 = count of DemoCommand[]
+//     DemoCommand[]
 
 #pragma pack(pop)
 

@@ -4,6 +4,7 @@
 
 struct DemoStats {
 	uint32_t frameCount;
+	uint32_t bigFrameCount;
 	uint32_t totalWriteSz;
 	uint32_t currentWriteSz;
 
@@ -33,7 +34,11 @@ struct DemoStats {
 	uint32_t cmdCurrentSz;
 	uint32_t cmdCount; // number of commands sent
 
+	// calculate current frame size and increment stats
+	// accounts for variable size time/framesize
 	void incTotals();
+
+	void calcFrameSize();
 
 	void showStats(edict_t* ent);
 };

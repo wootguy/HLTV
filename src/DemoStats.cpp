@@ -68,9 +68,13 @@ void DemoStats::incTotals() {
 
 	plrDeltaCount += plrDeltaCurrentSz != 0;
 
-	currentWriteSz = entDeltaCurrentSz + plrDeltaCurrentSz + msgCurrentSz 
-		+ cmdCurrentSz + eventCurrentSz + sizeof(DemoFrame);
+	calcFrameSize();
 	totalWriteSz += currentWriteSz;
+}
+
+void DemoStats::calcFrameSize() {
+	currentWriteSz = entDeltaCurrentSz + plrDeltaCurrentSz + msgCurrentSz
+		+ cmdCurrentSz + eventCurrentSz + sizeof(DemoFrame);
 }
 
 const char* formatSize(uint32_t bytes) {
@@ -113,6 +117,7 @@ void DemoStats::showStats(edict_t* ent) {
 	params.channel = 0;
 	params.holdTime = 1.0f;
 
+	string hdrTotal = formatSize(g_stats.frameCount * sizeof(DemoFrame));
 	string entTotal = formatSize(g_stats.entDeltaTotalSz);
 	string plrTotal = formatSize(g_stats.plrDeltaTotalSz);
 	string msgTotal = formatSize(g_stats.msgTotalSz);
@@ -120,12 +125,13 @@ void DemoStats::showStats(edict_t* ent) {
 	string cmdTotal = formatSize(g_stats.cmdTotalSz);
 	string totalSz = formatSize(g_stats.totalWriteSz);
 
-	string txt = UTIL_VarArgs("Demo (%s):\n", totalSz.c_str());
+	string txt = UTIL_VarArgs("Demo (%s, %u):\n", totalSz.c_str(), g_stats.currentWriteSz);
 	txt += UTIL_VarArgs("ent: %s (%d)\n", entTotal.c_str(), g_stats.entDeltaCurrentSz);
+	txt += UTIL_VarArgs("hdr: %s (%d, %d)\n", hdrTotal.c_str(), g_stats.bigFrameCount, g_stats.frameCount- g_stats.bigFrameCount);
 	txt += UTIL_VarArgs("plr: %s (%d)\n", plrTotal.c_str(), g_stats.plrDeltaCurrentSz);
 	txt += UTIL_VarArgs("msg: %s (%d)\n", msgTotal.c_str(), g_stats.msgCurrentSz);
 	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);
-	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCurrentSz);
+	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCount);
 
 	HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 

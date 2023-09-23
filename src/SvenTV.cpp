@@ -91,6 +91,11 @@ void SvenTV::think_mainThread() {
 			g_command_count = 0;
 			g_event_count = 0;
 
+			for (int i = 1; i <= gpGlobals->maxClients; i++) {
+				DemoPlayerEnt& dplr = g_demoplayers[i - 1];
+				dplr.button = 0;
+			}
+
 			int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);
 
@@ -449,14 +454,12 @@ void SvenTV::think_tvThread() {
 			for (int i = 1; i <= gpGlobals->maxClients; i++) {
 				DemoPlayerEnt& dplr = frame.playerinfos[i - 1];
 				edict_t* ent = INDEXENT(i);
-				CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
 
-				if (!isValidPlayer(ent) || !plr) {
+				if (!isValidPlayer(ent)) {
 					continue;
 				}
 
 				dplr.armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
-				dplr.button = (plr->m_afButtonLast | plr->m_afButtonPressed | plr->m_afButtonReleased | ent->v.button) & 0xffff;
 				dplr.fov = clamp(ent->v.fov + 0.5f, 0, 255);
 				dplr.frags = clamp(ent->v.frags, 0, UINT16_MAX);
 				dplr.punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
