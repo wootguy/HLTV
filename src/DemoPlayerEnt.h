@@ -4,12 +4,11 @@
 
 #define PLR_FL_CONNECTED 1
 #define PLR_FL_INWATER 2
-#define PLR_FL_NOTARGET 4
-#define PLR_FL_ONGROUND 8	// or partial ground
-#define PLR_FL_WATERJUMP 16
-#define PLR_FL_FROZEN 32
-#define PLR_FL_DUCKING 64
-#define PLR_FL_NOWEAPONS 128
+#define PLR_FL_ONGROUND 4	// or partial ground
+#define PLR_FL_WATERJUMP 8
+#define PLR_FL_FROZEN 16
+#define PLR_FL_DUCKING 32
+#define PLR_FL_NOWEAPONS 64
 
 #define FL_BIGPLRDELTA			(1 << 0) // if set, deltaBits = 4bytes, else 1 byte
 #define FL_DELTA_FLAGS			(1 << 1)

@@ -474,7 +474,6 @@ void SvenTV::think_tvThread() {
 				int fl = ent->v.flags;
 				if (dplr.flags & PLR_FL_CONNECTED) {
 					dplr.flags = (fl & FL_INWATER ? PLR_FL_INWATER : 0)
-						| (fl & FL_NOTARGET ? PLR_FL_NOTARGET : 0)
 						| (fl & (FL_ONGROUND | FL_PARTIALGROUND) ? PLR_FL_ONGROUND : 0)
 						| (fl & FL_WATERJUMP ? PLR_FL_WATERJUMP : 0)
 						| (fl & FL_FROZEN ? PLR_FL_FROZEN : 0)

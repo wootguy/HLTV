@@ -26,26 +26,25 @@
 #define FL_DELTA_FRAME			(1 << 9)
 #define FL_DELTA_CONTROLLER_LO	(1 << 10)	// high priority for turrets + apache
 #define FL_DELTA_SEQUENCE		(1 << 11)
-#define FL_DELTA_GAITSEQUENCE	(1 << 12)
-#define FL_DELTA_BLENDING		(1 << 13)
-#define FL_DELTA_RENDERAMT		(1 << 14)
+#define FL_DELTA_GAITBLEND		(1 << 12)	// gait sequence + lower blending byte
+#define FL_DELTA_RENDERAMT		(1 << 13)
+#define FL_DELTA_HEALTH			(1 << 14)
+#define FL_DELTA_FRAMERATE		(1 << 15)
 
-#define FL_DELTA_HEALTH			(1 << 15)
 #define FL_DELTA_EFFECTS		(1 << 16)
-#define FL_DELTA_FRAMERATE		(1 << 17)
-#define FL_DELTA_RENDERCOLOR_0	(1 << 18)
-#define FL_DELTA_RENDERCOLOR_1	(1 << 19)
-#define FL_DELTA_RENDERCOLOR_2	(1 << 20)
-#define FL_DELTA_RENDERMODEFX	(1 << 21)
-#define FL_DELTA_SKIN			(1 << 22)
-#define FL_DELTA_BODY			(1 << 23)
-#define FL_DELTA_SCALE			(1 << 24)
-#define FL_DELTA_COLORMAP		(1 << 25)
-#define FL_DELTA_MODELINDEX		(1 << 26)
-#define FL_DELTA_CONTROLLER_HI	(1 << 27)	// rare for something to have more than 2 controllers
-#define FL_DELTA_AIMENT			(1 << 28)
-#define FL_DELTA_CLASSIFYGOD	(1 << 29)
-#define FL_DELTA_EDFLAGS		(1 << 30)
+#define FL_DELTA_RENDERCOLOR_0	(1 << 17)
+#define FL_DELTA_RENDERCOLOR_1	(1 << 18)
+#define FL_DELTA_RENDERCOLOR_2	(1 << 19)
+#define FL_DELTA_RENDERMODEFX	(1 << 20)
+#define FL_DELTA_SKIN			(1 << 21)
+#define FL_DELTA_BODY			(1 << 22)
+#define FL_DELTA_SCALE			(1 << 23)
+#define FL_DELTA_COLORMAP		(1 << 24)
+#define FL_DELTA_MODELINDEX		(1 << 25)
+#define FL_DELTA_CONTROLLER_HI	(1 << 26)	// rare for something to have more than 2 controllers
+#define FL_DELTA_AIMENT			(1 << 27)
+#define FL_DELTA_CLASSIFY		(1 << 28)
+#define FL_DELTA_EDFLAGS		(1 << 29)
 
 #define ENT_DELTA_BYTES 4 // size of a "big" ent delta
 
@@ -53,6 +52,8 @@
 #define EDFLAG_MONSTER 2	// should display health/name
 #define EDFLAG_PLAYER 4		// special model loading and rendering
 #define EDFLAG_BEAM 8		// lasers and stuff
+#define EDFLAG_GOD 16		// GODMODE/DAMAGE_NO
+#define EDFLAG_NOTARGET 32	// FL_NOTARGET
 
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
@@ -68,11 +69,11 @@ struct netedict {
 	uint8_t		colormap;
 
 	uint8_t		sequence;		// animation sequence
-	uint8_t		gaitsequence;	// movement animation sequence for player (0 for none)
+	uint16_t	gaitblend;		// upper byte = gait sequence (player), lower byte = animation blend (grunts crouching+shooting)
 	uint8_t		frame;			// % playback position in animation sequences (0..255)
 	int8_t		framerate;		// animation playback rate (-8x to 8x) (4.4 fixed point)
 	uint8_t		controller[4];	// bone controller setting (0..255)
-	uint16_t	blending;		// animation blends (grunts crouching+shooting)
+	uint16_t	blending;		
 
 	uint16_t	scale;			// rendering scale (0..255) (8.8 fixed point)
 
@@ -81,7 +82,7 @@ struct netedict {
 	uint8_t		rendercolor[3];
 
 	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
-	uint8_t		classifyGod; // class_ovverride (7 bits), GODMODE/DAMAGE_NO (LSB)
+	uint8_t		classify;	// class_ovverride
 
 	// internal vars (not networked/written)
 	uint32_t	deltaBitsLast; // last delta bits read/written

@@ -78,8 +78,8 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch sequence");
 		return false;
 	}
-	if (gaitsequence != other.gaitsequence) {
-		println("Mismatch gaitsequence");
+	if (gaitblend != other.gaitblend) {
+		println("Mismatch gaitblend");
 		return false;
 	}
 	if (frame != other.frame) {
@@ -142,8 +142,8 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch health");
 		return false;
 	}
-	if (classifyGod != other.classifyGod) {
-		println("Mismatch classifyGod");
+	if (classify != other.classify) {
+		println("Mismatch classify");
 		return false;
 	}
 	return true;
@@ -162,13 +162,13 @@ void netedict::load(const edict_t& ed) {
 	skin = vars.skin;
 	body = vars.body;
 	effects = vars.effects;
-	gaitsequence = vars.gaitsequence;
+	gaitblend = (vars.gaitsequence << 8) | vars.blending[0];
 	int8_t newFramerate = clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
 	uint8_t newSequence = vars.sequence;
 	uint16_t newModelindex = vars.modelindex;
-	
+
 	memcpy(controller, vars.controller, 4);
-	memcpy(&blending, vars.blending, 2);
+
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermodefx = ((vars.rendermode & 0x7) << 5) | (vars.renderfx & 0x1f);
 	renderamt = vars.renderamt;
@@ -239,11 +239,18 @@ void netedict::load(const edict_t& ed) {
 		}
 	}
 
+	if ((vars.flags & FL_GODMODE) || vars.takedamage == DAMAGE_NO) {
+		edflags |= EDFLAG_GOD;
+	}
+
+	if (vars.flags & FL_NOTARGET) {
+		edflags |= EDFLAG_NOTARGET;
+	}
+
 	if (ed.v.flags & (FL_CLIENT | FL_MONSTER)) {
-		uint8_t godbit = (vars.flags & FL_GODMODE) || vars.takedamage == DAMAGE_NO;
 		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed)); // TODO: not thread safe
 		uint8_t classifyBits = bent && bent->m_fOverrideClass ? bent->m_iClassSelection : 0;
-		classifyGod = (classifyBits << 1) | godbit;
+		classify = classifyBits;
 	}
 }
 
@@ -262,11 +269,11 @@ void netedict::apply(edict_t* ed) {
 	vars.body = body;
 	vars.effects = effects;
 	vars.sequence = sequence;
-	vars.gaitsequence = gaitsequence;
+	vars.gaitsequence = gaitblend >> 8;
 	vars.frame = frame;
 	vars.framerate = framerate / 16.0f;
 	memcpy(vars.controller, controller, 4);
-	memcpy(vars.blending, &blending, 2);
+	vars.blending[0] = gaitblend & 0xff;
 	vars.scale = scale / 256.0f;
 	vars.rendermode = rendermodefx >> 5;
 	vars.renderamt = renderamt;
@@ -276,13 +283,13 @@ void netedict::apply(edict_t* ed) {
 	vars.renderfx = rendermodefx & 0x1f;
 	vars.colormap = colormap;
 	vars.health = health;
-	vars.playerclass = classifyGod >> 1;
-	vars.flags |= (classifyGod & 1) ? FL_GODMODE : 0;
+	vars.playerclass = classify;
+	vars.flags |= (edflags & EDFLAG_GOD) ? FL_GODMODE : 0;
 	vars.aiment = NULL;
 
 	CBaseEntity* baseent = (CBaseEntity*)GET_PRIVATE(ed);
 	if (baseent) {
-		baseent->m_iClassSelection = classifyGod >> 1;
+		baseent->m_iClassSelection = classify;
 		baseent->m_fOverrideClass = baseent->m_iClassSelection != 0;
 	}
 
@@ -444,12 +451,11 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_LO, controller[0], 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_BLENDING, blending, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_HEALTH, health, 4);
-	READ_DELTA(reader, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
@@ -461,7 +467,7 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller[2], 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_AIMENT, aiment, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_CLASSIFYGOD, classifyGod, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CLASSIFY, classify, 1);
 
 	return true;
 }
@@ -559,12 +565,12 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		writer.write((void*)&controller[0], 2);
 	}
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_BLENDING, blending, 2);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_HEALTH, health, 4);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
+
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
@@ -580,7 +586,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		writer.write((void*)&controller[2], 2);
 	}
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_AIMENT, aiment, 2);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_CLASSIFYGOD, classifyGod, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_CLASSIFY, classify, 1);
 
 	deltaBitsLast = 0;
 

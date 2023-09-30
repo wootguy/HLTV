@@ -148,12 +148,11 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_BODY);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_EFFECTS);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_SEQUENCE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_GAITSEQUENCE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_GAITBLEND);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_FRAME);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_FRAMERATE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_LO);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_HI);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_BLENDING);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_SCALE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERMODEFX);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERAMT);
@@ -163,7 +162,7 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_AIMENT);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_HEALTH);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_COLORMAP);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CLASSIFYGOD);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CLASSIFY);
 
 		DeltaStat indexStat;
 		indexStat.field = "indexes";
@@ -209,12 +208,11 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_BODY);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_EFFECTS);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SEQUENCE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_GAITSEQUENCE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_GAITBLEND);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAME);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAMERATE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_LO);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_HI);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_BLENDING);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SCALE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERMODEFX);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERAMT);
@@ -224,7 +222,7 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_AIMENT);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_HEALTH);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_COLORMAP);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CLASSIFYGOD);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CLASSIFY);
 
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
