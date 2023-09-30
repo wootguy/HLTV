@@ -190,7 +190,7 @@ void netedict::load(const edict_t& ed) {
 		lastAnimationReset = anim->m_flLastEventCheck;
 	}
 
-	if (animationReset) {
+	if (animationReset || anim->IsBSPModel()) {
 		// clients can no longer predict the current frame
 		frame = vars.frame;
 	}

@@ -494,20 +494,6 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 		uint32_t originMask = FL_DELTA_ORIGIN_X | FL_DELTA_ORIGIN_Y | FL_DELTA_ORIGIN_Z;
 		uint32_t anglesMask = FL_DELTA_ANGLES_X | FL_DELTA_ANGLES_Y | FL_DELTA_ANGLES_Z;
 		if (fileedicts[i].deltaBitsLast & (originMask|anglesMask)) {
-			// tried to predict movement but angles are not precise enough so it deviates quickly
-			/*
-			te_beampoints(interp.originEnd + Vector(0,0,8), ent->v.origin + Vector(0, 0, 8));
-			te_beampoints(interp.originPredictStart, interp.originPredict);
-			float error = (ent->v.origin - interp.originPredict).Length();
-			println("ERROR: %f", error);
-
-			if ((fileedicts[i].deltaBitsLast & FL_DELTA_ANGLES_Y) || error > 5.0f) {
-				println("NEW SOURCE");
-				interp.originPredictTime = gpGlobals->time;
-				interp.originPredictStart = ent->v.origin;
-			}
-			*/
-
 			interp.originStart = interp.originEnd;
 			interp.originEnd = ent->v.origin;
 
@@ -1352,17 +1338,10 @@ void DemoPlayer::interpolateEdicts() {
 
 		if ((fileedicts[i].edflags & EDFLAG_MONSTER)) {
 			float t = 1;
-			float deltaTime = (gpGlobals->time - interp.lastMovementTime) * replaySpeed;
 			if (interp.sequenceEnd == ent->v.sequence && interp.estimatedUpdateDelay > 0) {
+				float deltaTime = (gpGlobals->time - interp.lastMovementTime) * replaySpeed;
 				t = clampf(deltaTime / interp.estimatedUpdateDelay, 0, 1);
 			}
-
-			/*
-			float deltaTime2 = (gpGlobals->time - interp.originPredictTime) * replaySpeed;
-			float dist = interp.groundspeed * deltaTime2 * interp.framerateEnt;
-			MAKE_VECTORS(ent->v.angles);
-			interp.originPredict = interp.originPredictStart + gpGlobals->v_forward * dist;
-			*/
 
 			ent->v.origin = lerp(interp.originStart, interp.originEnd, t);
 

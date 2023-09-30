@@ -21,14 +21,11 @@
 // - 1-2byte deltaidx for players
 // - no more pmove
 // - init framerate to 16
+// - 1byte angles for non-players
 
 struct InterpInfo {
 	Vector originStart;
 	Vector originEnd;
-
-	Vector originPredictStart; // predicted origin
-	Vector originPredict; // predicted origin
-	float originPredictTime;
 
 	Vector anglesStart;
 	Vector anglesEnd;
