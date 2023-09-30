@@ -151,8 +151,7 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_GAITSEQUENCE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_FRAME);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_FRAMERATE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_0);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_1);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_LO);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_HI);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_BLENDING);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_SCALE);
@@ -212,8 +211,7 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_GAITSEQUENCE);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAME);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAMERATE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_0);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_1);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_LO);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_HI);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_BLENDING);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SCALE);

@@ -433,26 +433,25 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Y, angles[1], angleSz);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Z, angles[2], angleSz);
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_SKIN, skin, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_BODY, body, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_EFFECTS, effects, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_LO, controller[0], 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_0, controller[0], 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_1, controller[1], 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller[2], 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_BLENDING, blending, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_SCALE, scale, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERMODEFX, rendermodefx, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_HEALTH, health, 4);
+	READ_DELTA(reader, deltaBits, FL_DELTA_EFFECTS, effects, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_AIMENT, aiment, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_HEALTH, health, 4);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERMODEFX, rendermodefx, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_SKIN, skin, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_BODY, body, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_SCALE, scale, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller[2], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_AIMENT, aiment, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CLASSIFYGOD, classifyGod, 1);
 
 	return true;
@@ -506,7 +505,9 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		}
 	}
 
+	// last bit but written first because it decides how other deltas are read
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_EDFLAGS, edflags, 1);
+
 	uint32_t originOffset = writer.tell();
 	if (canWrite16bitOriginDeltas) {
 		if (old.origin[0] != origin[0]) {
@@ -543,30 +544,33 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		g_stats.entDeltaSz[bitoffset(FL_DELTA_FRAME)] += 1;
 		writer.write((void*)&frame, 1);
 	}
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_SKIN, skin, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_BODY, body, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_EFFECTS, effects, 2);
+	if (old.controller[0] != controller[0] || old.controller[1] != controller[1]) {
+		deltaBits |= FL_DELTA_CONTROLLER_LO;
+		g_stats.entDeltaSz[bitoffset(FL_DELTA_CONTROLLER_LO)] += 2;
+		writer.write((void*)&controller[0], 2);
+	}
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITSEQUENCE, gaitsequence, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_BLENDING, blending, 2);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_HEALTH, health, 4);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_0, controller[0], 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_1, controller[1], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERMODEFX, rendermodefx, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_SKIN, skin, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_BODY, body, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_SCALE, scale, 2);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
 	if (old.controller[2] != controller[2] || old.controller[3] != controller[3]) {
 		deltaBits |= FL_DELTA_CONTROLLER_HI;
 		g_stats.entDeltaSz[bitoffset(FL_DELTA_CONTROLLER_HI)] += 2;
 		writer.write((void*)&controller[2], 2);
 	}
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_BLENDING, blending, 2);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_SCALE, scale, 2);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERMODEFX, rendermodefx, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_AIMENT, aiment, 2);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_HEALTH, health, 4);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CLASSIFYGOD, classifyGod, 1);
 
 	deltaBitsLast = 0;

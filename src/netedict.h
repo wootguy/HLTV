@@ -6,7 +6,7 @@
 
 // flags for indicating which edict fields were updated
 
-// if set, deltaBits = 4bytes, and origin values are 19.5 fixed point and replace the previous origin
+// if set, deltaBits = 2+ bytes, and origin values are 19.5 fixed point and replace the previous origin
 // otherwise, deltaBits = 1byte, and origin values are 11.5 fixed point and added to the previous origin
 #define FL_BIGENTDELTA			(1 << 0)
 
@@ -15,37 +15,37 @@
 // 0 = 1 byte origin deltas
 #define FL_DELTA_BIGORIGIN		(1 << 1)
 
-#define FL_DELTA_EDFLAGS		(1 << 2)
-#define FL_DELTA_ORIGIN_X		(1 << 3)
-#define FL_DELTA_ORIGIN_Y		(1 << 4)
-#define FL_DELTA_ORIGIN_Z		(1 << 5)
-#define FL_DELTA_ANGLES_X		(1 << 6)
-#define FL_DELTA_ANGLES_Y		(1 << 7)
+#define FL_DELTA_ORIGIN_X		(1 << 2)
+#define FL_DELTA_ORIGIN_Y		(1 << 3)
+#define FL_DELTA_ORIGIN_Z		(1 << 4)
+#define FL_DELTA_ANGLES_X		(1 << 5)
+#define FL_DELTA_ANGLES_Y		(1 << 6)
+#define FL_DELTA_ANGLES_Z		(1 << 7)	// high priority for apache
 
-#define FL_DELTA_ANGLES_Z		(1 << 8)
+#define FL_BIGGERENTDELTA		(1 << 8)	// if set, deltaBits = 4 bytes
 #define FL_DELTA_FRAME			(1 << 9)
-#define FL_DELTA_RENDERAMT		(1 << 23)
-#define FL_DELTA_CONTROLLER_0	(1 << 17)
-#define FL_DELTA_CONTROLLER_1	(1 << 18)
-#define FL_DELTA_SEQUENCE		(1 << 14)
-#define FL_DELTA_GAITSEQUENCE	(1 << 15)
-#define FL_DELTA_BLENDING		(1 << 20)
+#define FL_DELTA_CONTROLLER_LO	(1 << 10)	// high priority for turrets + apache
+#define FL_DELTA_SEQUENCE		(1 << 11)
+#define FL_DELTA_GAITSEQUENCE	(1 << 12)
+#define FL_DELTA_BLENDING		(1 << 13)
+#define FL_DELTA_RENDERAMT		(1 << 14)
 
-#define FL_DELTA_MODELINDEX		(1 << 10)
-#define FL_DELTA_SKIN			(1 << 11)
-#define FL_DELTA_BODY			(1 << 12)
-#define FL_DELTA_EFFECTS		(1 << 13)
-#define FL_DELTA_FRAMERATE		(1 << 16)
-#define FL_DELTA_CONTROLLER_HI	(1 << 19)	// rare for something to have more than 2 controllers
-#define FL_DELTA_SCALE			(1 << 21)
-#define FL_DELTA_RENDERMODEFX	(1 << 22)
-#define FL_DELTA_RENDERCOLOR_0	(1 << 24)
-#define FL_DELTA_RENDERCOLOR_1	(1 << 25)
-#define FL_DELTA_RENDERCOLOR_2	(1 << 26)
+#define FL_DELTA_HEALTH			(1 << 15)
+#define FL_DELTA_EFFECTS		(1 << 16)
+#define FL_DELTA_FRAMERATE		(1 << 17)
+#define FL_DELTA_RENDERCOLOR_0	(1 << 18)
+#define FL_DELTA_RENDERCOLOR_1	(1 << 19)
+#define FL_DELTA_RENDERCOLOR_2	(1 << 20)
+#define FL_DELTA_RENDERMODEFX	(1 << 21)
+#define FL_DELTA_SKIN			(1 << 22)
+#define FL_DELTA_BODY			(1 << 23)
+#define FL_DELTA_SCALE			(1 << 24)
+#define FL_DELTA_COLORMAP		(1 << 25)
+#define FL_DELTA_MODELINDEX		(1 << 26)
+#define FL_DELTA_CONTROLLER_HI	(1 << 27)	// rare for something to have more than 2 controllers
 #define FL_DELTA_AIMENT			(1 << 28)
-#define FL_DELTA_HEALTH			(1 << 29)
-#define FL_DELTA_COLORMAP		(1 << 30)
-#define FL_DELTA_CLASSIFYGOD	(1 << 31)
+#define FL_DELTA_CLASSIFYGOD	(1 << 29)
+#define FL_DELTA_EDFLAGS		(1 << 30)
 
 #define ENT_DELTA_BYTES 4 // size of a "big" ent delta
 
