@@ -60,12 +60,6 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 			memset((void*)(&old), 0, sizeof(DemoPlayerEnt));
 		}
 
-		if (old.pmMoveCounter != pmMoveCounter) {
-			deltaBits |= FL_DELTA_PMMOVE;
-			uint8_t delta = clamp(pmMoveCounter - old.pmMoveCounter, 0, 255);
-			g_stats.plrDeltaSz[bitoffset(FL_DELTA_PMMOVE)] += 1; \
-				writer.write((void*)&delta, 1);
-		}
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_BUTTON, button, 2);
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_PING, ping, 2);
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_CLIP, clip, 2);
@@ -162,7 +156,6 @@ uint32_t DemoPlayerEnt::readDeltas(mstream& reader) {
 		return deltaBits;
 	}
 
-	READ_DELTA(reader, deltaBits, FL_DELTA_PMMOVE, pmMoveCounter, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_BUTTON, button, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_PING, ping, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CLIP, clip, 2);

@@ -305,13 +305,7 @@ void ClientJoin(edict_t* ent) {
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.steamid64 = getSteamId64(ent);
 	plr.flags |= PLR_FL_CONNECTED;
-
-	RETURN_META(MRES_IGNORED);
-}
-
-void PM_Move(playermove_s* ppmove, int server) {
-	DemoPlayerEnt& plr = g_demoplayers[ppmove->player_index];
-	plr.pmMoveCounter++;
+	
 	RETURN_META(MRES_IGNORED);
 }
 
@@ -617,7 +611,6 @@ void PluginInit() {
 	g_dll_hooks.pfnClientDisconnect = ClientLeave;
 	g_dll_hooks.pfnClientUserInfoChanged = ClientUserInfoChanged;
 	g_dll_hooks.pfnClientPutInServer = ClientJoin;
-	g_dll_hooks.pfnPM_Move = PM_Move;
 	g_dll_hooks.pfnClientCommand = ClientCommand;
 
 	g_engine_hooks.pfnMessageBegin = MessageBegin;

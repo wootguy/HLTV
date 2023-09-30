@@ -125,7 +125,7 @@ void DemoStats::showStats(edict_t* ent) {
 	string cmdTotal = formatSize(g_stats.cmdTotalSz);
 	string totalSz = formatSize(g_stats.totalWriteSz);
 
-	string txt = UTIL_VarArgs("Demo (%s, %u):\n", totalSz.c_str(), g_stats.currentWriteSz);
+	string txt = UTIL_VarArgs("Demo (%s, %u, %d+%d ms):\n", totalSz.c_str(), g_stats.currentWriteSz, g_copyTime, g_thinkTime);
 	txt += UTIL_VarArgs("ent: %s (%d)\n", entTotal.c_str(), g_stats.entDeltaCurrentSz);
 	txt += UTIL_VarArgs("hdr: %s (%d, %d)\n", hdrTotal.c_str(), g_stats.bigFrameCount, g_stats.frameCount- g_stats.bigFrameCount);
 	txt += UTIL_VarArgs("plr: %s (%d)\n", plrTotal.c_str(), g_stats.plrDeltaCurrentSz);
@@ -245,7 +245,6 @@ void DemoStats::showStats(edict_t* ent) {
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_STEAMID);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_COLORS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PING);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PMMOVE);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_X);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Y);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Z);
