@@ -16,6 +16,12 @@
 // - do monsters ever reset sequences to a non-zero frame? (undo frame opt)
 // - punchangle prediction
 
+// optimize ideas:
+// - 2byte deltabits for entx
+// - 1-2byte deltaidx for players
+// - no more pmove
+// - init framerate to 16
+
 struct InterpInfo {
 	Vector originStart;
 	Vector originEnd;
@@ -51,8 +57,8 @@ struct ReplayEntity {
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
-	bool clearMapForPlayback = true; // map may crash if entities are not cleared first
-	bool useBots = false; // try to use bots for player entites
+	bool clearMapForPlayback = false; // map may crash if entities are not cleared first
+	bool useBots = true; // try to use bots for player entites
 	float replaySpeed = 1.0f;
 	int netmsgPlrIdx = 1; // player to replay network messages for
 

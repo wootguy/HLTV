@@ -11,7 +11,7 @@
 #define FL_BIGENTDELTA			(1 << 0)
 
 // FL_DELTA_BIGORIGIN  + FL_BIGENTDELTA = 4 byte origin values.
-// FL_DELTA_BIGORIGIN or FL_BIGENTDELTA = 2 byte origin values.
+// FL_DELTA_BIGORIGIN or FL_BIGENTDELTA = 2 byte origin deltas.
 // 0 = 1 byte origin deltas
 #define FL_DELTA_BIGORIGIN		(1 << 1)
 
@@ -24,24 +24,24 @@
 
 #define FL_DELTA_ANGLES_Z		(1 << 8)
 #define FL_DELTA_FRAME			(1 << 9)
+#define FL_DELTA_RENDERAMT		(1 << 23)
+#define FL_DELTA_CONTROLLER_0	(1 << 17)
+#define FL_DELTA_CONTROLLER_1	(1 << 18)
+#define FL_DELTA_SEQUENCE		(1 << 14)
+#define FL_DELTA_GAITSEQUENCE	(1 << 15)
+#define FL_DELTA_BLENDING		(1 << 20)
+
 #define FL_DELTA_MODELINDEX		(1 << 10)
 #define FL_DELTA_SKIN			(1 << 11)
 #define FL_DELTA_BODY			(1 << 12)
 #define FL_DELTA_EFFECTS		(1 << 13)
-#define FL_DELTA_SEQUENCE		(1 << 14)
-#define FL_DELTA_GAITSEQUENCE	(1 << 15)
 #define FL_DELTA_FRAMERATE		(1 << 16)
-#define FL_DELTA_CONTROLLER_0	(1 << 17)
-#define FL_DELTA_CONTROLLER_1	(1 << 18)
 #define FL_DELTA_CONTROLLER_HI	(1 << 19)	// rare for something to have more than 2 controllers
-#define FL_DELTA_BLENDING		(1 << 20)
 #define FL_DELTA_SCALE			(1 << 21)
-#define FL_DELTA_RENDERMODE		(1 << 22)
-#define FL_DELTA_RENDERAMT		(1 << 23)
+#define FL_DELTA_RENDERMODEFX	(1 << 22)
 #define FL_DELTA_RENDERCOLOR_0	(1 << 24)
 #define FL_DELTA_RENDERCOLOR_1	(1 << 25)
 #define FL_DELTA_RENDERCOLOR_2	(1 << 26)
-#define FL_DELTA_RENDERFX		(1 << 27)
 #define FL_DELTA_AIMENT			(1 << 28)
 #define FL_DELTA_HEALTH			(1 << 29)
 #define FL_DELTA_COLORMAP		(1 << 30)
@@ -76,10 +76,9 @@ struct netedict {
 
 	uint16_t	scale;			// rendering scale (0..255) (8.8 fixed point)
 
-	uint8_t		rendermode;
+	uint8_t		rendermodefx; // upper 3 bits = rendermode, lower 5 bits = renderfx
 	uint8_t		renderamt;
 	uint8_t		rendercolor[3];
-	uint8_t		renderfx;
 
 	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
 	uint8_t		classifyGod; // class_ovverride (7 bits), GODMODE/DAMAGE_NO (LSB)

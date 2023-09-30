@@ -106,10 +106,6 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch scale");
 		return false;
 	}
-	if (rendermode != other.rendermode) {
-		println("Mismatch rendermode");
-		return false;
-	}
 	if (renderamt != other.renderamt) {
 		println("Mismatch renderamt");
 		return false;
@@ -126,8 +122,8 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch rendercolor[2]");
 		return false;
 	}
-	if (renderfx != other.renderfx) {
-		println("Mismatch renderfx");
+	if (rendermodefx != other.rendermodefx) {
+		println("Mismatch rendermodefx");
 		return false;
 	}
 	if (aiment != other.aiment) {
@@ -174,12 +170,11 @@ void netedict::load(const edict_t& ed) {
 	memcpy(controller, vars.controller, 4);
 	memcpy(&blending, vars.blending, 2);
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
-	rendermode = vars.rendermode;
+	rendermodefx = ((vars.rendermode & 0x7) << 5) | (vars.renderfx & 0x1f);
 	renderamt = vars.renderamt;
 	rendercolor[0] = vars.rendercolor[0];
 	rendercolor[1] = vars.rendercolor[1];
 	rendercolor[2] = vars.rendercolor[2];
-	renderfx = vars.renderfx;
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
 	colormap = vars.colormap;
 	health = vars.health > 0 ? Min(vars.health, UINT32_MAX) : 0;
@@ -273,12 +268,12 @@ void netedict::apply(edict_t* ed) {
 	memcpy(vars.controller, controller, 4);
 	memcpy(vars.blending, &blending, 2);
 	vars.scale = scale / 256.0f;
-	vars.rendermode = rendermode;
+	vars.rendermode = rendermodefx >> 5;
 	vars.renderamt = renderamt;
 	vars.rendercolor[0] = rendercolor[0];
 	vars.rendercolor[1] = rendercolor[1];
 	vars.rendercolor[2] = rendercolor[2];
-	vars.renderfx = renderfx;
+	vars.renderfx = rendermodefx & 0x1f;
 	vars.colormap = colormap;
 	vars.health = health;
 	vars.playerclass = classifyGod >> 1;
@@ -450,12 +445,11 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller[2], 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_BLENDING, blending, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_SCALE, scale, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERMODE, rendermode, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERMODEFX, rendermodefx, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERFX, renderfx, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_AIMENT, aiment, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_HEALTH, health, 4);
 	READ_DELTA(reader, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
@@ -565,12 +559,11 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	}
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_BLENDING, blending, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SCALE, scale, 2);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERMODE, rendermode, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERMODEFX, rendermodefx, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_1, rendercolor[1], 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERCOLOR_2, rendercolor[2], 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERFX, renderfx, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_AIMENT, aiment, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_HEALTH, health, 4);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
@@ -641,7 +634,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		writer.seek(endOffset - (ENT_DELTA_BYTES-1));
 	}
 	else {
-		if (canWrite16bitOriginDeltas) {
+		if (canWrite16bitOriginDeltas && !entityCreated) {
 			uint32_t bigUpdateBits = deltaBits & 0xffffff00;
 			for (int i = 0; i < 32; i++) {
 				uint32_t bit = 1U << i;
