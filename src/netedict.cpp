@@ -90,16 +90,12 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch framerate");
 		return false;
 	}
-	if (controller[0] != other.controller[0]) {
-		println("Mismatch controller[0]");
+	if (controller_lo != other.controller_lo) {
+		println("Mismatch controller_lo");
 		return false;
 	}
-	if (controller[1] != other.controller[1]) {
-		println("Mismatch controller[1]");
-		return false;
-	}
-	if (controller[2] != other.controller[2]) {
-		println("Mismatch controller[2]");
+	if (controller_hi != other.controller_hi) {
+		println("Mismatch controller_hi");
 		return false;
 	}
 	if (scale != other.scale) {
@@ -167,7 +163,7 @@ void netedict::load(const edict_t& ed) {
 	uint8_t newSequence = vars.sequence;
 	uint16_t newModelindex = vars.modelindex;
 
-	memcpy(controller, vars.controller, 4);
+	memcpy(&controller_lo, vars.controller, 4);
 
 	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermodefx = ((vars.rendermode & 0x7) << 5) | (vars.renderfx & 0x1f);
@@ -222,7 +218,7 @@ void netedict::load(const edict_t& ed) {
 		// not enough bits in sequence/skin so using aiment/owner instead
 		// these vars set the start/end entity and attachment points
 		aiment = vars.sequence;
-		((uint16_t*)controller)[0] = vars.skin;
+		controller_lo = vars.skin;
 		sequence = 0;
 		skin = 0;
 	}
@@ -272,7 +268,7 @@ void netedict::apply(edict_t* ed) {
 	vars.gaitsequence = gaitblend >> 8;
 	vars.frame = frame;
 	vars.framerate = framerate / 16.0f;
-	memcpy(vars.controller, controller, 4);
+	memcpy(vars.controller, &controller_lo, 4);
 	vars.blending[0] = gaitblend & 0xff;
 	vars.scale = scale / 256.0f;
 	vars.rendermode = rendermodefx >> 5;
@@ -297,7 +293,7 @@ void netedict::apply(edict_t* ed) {
 
 	if (edflags & EDFLAG_BEAM) {
 		uint16_t startIdx = aiment & 0xfff;
-		uint16_t endIdx = ((uint16_t*)controller)[0] & 0xfff;
+		uint16_t endIdx = controller_lo & 0xfff;
 
 		if (startIdx) {
 			edict_t* copyent = g_demoPlayer->getReplayEntity(startIdx);
@@ -317,7 +313,7 @@ void netedict::apply(edict_t* ed) {
 		if (endIdx) {
 			edict_t* copyent = g_demoPlayer->getReplayEntity(endIdx);
 			if (copyent) {
-				vars.skin = (((uint16_t*)controller)[0] & 0xf000) | ENTINDEX(copyent);
+				vars.skin = (controller_lo & 0xf000) | ENTINDEX(copyent);
 			}
 			else {
 				println("Invalid beam end entity %d", endIdx);
@@ -388,6 +384,13 @@ bool netedict::readDeltas(mstream& reader) {
 			reader.read(&upperBits, 2);
 			deltaBits = deltaBits | (upperBits << 16);
 			g_stats.entBigUpdates++;
+
+			uint32_t bigUpdateBits = deltaBits & 0xffff0000;
+			for (int i = 0; i < 32; i++) {
+				uint32_t bit = 1U << i;
+				if (bigUpdateBits & bit)
+					g_stats.entDeltaBigReason[bitoffset(bit)]++;
+			}
 		}
 		else {
 			g_stats.entMedUpdates++;
@@ -449,7 +452,7 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Y, angles[1], angleSz);
 	READ_DELTA(reader, deltaBits, FL_DELTA_ANGLES_Z, angles[2], angleSz);
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_LO, controller[0], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_LO, controller_lo, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
@@ -465,7 +468,7 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_SCALE, scale, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller[2], 2);
+	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller_hi, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_AIMENT, aiment, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CLASSIFY, classify, 1);
 
@@ -559,11 +562,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		g_stats.entDeltaSz[bitoffset(FL_DELTA_FRAME)] += 1;
 		writer.write((void*)&frame, 1);
 	}
-	if (old.controller[0] != controller[0] || old.controller[1] != controller[1]) {
-		deltaBits |= FL_DELTA_CONTROLLER_LO;
-		g_stats.entDeltaSz[bitoffset(FL_DELTA_CONTROLLER_LO)] += 2;
-		writer.write((void*)&controller[0], 2);
-	}
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_LO, controller_lo, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
@@ -580,11 +579,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SCALE, scale, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_COLORMAP, colormap, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_MODELINDEX, modelindex, 2);
-	if (old.controller[2] != controller[2] || old.controller[3] != controller[3]) {
-		deltaBits |= FL_DELTA_CONTROLLER_HI;
-		g_stats.entDeltaSz[bitoffset(FL_DELTA_CONTROLLER_HI)] += 2;
-		writer.write((void*)&controller[2], 2);
-	}
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_HI, controller_hi, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_AIMENT, aiment, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CLASSIFY, classify, 1);
 

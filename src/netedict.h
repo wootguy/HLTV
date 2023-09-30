@@ -72,7 +72,8 @@ struct netedict {
 	uint16_t	gaitblend;		// upper byte = gait sequence (player), lower byte = animation blend (grunts crouching+shooting)
 	uint8_t		frame;			// % playback position in animation sequences (0..255)
 	int8_t		framerate;		// animation playback rate (-8x to 8x) (4.4 fixed point)
-	uint8_t		controller[4];	// bone controller setting (0..255)
+	uint16_t	controller_lo;	// bone controllers 0-1 settings
+	uint16_t	controller_hi;	// bone controllers 2-3 settings
 	uint16_t	blending;		
 
 	uint16_t	scale;			// rendering scale (0..255) (8.8 fixed point)

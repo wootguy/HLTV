@@ -17,14 +17,13 @@
 // - punchangle prediction
 
 // optimize ideas:
-// - 2byte deltabits for entx
 // - 1-2byte deltaidx for players
 // - no more pmove
 // - init framerate to 16
 // - 1byte angles for non-players
 // - simpler startSound message
-// - both blending bytes needed?
 // - fewer startsound messages for apache
+// - 1-2byte delta for health
 
 struct InterpInfo {
 	Vector originStart;
