@@ -22,6 +22,12 @@ public:
 	bool validateEdicts(); // debug
 
 private:
+	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas);
+	mstream writePlrDeltas(FrameData& frame, uint32_t& numEntDeltas);
+	mstream writeMsgDeltas(FrameData& frame);
+	mstream writeCmdDeltas(FrameData& frame);
+	mstream writeEvtDeltas(FrameData& frame);
+
 	// vars for writing a demo file
 	uint64_t nextDemoUpdate = 0;
 	float demoFileFps = 60;

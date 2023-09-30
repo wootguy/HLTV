@@ -110,33 +110,12 @@ void DemoWriter::initDemoFile() {
 		fwrite(soundData.c_str(), soundData.size(), 1, demoFile);
 }
 
-bool DemoWriter::writeDemoFile(FrameData& frame) {
-	if (!demoFile) {
-		initDemoFile();
-	}
-
-	uint64_t now = getEpochMillis();
-	if (now < nextDemoUpdate) {
-		return false;
-	}
-	uint64_t updateDelay = (1.0f / demoFileFps) * 1000;
-	nextDemoUpdate = now + updateDelay;
-	uint32_t frameTimeDelta = now - lastDemoFrameTime;
-	lastDemoFrameTime = now;
-
-	bool isKeyframe = now >= nextDemoKeyframe;
-
-	if (isKeyframe) {
-		nextDemoKeyframe = now + (1000ULL * KEYFRAME_INTERVAL);
-		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
-		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
-	}
-
+mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas) {
 	mstream entbuffer(fileDeltaBuffer, fileDeltaBufferSize);
 
 	uint8_t offset = 0; // always write full index for first entity delta
 
-	uint16_t numEntDeltas = 0;
+	numEntDeltas = 0;
 	uint32_t indexWriteSz = 0;
 	for (uint16_t i = 0; i < MAX_EDICTS; i++) {
 		netedict& now = frame.netedicts[i];
@@ -172,8 +151,13 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		}
 	}
 
-	int numPlayerDeltas = 0;
-	uint32_t plrDeltaBits = 0;
+	g_stats.entIndexTotalSz += indexWriteSz;
+
+	return entbuffer;
+}
+
+mstream DemoWriter::writePlrDeltas(FrameData& frame, uint32_t& plrDeltaBits) {
+	plrDeltaBits = 0;
 	mstream plrbuffer(filePlayerInfoBuffer, filePlayerInfoBufferSize);
 	for (int i = 0; i < gpGlobals->maxClients; i++) {
 		int ret = frame.playerinfos[i].writeDeltas(plrbuffer, fileplayerinfos[i]);
@@ -187,12 +171,14 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		}
 		else {
 			// delta written
-			offset = 1;
 			plrDeltaBits |= 1 << i;
-			numPlayerDeltas++;
 		}
 	}
 
+	return plrbuffer;
+}
+
+mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
 	mstream msgbuffer(netmessagesBuffer, netmessagesBufferSize);
 	for (int i = 0; i < frame.netmessage_count; i++) {
 		NetMessageData& dat = frame.netmessages[i];
@@ -217,6 +203,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		println("ERROR: Demo file network message buffer overflowed (%d > %d). Use a bigger buffer!", frame.netmessage_count, MAX_NETMSG_FRAME);
 	}
 
+	return msgbuffer;
+}
+
+mstream DemoWriter::writeCmdDeltas(FrameData& frame) {
 	mstream cmdbuffer(cmdsBuffer, cmdsBufferSize);
 	for (int i = 0; i < frame.cmds_count; i++) {
 		CommandData& dat = frame.cmds[i];
@@ -231,6 +221,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		println("ERROR: Demo file command buffer overflowed. Use a bigger buffer!");
 	}
 
+	return cmdbuffer;
+}
+
+mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 	mstream evbuffer(eventsBuffer, eventsBufferSize);
 	for (int i = 0; i < frame.event_count; i++) {
 		DemoEventData& dat = frame.events[i];
@@ -263,6 +257,40 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		println("ERROR: Demo file event buffer overflowed (%d > %d). Use a bigger buffer!", frame.event_count, MAX_EVENT_FRAME);
 	}
 
+	return evbuffer;
+}
+
+bool DemoWriter::writeDemoFile(FrameData& frame) {
+	if (!demoFile) {
+		initDemoFile();
+	}
+
+	uint64_t now = getEpochMillis();
+	if (now < nextDemoUpdate) {
+		return false;
+	}
+	uint64_t updateDelay = (1.0f / demoFileFps) * 1000;
+	nextDemoUpdate = now + updateDelay;
+	uint32_t frameTimeDelta = now - lastDemoFrameTime;
+	lastDemoFrameTime = now;
+
+	bool isKeyframe = now >= nextDemoKeyframe;
+
+	if (isKeyframe) {
+		nextDemoKeyframe = now + (1000ULL * KEYFRAME_INTERVAL);
+		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
+	}
+
+	uint16_t numEntDeltas = 0;
+	uint32_t plrDeltaBits = 0;
+
+	mstream entbuffer = writeEntDeltas(frame, numEntDeltas);
+	mstream plrbuffer = writePlrDeltas(frame, plrDeltaBits);
+	mstream msgbuffer = writeMsgDeltas(frame);
+	mstream cmdbuffer = writeCmdDeltas(frame);	
+	mstream evtbuffer = writeEvtDeltas(frame);	
+
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
 	memcpy(fileplayerinfos, frame.playerinfos, 32 * sizeof(DemoPlayerEnt));
 
@@ -270,11 +298,11 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	g_stats.plrDeltaCurrentSz = plrbuffer.tell() + (plrbuffer.tell() ? 4 : 0);
 	g_stats.msgCurrentSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
 	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 1 : 0);
-	g_stats.eventCurrentSz = evbuffer.tell() + (evbuffer.tell() ? 1 : 0);
+	g_stats.eventCurrentSz = evtbuffer.tell() + (evtbuffer.tell() ? 1 : 0);
 	g_stats.msgCount += frame.netmessage_count;
 	g_stats.cmdCount += frame.cmds_count;
 	g_stats.eventCount += frame.event_count;
-	g_stats.entIndexTotalSz += indexWriteSz;
+	
 	g_stats.calcFrameSize();
 
 	uint8_t frameCountDelta = clamp(frame.serverFrameCount - lastServerFrameCount, 0, 255);
@@ -324,24 +352,11 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	}
 	if (header.hasEvents) {
 		fwrite(&frame.event_count, sizeof(uint8_t), 1, demoFile);
-		fwrite(evbuffer.getBuffer(), evbuffer.tell(), 1, demoFile);
+		fwrite(evtbuffer.getBuffer(), evtbuffer.tell(), 1, demoFile);
 	}
 	if (header.hasCommands) {
 		fwrite(&frame.cmds_count, sizeof(uint8_t), 1, demoFile);
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
-	}
-
-	bool showstats = false;
-	if (showstats) {
-		int actualSz = ftell(demoFile);
-		if (actualSz != g_stats.totalWriteSz) {
-			println("%d != %d", (int)g_stats.totalWriteSz, actualSz);
-		}
-		println("%4de %2dp %4dm %4dc    |  %4d + %4d + %4d + %4d = %4d B  |  %.1f MB file  |  %dms copy, %dms think",
-			numEntDeltas, numPlayerDeltas, frame.netmessage_count, frame.cmds_count,
-			g_stats.entDeltaCurrentSz, g_stats.plrDeltaCurrentSz, g_stats.msgCurrentSz, g_stats.cmdCurrentSz, g_stats.currentWriteSz,
-			(float)((double)g_stats.totalWriteSz / (1024.0 * 1024.0)),
-			g_copyTime, g_thinkTime);
 	}
 
 	return true;

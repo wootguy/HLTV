@@ -1212,6 +1212,11 @@ bool DemoPlayer::readDemoFrame() {
 	nextFrameOffset += frameSize;
 	frameSize -= headerSz;
 
+	if (frameSize == 0) {
+		g_stats.incTotals();
+		return true; // nothing changed
+	}
+
 	//println("Frame %d (%.1f kb), Time: %.1f", replayFrame, header.frameSize / 1024.0f, (float)TimeDifference(0, header.demoTime));
 
 	/*
