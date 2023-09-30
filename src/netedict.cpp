@@ -373,9 +373,18 @@ bool netedict::readDeltas(mstream& reader) {
 
 	if (deltaBits & FL_BIGENTDELTA) {
 		uint32_t upperBits = 0;
-		reader.read(&upperBits, 3);
+		reader.read(&upperBits, 1);
 		deltaBits = deltaBits | (upperBits << 8);
-		g_stats.entBigUpdates++;
+
+		if (deltaBits & FL_BIGGERENTDELTA) {
+			upperBits = 0;
+			reader.read(&upperBits, 2);
+			deltaBits = deltaBits | (upperBits << 16);
+			g_stats.entBigUpdates++;
+		}
+		else {
+			g_stats.entMedUpdates++;
+		}
 	}
 
 	g_stats.entUpdateCount++;
@@ -401,7 +410,7 @@ bool netedict::readDeltas(mstream& reader) {
 
 	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
 
-	const uint32_t BIGORIGIN_MASK = FL_BIGENTDELTA | FL_DELTA_BIGORIGIN;
+	const uint32_t BIGORIGIN_MASK = FL_BIGGERENTDELTA | FL_DELTA_BIGORIGIN;
 
 	uint32_t originFlags = deltaBits & BIGORIGIN_MASK;
 
@@ -410,7 +419,7 @@ bool netedict::readDeltas(mstream& reader) {
 		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, origin[1], 3);
 		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Z, origin[2], 3);
 	}
-	else if (originFlags == FL_DELTA_BIGORIGIN || originFlags == FL_BIGENTDELTA) {
+	else if (originFlags == FL_DELTA_BIGORIGIN || originFlags == FL_BIGGERENTDELTA) {
 		int16_t dx = 0, dy = 0, dz = 0;
 		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_X, dx, 2);
 		READ_DELTA(reader, deltaBits, FL_DELTA_ORIGIN_Y, dy, 2);
@@ -589,7 +598,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	g_stats.entUpdateCount++;
 
-	if ((deltaBits & 0xff) == deltaBits && canWrite16bitOriginDeltas) {
+	if ((deltaBits & 0xffff) == deltaBits && canWrite16bitOriginDeltas) {
 		if (canWrite8bitOriginDeltas) {
 			// shrink the origin deltas
 			writer.seek(originOffset);
@@ -619,8 +628,8 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			uint32_t oldOriginsEnd = originOffset + (originPartsWritten * 2);
 			if (originPartsWritten) {
 				memmove(writer.getBuffer() + smallOriginsEnd,
-						writer.getBuffer() + oldOriginsEnd,
-						endOffset - oldOriginsEnd);
+					writer.getBuffer() + oldOriginsEnd,
+					endOffset - oldOriginsEnd);
 				endOffset -= oldOriginsEnd - smallOriginsEnd;
 			}
 			writer.seek(startOffset);
@@ -629,17 +638,25 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			deltaBits |= FL_DELTA_BIGORIGIN;
 		}
 
-		// delta bits can fit in a single byte. Move the deltas back 3 bytes.
+		// delta bits can fit into 2 or fewer bytes. Move the deltas back X bytes.
+		int deltaBytes = 1;
+
+		if ((deltaBits & 0xff) != deltaBits) {
+			deltaBytes = 2;
+			deltaBits |= FL_BIGENTDELTA;
+			g_stats.entMedUpdates++;
+		}
+
 		int moveBytes = endOffset - (startOffset + ENT_DELTA_BYTES);
-		memmove(writer.getBuffer() + startOffset + 1,
-				writer.getBuffer() + startOffset + ENT_DELTA_BYTES,
-				moveBytes);
-		writer.write((void*)&deltaBits, 1);
-		writer.seek(endOffset - (ENT_DELTA_BYTES-1));
+		memmove(writer.getBuffer() + startOffset + deltaBytes,
+			writer.getBuffer() + startOffset + ENT_DELTA_BYTES,
+			moveBytes);
+		writer.write((void*)&deltaBits, deltaBytes);
+		writer.seek(endOffset - (ENT_DELTA_BYTES - deltaBytes));
 	}
 	else {
 		if (canWrite16bitOriginDeltas && !entityCreated) {
-			uint32_t bigUpdateBits = deltaBits & 0xffffff00;
+			uint32_t bigUpdateBits = deltaBits & 0xffff0000;
 			for (int i = 0; i < 32; i++) {
 				uint32_t bit = 1U << i;
 				if (bigUpdateBits & bit)
@@ -647,7 +664,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			}
 		}
 
-		deltaBits |= FL_BIGENTDELTA;
+		deltaBits |= FL_BIGENTDELTA | FL_BIGGERENTDELTA;
 		writer.write((void*)&deltaBits, ENT_DELTA_BYTES);
 		writer.seek(endOffset);
 		g_stats.entBigUpdates++;

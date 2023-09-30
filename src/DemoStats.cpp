@@ -183,8 +183,9 @@ void DemoStats::showStats(edict_t* ent) {
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
 		string sumStr = formatSize(sum);
-		txt = UTIL_VarArgs("ent deltas (%u, %u, %s):\n", g_stats.entBigUpdates, 
-			g_stats.entUpdateCount- g_stats.entBigUpdates, sumStr.c_str());
+		uint32_t smallUpdates = g_stats.entUpdateCount - (g_stats.entBigUpdates+g_stats.entMedUpdates);
+		txt = UTIL_VarArgs("ent deltas (%u, %u, %u, %s):\n", g_stats.entBigUpdates, g_stats.entMedUpdates,
+			smallUpdates, sumStr.c_str());
 		for (int i = 0; i < deltaStats.size() && i < 10; i++) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}
@@ -227,7 +228,7 @@ void DemoStats::showStats(edict_t* ent) {
 
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
-		txt = UTIL_VarArgs("big ent deltas:\n");
+		txt = UTIL_VarArgs("big ent delta reason:\n");
 		for (int i = 0; i < deltaStats.size() && i < 10; i++) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}

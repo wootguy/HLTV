@@ -10,8 +10,8 @@
 // otherwise, deltaBits = 1byte, and origin values are 11.5 fixed point and added to the previous origin
 #define FL_BIGENTDELTA			(1 << 0)
 
-// FL_DELTA_BIGORIGIN  + FL_BIGENTDELTA = 4 byte origin values.
-// FL_DELTA_BIGORIGIN or FL_BIGENTDELTA = 2 byte origin deltas.
+// FL_DELTA_BIGORIGIN  + FL_BIGGERENTDELTA = 4 byte origin values.
+// FL_DELTA_BIGORIGIN or FL_BIGGERENTDELTA = 2 byte origin deltas.
 // 0 = 1 byte origin deltas
 #define FL_DELTA_BIGORIGIN		(1 << 1)
 
