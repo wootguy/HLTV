@@ -113,7 +113,7 @@ void DemoWriter::initDemoFile() {
 mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas) {
 	mstream entbuffer(fileDeltaBuffer, fileDeltaBufferSize);
 
-	uint8_t offset = 0; // always write full index for first entity delta
+	uint16_t offset = 0; // always write full index for first entity delta
 
 	numEntDeltas = 0;
 	uint32_t indexWriteSz = 0;
@@ -122,11 +122,14 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas) {
 
 		uint64_t startOffset = entbuffer.tell();
 
-		entbuffer.write(&offset, 1); // entity index the delta is for (offset from previous)
-
-		if (offset == 0) {
+		if (offset > 127) {
 			// last edict was 256+ slots away. Write full index.
-			entbuffer.write(&i, 2);
+			uint16_t writeIdx = (i << 1) | FL_ENTIDX_LONG;
+			entbuffer.write(&writeIdx, 2);
+		}
+		else {
+			uint8_t writeIdx = offset << 1;
+			entbuffer.write(&writeIdx, 1); // entity index the delta is for (offset from previous)
 		}
 
 		int ret = now.writeDeltas(entbuffer, fileedicts[i]);
@@ -138,14 +141,12 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas) {
 		else if (ret == EDELTA_NONE) {
 			// no differences
 			entbuffer.seek(startOffset); // undo index write
-			if (offset != 0) {
-				offset += 1;
-			}
+			offset += 1;
 		}
 		else {
 			// delta written
 			//println("Write edict %d offset %d bytes %d", i, (int)offset, (int)(entbuffer.tell() - startOffset));
-			indexWriteSz += offset == 0 ? 3 : 1;
+			indexWriteSz += offset > 127 ? 2 : 1;
 			offset = 1;
 			numEntDeltas++;
 		}

@@ -298,16 +298,23 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 
 	int loop = -1;
 	uint16_t fullIndex = 0;
+	uint32_t indexSz = 0;
 	for (int i = 0; i < numEntDeltas; i++) {
 		loop++;
-		uint8_t offset = 0;
+		uint32_t readOffset = reader.tell();
+
+		uint16_t offset = 0;
 		reader.read(&offset, 1);
 
-		if (offset == 0) {
-			reader.read(&fullIndex, 2);
+		if (offset & FL_ENTIDX_LONG) {
+			reader.seek(readOffset);
+			reader.read(&offset, 2);
+			fullIndex = offset >> 1;
+			indexSz += 2;
 		}
 		else {
-			fullIndex += offset;
+			indexSz += 1;
+			fullIndex += offset >> 1;
 		}
 
 		if (fullIndex >= MAX_EDICTS) {
@@ -333,6 +340,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 		}
 	}
 
+	g_stats.entIndexTotalSz += indexSz;
 	g_stats.entDeltaCurrentSz = reader.tell() - startOffset;
 
 	return true;

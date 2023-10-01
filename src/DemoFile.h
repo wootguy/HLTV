@@ -36,6 +36,8 @@ inline float FIXED_TO_FLOAT(int x, int whole_bits, int frac_bits) {
 
 #define DEMO_VERSION 1 // version number written to demo files for compatibility check (0-65535)
 
+#define FL_ENTIDX_LONG 1 // ent index is further than 127 from the last idx
+
 enum delta_results {
 	EDELTA_NONE, // there were no differences between the edicts
 	EDELTA_WRITE, // there were differences between the edicts
