@@ -97,10 +97,13 @@ struct DemoNetMessage {
 	uint16_t sz; // network message data bytes
 	uint8_t type;
 	uint8_t dest : 4;
-	uint8_t hasOrigin : 1;
 	uint8_t hasEdict : 1;
-	// if hasOrigin:
+	uint8_t hasOrigin : 1;
+	uint8_t hasLongOrigin : 1;
+	// if hasLongOrigin:
 	//     uint24[3] = origin (stored as 19.5 fixed point)
+	// if hasOrigin:
+	//     int16[3] = origin (stored as integers)
 	// if hasEdict:
 	//     uint16_t = edict index
 	// byte[] = message bytes

@@ -323,9 +323,17 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 	msg.header.type = msg_type;
 	if (pOrigin) {
 		msg.header.hasOrigin = 1;
-		msg.origin[0] = FLOAT_TO_FIXED(pOrigin[0], 19, 5);
-		msg.origin[1] = FLOAT_TO_FIXED(pOrigin[1], 19, 5);
-		msg.origin[2] = FLOAT_TO_FIXED(pOrigin[2], 19, 5);
+		if (abs(pOrigin[0]) > INT16_MAX || abs(pOrigin[1]) > INT16_MAX || abs(pOrigin[2]) > INT16_MAX) {
+			msg.header.hasLongOrigin = 1;
+			msg.origin[0] = FLOAT_TO_FIXED(pOrigin[0], 19, 5);
+			msg.origin[1] = FLOAT_TO_FIXED(pOrigin[1], 19, 5);
+			msg.origin[2] = FLOAT_TO_FIXED(pOrigin[2], 19, 5);
+		}
+		else {
+			msg.origin[0] = (int16_t)pOrigin[0];
+			msg.origin[1] = (int16_t)pOrigin[1];
+			msg.origin[2] = (int16_t)pOrigin[2];
+		}
 	}
 	else {
 		msg.header.hasOrigin = 0;

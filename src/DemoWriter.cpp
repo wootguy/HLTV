@@ -191,9 +191,10 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
 		}
 
 		if (dat.header.hasOrigin) {
-			msgbuffer.write(&dat.origin[0], 3);
-			msgbuffer.write(&dat.origin[1], 3);
-			msgbuffer.write(&dat.origin[2], 3);
+			int sz = dat.header.hasLongOrigin ? 3 : 2;
+			msgbuffer.write(&dat.origin[0], sz);
+			msgbuffer.write(&dat.origin[1], sz);
+			msgbuffer.write(&dat.origin[2], sz);
 		}
 		if (dat.header.hasEdict) {
 			msgbuffer.write(&dat.eidx, sizeof(uint16_t));

@@ -5,9 +5,16 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 	float forigin[3];
 
 	if (header.hasOrigin) {
-		forigin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);
-		forigin[1] = FIXED_TO_FLOAT(origin[1], 19, 5);
-		forigin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
+		if (header.hasLongOrigin) {
+			forigin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);
+			forigin[1] = FIXED_TO_FLOAT(origin[1], 19, 5);
+			forigin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
+		}
+		else {
+			forigin[0] = (int16_t)origin[0];
+			forigin[1] = (int16_t)origin[1];
+			forigin[2] = (int16_t)origin[2];
+		}
 	}
 
 	const float* ori = header.hasOrigin ? forigin : NULL;

@@ -997,9 +997,10 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 		reader.read(&msg.header, sizeof(DemoNetMessage));
 
 		if (msg.header.hasOrigin) {
-			reader.read(&msg.origin[0], 3);
-			reader.read(&msg.origin[1], 3);
-			reader.read(&msg.origin[2], 3);
+			int sz = msg.header.hasLongOrigin ? 3 : 2;
+			reader.read(&msg.origin[0], sz);
+			reader.read(&msg.origin[1], sz);
+			reader.read(&msg.origin[2], sz);
 		}
 		if (msg.header.hasEdict) {
 			reader.read(&msg.eidx, 2);
