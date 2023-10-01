@@ -1178,16 +1178,22 @@ bool DemoPlayer::readDemoFrame() {
 	uint32_t demoTime = 0;
 	uint32_t frameSize = 0;
 	uint32_t headerSz = sizeof(DemoFrame);
-	if (header.isBigFrame) {
+	if (header.isGiantFrame) {
 		fread(&demoTime, sizeof(uint32_t), 1, replayFile);
 		fread(&frameSize, sizeof(uint32_t), 1, replayFile);
 		headerSz += 8;
 	}
-	else {
+	else if (header.isBigFrame) {
 		fread(&demoTime, sizeof(uint8_t), 1, replayFile);
 		fread(&frameSize, sizeof(uint16_t), 1, replayFile);
 		demoTime = lastFrameDemoTime + demoTime;
 		headerSz += 3;
+	}
+	else {
+		fread(&demoTime, sizeof(uint8_t), 1, replayFile);
+		fread(&frameSize, sizeof(uint8_t), 1, replayFile);
+		demoTime = lastFrameDemoTime + demoTime;
+		headerSz += 2;
 	}
 
 	frameProgress = 1.0f;
@@ -1202,6 +1208,7 @@ bool DemoPlayer::readDemoFrame() {
 	}
 
 	g_stats.bigFrameCount += header.isBigFrame;
+	g_stats.giantFrameCount += header.isGiantFrame;
 	lastFrameDemoTime = demoTime;
 
 	if (frameSize > 1024 * 1024 * 32 || frameSize == 0) {

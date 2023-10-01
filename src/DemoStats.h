@@ -5,6 +5,7 @@
 struct DemoStats {
 	uint32_t frameCount;
 	uint32_t bigFrameCount;
+	uint32_t giantFrameCount;
 	uint32_t totalWriteSz;
 	uint32_t currentWriteSz;
 

@@ -18,7 +18,6 @@
 
 // optimize ideas:
 // - 1-2byte deltaidx for players
-// - no more pmove
 // - init framerate to 16
 // - 1byte angles for non-players
 // - simpler startSound message

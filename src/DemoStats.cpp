@@ -127,7 +127,7 @@ void DemoStats::showStats(edict_t* ent) {
 
 	string txt = UTIL_VarArgs("Demo (%s, %u, %d+%d ms):\n", totalSz.c_str(), g_stats.currentWriteSz, g_copyTime, g_thinkTime);
 	txt += UTIL_VarArgs("ent: %s (%d)\n", entTotal.c_str(), g_stats.entDeltaCurrentSz);
-	txt += UTIL_VarArgs("hdr: %s (%d, %d)\n", hdrTotal.c_str(), g_stats.bigFrameCount, g_stats.frameCount- g_stats.bigFrameCount);
+	txt += UTIL_VarArgs("hdr: %s (%d, %d, %d)\n", hdrTotal.c_str(), g_stats.giantFrameCount, g_stats.bigFrameCount, g_stats.frameCount- g_stats.bigFrameCount);
 	txt += UTIL_VarArgs("plr: %s (%d)\n", plrTotal.c_str(), g_stats.plrDeltaCurrentSz);
 	txt += UTIL_VarArgs("msg: %s (%d)\n", msgTotal.c_str(), g_stats.msgCurrentSz);
 	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);

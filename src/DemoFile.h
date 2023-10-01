@@ -66,20 +66,23 @@ struct DemoCommand {
 
 struct DemoFrame {
 	uint8_t isKeyFrame : 1; // if true, zero out entity and player info for a full update
-	uint8_t isBigFrame : 1; // time delta or frame size does not fit in a byte
+	uint8_t isGiantFrame : 1; // time delta or frame size does not fit in a BigFrame
+	uint8_t isBigFrame : 1; // frame size does not fit in a byte
 	uint8_t hasEntityDeltas : 1;
 	uint8_t hasNetworkMessages : 1;
 	uint8_t hasEvents : 1;
 	uint8_t hasPlayerDeltas : 1;
 	uint8_t hasCommands : 1;
-	uint8_t reserved1 : 1;
 	uint8_t deltaFrames; // server frames since last demoFrame (for server fps)
-	// if bigFrame:
+	// if isGiantFrame:
 	//     uint32_t demoTime = milliseconds since recording started
-	//     uint32_t frameSize = total size of this frame, excluding this header
+	//     uint32_t frameSize = total size of this frame, including this header
+	// else if isBigFrame:
+	//     uint8_t demoTimeDelta = milliseconds since the last frame
+	//     uint16_t frameSize = total size of this frame, including this header
 	// else:
 	//     uint8_t demoTimeDelta = milliseconds since the last frame
-	//     uint16_t frameSize = total size of this frame, excluding this header
+	//     uint8_t frameSize = total size of this frame, including this header
 };
 
 struct CommandData {

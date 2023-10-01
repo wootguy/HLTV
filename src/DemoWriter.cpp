@@ -270,9 +270,8 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		return false;
 	}
 	uint64_t updateDelay = (1.0f / demoFileFps) * 1000;
-	nextDemoUpdate = now + updateDelay;
 	uint32_t frameTimeDelta = now - lastDemoFrameTime;
-	lastDemoFrameTime = now;
+	nextDemoUpdate = now + updateDelay;
 
 	bool isKeyframe = now >= nextDemoKeyframe;
 
@@ -316,24 +315,43 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	header.hasPlayerDeltas = plrDeltaBits > 0;
 	header.hasCommands = frame.cmds_count > 0;
 	header.isKeyFrame = isKeyframe;
-	header.isBigFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (65535-3) || isKeyframe;
+	header.isGiantFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (65535-3) || isKeyframe;
+	header.isBigFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (255 - 3) || isKeyframe;
+	if (header.isGiantFrame) {
+		header.isBigFrame = 0;
+	}
+
+	bool hasAnyDeltas = header.hasEntityDeltas + header.hasPlayerDeltas + header.hasNetworkMessages + header.hasEvents + header.hasCommands;
+	if (!hasAnyDeltas) {
+		return true;
+	}
+
+	lastDemoFrameTime = now;
 
 	fwrite(&header, sizeof(DemoFrame), 1, demoFile);
 
-	if (header.isBigFrame) {
+	if (header.isGiantFrame) {
 		g_stats.currentWriteSz += sizeof(uint32_t) * 2;
 		uint32_t demoTime = now - demoStartTime;
 		uint32_t frameSize = g_stats.currentWriteSz;
 		fwrite(&demoTime, sizeof(uint32_t), 1, demoFile);
 		fwrite(&frameSize, sizeof(uint32_t), 1, demoFile);
-		g_stats.bigFrameCount++;
+		g_stats.giantFrameCount++;
 	}
-	else {
+	else if (header.isBigFrame) {
 		g_stats.currentWriteSz += sizeof(uint16_t) + sizeof(uint8_t);
 		uint8_t demoTimeDelta = frameTimeDelta;
 		uint16_t frameSize = g_stats.currentWriteSz;
 		fwrite(&demoTimeDelta, sizeof(uint8_t), 1, demoFile);
 		fwrite(&frameSize, sizeof(uint16_t), 1, demoFile);
+		g_stats.bigFrameCount++;
+	}
+	else {
+		g_stats.currentWriteSz += sizeof(uint8_t) + sizeof(uint8_t);
+		uint8_t demoTimeDelta = frameTimeDelta;
+		uint16_t frameSize = g_stats.currentWriteSz;
+		fwrite(&demoTimeDelta, sizeof(uint8_t), 1, demoFile);
+		fwrite(&frameSize, sizeof(uint8_t), 1, demoFile);
 	}
 
 	g_stats.incTotals();
