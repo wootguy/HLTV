@@ -200,18 +200,40 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 			oriOffset += 1;
 		}
 
+		// WIP: origin delete code
+		// this isn't reliable because entities can be created/destroyed/invisible at any frame,
+		// so the client might not know which ent the index is referring to. I guess that's
+		// why an origin is written in addition to an entity attachment. It's uncommon for
+		// errors to happen so I think it's worth doing this anyway. The savings are significant.
 		if ((flags & SND_ENT)) {
 			uint16_t entidx = *(uint16_t*)(msg.data + 2);
-			if (entidx < MAX_EDICTS && (frame.netedicts[entidx].effects & EF_NODRAW) == 0) {
-				// no need for both an entity attachment and origin if the client knows where the ent is.
-				// So, delete the origin from the message
-				byte* originPtr = (byte*)(msg.data + oriOffset);
-				int oldOriginSz = sizeof(int32_t) * 3;
-				int moveSz = msg.sz - (oriOffset + oldOriginSz);
-				memmove(originPtr, originPtr + oldOriginSz, moveSz);
-				msg.sz -= oldOriginSz;
-				*(uint16_t*)msg.data = flags & ~SND_ORIGIN;
-				return;
+			if (entidx == 0) {
+				// why use the world as an attachment? That will always be 0,0,0
+				// So, delete the ent index
+				byte* entPtr = (byte*)(msg.data + 2);
+				int moveSz = msg.sz - (2 + sizeof(uint16_t));
+				memmove(entPtr, entPtr + sizeof(uint16_t), moveSz);
+				msg.sz -= 2;
+				*(uint16_t*)msg.data = flags & ~SND_ENT;
+			}
+			else if (entidx < MAX_EDICTS) {
+				netedict& ed = frame.netedicts[entidx];
+				uint16_t soundIdx = *(uint16_t*)(msg.data + (msg.sz - 2));
+
+				if ((ed.effects & EF_NODRAW) == 0 && ed.modelindex 
+						&& g_indexToModel.find(ed.modelindex) != g_indexToModel.end()
+						&& g_indexToModel[ed.modelindex][0] != '*') {
+					// no need for both an entity attachment and origin if the client knows where the ent is.
+					// So, delete the origin from the message.
+					// BSP models need origins because clients don't know mins/maxs (though that can be guessed)
+					byte* originPtr = (byte*)(msg.data + oriOffset);
+					int oldOriginSz = sizeof(int32_t) * 3;
+					int moveSz = msg.sz - (oriOffset + oldOriginSz);
+					memmove(originPtr, originPtr + oldOriginSz, moveSz);
+					msg.sz -= oldOriginSz;
+					*(uint16_t*)msg.data = flags & ~SND_ORIGIN;
+					return;
+				}
 			}
 		}
 

@@ -951,6 +951,10 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 		return processTempEntityMessage(msg);
 	case MSG_StartSound: {
 		uint16_t& flags = *(uint16_t*)(args);
+		if (flags & SND_ENT) {
+			uint16_t& entidx = *(uint16_t*)(args + 2);
+			convReplayEntIdx(entidx);
+		}
 		if ((flags & SND_SENTENCE) == 0) {
 			uint16_t& soundIdx = *(uint16_t*)(args + (msg.sz - 2));
 			convReplaySoundIdx(soundIdx);
@@ -982,10 +986,7 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 
 void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 	if (msg.header.type == MSG_StartSound) {
-		uint16_t flags = *(uint16_t*)msg.data;
-		if ((flags & SND_ORIGIN) == 0) {
-			return;
-		}
+		uint16_t& flags = *(uint16_t*)msg.data;
 
 		int oriOffset = 2;
 		if (flags & SND_ENT) {
@@ -999,6 +1000,36 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 		}
 		if (flags & SND_ATTENUATION) {
 			oriOffset += 1;
+		}
+		
+		if ((flags & SND_ORIGIN) == 0 && (flags & SND_ENT) != 0) {
+			// add origin to suppress "sound without origin" messages.
+			// It doesn't seem necesary otherwise because the sounds still work.
+			// The messages seem random too which is weird, they come and go with the same replay.
+			uint16_t entidx = *(uint16_t*)(msg.data + 2);
+			if (entidx < MAX_EDICTS && fileedicts[entidx].edflags & EDFLAG_VALID) {
+				netedict& ed = fileedicts[entidx];
+				int32_t neworigin[3];
+				for (int i = 0; i < 3; i++) {
+					neworigin[i] = ed.origin[i] / 4; // 19.5 -> 16.3 fixed point
+				}
+
+				int newOriginSz = sizeof(int32_t) * 3;
+				int moveSz = msg.sz - oriOffset;
+				byte* originPtr = msg.data + oriOffset;
+				memmove(originPtr + newOriginSz, originPtr, moveSz);
+				memcpy(originPtr, neworigin, newOriginSz);
+				msg.sz += newOriginSz;
+				flags |= SND_ORIGIN;
+			}
+			else {
+				println("Invalid ent index decompressing startsound %d / %d", (int)entidx, (int)replayEnts.size());
+			}
+			return;
+		}
+		
+		if ((flags & SND_ORIGIN) == 0) {
+			return;
 		}
 
 		// add fractional part of origin back in
