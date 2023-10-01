@@ -202,9 +202,9 @@ void netedict::load(const edict_t& ed) {
 		origin[0] = FLOAT_TO_FIXED(ed.v.origin[0], 19, 5);
 		origin[1] = FLOAT_TO_FIXED(ed.v.origin[1], 19, 5);
 		origin[2] = FLOAT_TO_FIXED(ed.v.origin[2], 19, 5);
-		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f));
-		angles[1] = (uint16_t)(normalizeRangef(vars.v_angle.y, 0, 360) * (65535.0f / 360.0f));
-		angles[2] = (uint16_t)(normalizeRangef(vars.v_angle.z, 0, 360) * (65535.0f / 360.0f));
+		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (255.0f / 360.0f));
+		angles[1] = (uint16_t)(normalizeRangef(vars.v_angle.y, 0, 360) * (255.0f / 360.0f));
+		angles[2] = (uint16_t)(normalizeRangef(vars.v_angle.z, 0, 360) * (255.0f / 360.0f));
 		edflags |= EDFLAG_PLAYER;
 	}
 	else if (ed.v.flags & FL_CUSTOMENTITY) {
@@ -226,9 +226,9 @@ void netedict::load(const edict_t& ed) {
 		origin[0] = FLOAT_TO_FIXED(ed.v.origin[0], 23, 1);
 		origin[1] = FLOAT_TO_FIXED(ed.v.origin[1], 23, 1);
 		origin[2] = FLOAT_TO_FIXED(ed.v.origin[2], 23, 1);
-		angles[0] = (uint16_t)(normalizeRangef(vars.angles.x, 0, 360) * (65535.0f / 360.0f));
-		angles[1] = (uint16_t)(normalizeRangef(vars.angles.y, 0, 360) * (65535.0f / 360.0f));
-		angles[2] = (uint16_t)(normalizeRangef(vars.angles.z, 0, 360) * (65535.0f / 360.0f));
+		angles[0] = (uint16_t)(normalizeRangef(vars.angles.x, 0, 360) * (255.0f / 360.0f));
+		angles[1] = (uint16_t)(normalizeRangef(vars.angles.y, 0, 360) * (255.0f / 360.0f));
+		angles[2] = (uint16_t)(normalizeRangef(vars.angles.z, 0, 360) * (255.0f / 360.0f));
 
 		if (ed.v.flags & FL_MONSTER) {
 			edflags |= EDFLAG_MONSTER;
@@ -361,7 +361,7 @@ void netedict::apply(edict_t* ed) {
 			
 		}
 
-		const float angleConvert = (360.0f / 65535.0f);
+		const float angleConvert = (360.0f / 255.0f);
 		vars.angles = Vector((float)angles[0] * angleConvert, (float)angles[1] * angleConvert, (float)angles[2] * angleConvert);
 	}
 
@@ -418,7 +418,7 @@ bool netedict::readDeltas(mstream& reader) {
 	deltaBitsLast = deltaBits;
 	edflags = newedflags;
 
-	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
+	int angleSz = edflags & EDFLAG_BEAM ? 3 : 1;
 
 	const uint32_t BIGORIGIN_MASK = FL_BIGGERENTDELTA | FL_DELTA_BIGORIGIN;
 
@@ -454,7 +454,7 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAME, frame, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_LO, controller_lo, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_HEALTH, health, 4);
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
@@ -507,7 +507,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	writer.skip(ENT_DELTA_BYTES); // write delta bits later
 
-	int angleSz = edflags & EDFLAG_BEAM ? 3 : 2;
+	int angleSz = edflags & EDFLAG_BEAM ? 3 : 1;
 
 	bool canWrite16bitOriginDeltas = true;
 	bool canWrite8bitOriginDeltas = true;
@@ -564,7 +564,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	}
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_LO, controller_lo, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 1);
+	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_HEALTH, health, 4);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);

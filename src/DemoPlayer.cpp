@@ -1372,10 +1372,13 @@ void DemoPlayer::interpolateEdicts() {
 			g_engfuncs.pfnSetOrigin(ent, ent->v.origin);
 
 			if (fileedicts[i].edflags & EDFLAG_PLAYER) {
-				updatePlayerModelPitchBlend(ent);
-
 				if ((ent->v.flags & FL_CLIENT) == 0) {
 					updatePlayerModelGait(ent, dt); // manual gait calculations for non-player entity
+					updatePlayerModelPitchBlend(ent);
+				}
+				else {
+					// bot code sets gait/blends automatically
+					ent->v.angles.x = normalizeRangef(ent->v.angles.x, -180.0f, 180.0f) * 0.5f;
 				}
 			}
 		}
