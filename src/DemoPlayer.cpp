@@ -808,8 +808,8 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	if (type == TE_BSPDECAL) {
 		expectedSz = args16[7] ? 19 : 17;
 	}
-	if (type != TE_TEXTMESSAGE && msg.header.sz != expectedSz) {
-		println("Bad size for %s (%d): %d != %d", te_names[type], (int)type, (int)msg.header.sz, expectedSz);
+	if (type != TE_TEXTMESSAGE && msg.sz != expectedSz) {
+		println("Bad size for %s (%d): %d != %d", te_names[type], (int)type, (int)msg.sz, expectedSz);
 		return false;
 	}
 
@@ -943,16 +943,16 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 	byte* args = msg.data;
 	uint16_t* args16 = (uint16_t*)args;
 
-	g_stats.msgSz[msg.header.type] += msg.header.sz;
+	g_stats.msgSz[msg.header.type] += msg.sz;
 
 	switch (msg.header.type) {
 	case SVC_TEMPENTITY:
-		g_stats.msgSz[256 + msg.data[0]] += msg.header.sz;
+		g_stats.msgSz[256 + msg.data[0]] += msg.sz;
 		return processTempEntityMessage(msg);
 	case MSG_StartSound: {
 		uint16_t& flags = *(uint16_t*)(args);
 		if ((flags & SND_SENTENCE) == 0) {
-			uint16_t& soundIdx = *(uint16_t*)(args + (msg.header.sz - 2));
+			uint16_t& soundIdx = *(uint16_t*)(args + (msg.sz - 2));
 			convReplaySoundIdx(soundIdx);
 		} // plugins can't change sentences(?), so client should match server
 		return true;
@@ -1010,12 +1010,12 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 
 		int newOriginSz = sizeof(int32_t) * 3;
 		int oldOriginSz = sizeof(int16_t) * 3;
-		int moveSz = msg.header.sz - (oriOffset + oldOriginSz);
+		int moveSz = msg.sz - (oriOffset + oldOriginSz);
 		byte* originPtr = (byte*)oldorigin;
 		memmove(originPtr + newOriginSz, originPtr + oldOriginSz, moveSz);
 		memcpy(originPtr, neworigin, newOriginSz);
 
-		msg.header.sz += newOriginSz - oldOriginSz;
+		msg.sz += newOriginSz - oldOriginSz;
 	}
 }
 
@@ -1034,6 +1034,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 
 	for (int i = 0; i < numMessages; i++) {
 		reader.read(&msg.header, sizeof(DemoNetMessage));
+		msg.sz = (msg.header.szHighBit << 8) | msg.header.sz;
 
 		if (msg.header.hasOrigin) {
 			int sz = msg.header.hasLongOrigin ? 3 : 2;
@@ -1047,11 +1048,11 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 		else {
 			msg.eidx = 0;
 		}
-		if (msg.header.sz > MAX_NETMSG_DATA) {
-			println("Invalid net msg size %d", (int)msg.header.sz);
+		if (msg.sz > MAX_NETMSG_DATA) {
+			println("Invalid net msg size %d", (int)msg.sz);
 			return false; // data corrupted, abort before SVC_BAD
 		}
-		reader.read(msg.data, msg.header.sz);
+		reader.read(msg.data, msg.sz);
 
 		if (msg.eidx >= replayEnts.size()) {
 			println("Invalid msg ent %d", (int)msg.eidx);

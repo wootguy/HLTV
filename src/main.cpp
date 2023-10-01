@@ -347,6 +347,7 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 		msg.header.hasEdict = 0;
 	}
 	msg.header.sz = 0;
+	msg.sz = 0;
 
 	RETURN_META(MRES_IGNORED);
 }
@@ -365,69 +366,69 @@ void MessageEnd() {
 
 void WriteAngle(float angle) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.header.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = (int64)(fmod((double)angle, 360.0) * 256.0 / 360.0) & 0xFF;
-		memcpy(msg.data + msg.header.sz, &angle, sizeof(byte));
-		msg.header.sz += sizeof(byte);
+		memcpy(msg.data + msg.sz, &angle, sizeof(byte));
+		msg.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteByte(int b) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.header.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = b;
-		memcpy(msg.data + msg.header.sz, &dat, sizeof(byte));
-		msg.header.sz += sizeof(byte);
+		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
+		msg.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteChar(int c) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.header.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = c;
-		memcpy(msg.data + msg.header.sz, &dat, sizeof(byte));
-		msg.header.sz += sizeof(byte);
+		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
+		msg.sz += sizeof(byte);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteCoord(float coord) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.header.sz + sizeof(float) < MAX_NETMSG_DATA) {
+	if (msg.sz + sizeof(float) < MAX_NETMSG_DATA) {
 		int32_t arg = coord * 8;
-		memcpy(msg.data + msg.header.sz, &arg, sizeof(int32_t));
-		msg.header.sz += sizeof(int32_t);
+		memcpy(msg.data + msg.sz, &arg, sizeof(int32_t));
+		msg.sz += sizeof(int32_t);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteEntity(int ent) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.header.sz + sizeof(uint16_t) < MAX_NETMSG_DATA) {
+	if (msg.sz + sizeof(uint16_t) < MAX_NETMSG_DATA) {
 		uint16_t dat = ent;
-		memcpy(msg.data + msg.header.sz, &dat, sizeof(uint16_t));
-		msg.header.sz += sizeof(uint16_t);
+		memcpy(msg.data + msg.sz, &dat, sizeof(uint16_t));
+		msg.sz += sizeof(uint16_t);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteLong(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.header.sz + sizeof(int) < MAX_NETMSG_DATA) {
-		memcpy(msg.data + msg.header.sz, &val, sizeof(int));
-		msg.header.sz += sizeof(int);
+	if (msg.sz + sizeof(int) < MAX_NETMSG_DATA) {
+		memcpy(msg.data + msg.sz, &val, sizeof(int));
+		msg.sz += sizeof(int);
 	}
 	RETURN_META(MRES_IGNORED);
 }
 
 void WriteShort(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.header.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
+	if (msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
 		int16_t dat = val;
-		memcpy(msg.data + msg.header.sz, &dat, sizeof(int16_t));
-		msg.header.sz += sizeof(int16_t);
+		memcpy(msg.data + msg.sz, &dat, sizeof(int16_t));
+		msg.sz += sizeof(int16_t);
 	}
 	RETURN_META(MRES_IGNORED);
 }
@@ -435,9 +436,9 @@ void WriteShort(int val) {
 void WriteString(const char* s) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	int len = strlen(s)+1;
-	if (msg.header.sz + len < MAX_NETMSG_DATA) {
-		memcpy(msg.data + msg.header.sz, s, len);
-		msg.header.sz += len;
+	if (msg.sz + len < MAX_NETMSG_DATA) {
+		memcpy(msg.data + msg.sz, s, len);
+		msg.sz += len;
 	}
 	RETURN_META(MRES_IGNORED);
 }

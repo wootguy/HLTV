@@ -21,8 +21,8 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 
 	MESSAGE_BEGIN(msg_dest, header.type, ori, targetEnt);
 
-	int numLongs = header.sz / 4;
-	int numBytes = header.sz % 4;
+	int numLongs = sz / 4;
+	int numBytes = sz % 4;
 
 	for (int i = 0; i < numLongs; i++) {
 		WRITE_LONG(((uint32_t*)data)[i]);

@@ -94,12 +94,13 @@ struct CommandData {
 };
 
 struct DemoNetMessage {
-	uint16_t sz; // network message data bytes
+	uint8_t sz; // network message data bytes
 	uint8_t type;
 	uint8_t dest : 4;
 	uint8_t hasEdict : 1;
 	uint8_t hasOrigin : 1;
 	uint8_t hasLongOrigin : 1;
+	uint8_t szHighBit : 1; // high bit of the "sz" field
 	// if hasLongOrigin:
 	//     uint24[3] = origin (stored as 19.5 fixed point)
 	// if hasOrigin:
@@ -111,7 +112,8 @@ struct DemoNetMessage {
 
 struct NetMessageData {
 	DemoNetMessage header;
-	uint32_t origin[3]; // 19.5 fixed point
+	uint16_t sz; // header.sz + szHighBit, for ease of use
+	uint32_t origin[3]; // 19.5 fixed point, or 16bit integers, depending on hasLongOrigin
 	uint16_t eidx;
 	uint8_t data[512];
 

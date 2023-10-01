@@ -207,9 +207,9 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 				// So, delete the origin from the message
 				byte* originPtr = (byte*)(msg.data + oriOffset);
 				int oldOriginSz = sizeof(int32_t) * 3;
-				int moveSz = msg.header.sz - (oriOffset + oldOriginSz);
+				int moveSz = msg.sz - (oriOffset + oldOriginSz);
 				memmove(originPtr, originPtr + oldOriginSz, moveSz);
-				msg.header.sz -= oldOriginSz;
+				msg.sz -= oldOriginSz;
 				*(uint16_t*)msg.data = flags & ~SND_ORIGIN;
 				return;
 			}
@@ -224,12 +224,12 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 
 		int newOriginSz = sizeof(int16_t) * 3;
 		int oldOriginSz = sizeof(int32_t) * 3;
-		int moveSz = msg.header.sz - (oriOffset + oldOriginSz);
+		int moveSz = msg.sz - (oriOffset + oldOriginSz);
 		byte* originPtr = (byte*)oldorigin;
 		memcpy(originPtr, neworigin, newOriginSz);
 		memmove(originPtr + newOriginSz, originPtr + oldOriginSz, moveSz);
 
-		msg.header.sz -= oldOriginSz - newOriginSz;
+		msg.sz -= oldOriginSz - newOriginSz;
 	}
 }
 
@@ -240,11 +240,14 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
 
 		compressNetMessage(frame, dat);
 
+		dat.header.sz = dat.sz & 0xff;
+		dat.header.szHighBit = (dat.sz & 0x100) != 0;
+
 		msgbuffer.write(&dat.header, sizeof(DemoNetMessage));
 
-		g_stats.msgSz[dat.header.type] += dat.header.sz;
+		g_stats.msgSz[dat.header.type] += dat.sz;
 		if (dat.header.type == SVC_TEMPENTITY) {
-			g_stats.msgSz[256 + dat.data[0]] += dat.header.sz;
+			g_stats.msgSz[256 + dat.data[0]] += dat.sz;
 		}
 
 		if (dat.header.hasOrigin) {
@@ -256,7 +259,7 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
 		if (dat.header.hasEdict) {
 			msgbuffer.write(&dat.eidx, sizeof(uint16_t));
 		}
-		msgbuffer.write(dat.data, dat.header.sz);
+		msgbuffer.write(dat.data, dat.sz);
 	}
 	if (msgbuffer.eom()) {
 		println("ERROR: Demo file network message buffer overflowed (%d > %d). Use a bigger buffer!", frame.netmessage_count, MAX_NETMSG_FRAME);
