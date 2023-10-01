@@ -330,6 +330,7 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 			msg.origin[2] = FLOAT_TO_FIXED(pOrigin[2], 19, 5);
 		}
 		else {
+			msg.header.hasLongOrigin = 0;
 			msg.origin[0] = (int16_t)pOrigin[0];
 			msg.origin[1] = (int16_t)pOrigin[1];
 			msg.origin[2] = (int16_t)pOrigin[2];

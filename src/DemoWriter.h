@@ -22,6 +22,8 @@ public:
 	bool validateEdicts(); // debug
 
 private:
+	void compressNetMessage(FrameData& frame, NetMessageData& msg);
+
 	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas);
 	mstream writePlrDeltas(FrameData& frame, uint32_t& numEntDeltas);
 	mstream writeMsgDeltas(FrameData& frame);

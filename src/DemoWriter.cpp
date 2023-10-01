@@ -179,10 +179,67 @@ mstream DemoWriter::writePlrDeltas(FrameData& frame, uint32_t& plrDeltaBits) {
 	return plrbuffer;
 }
 
+void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
+	if (msg.header.type == MSG_StartSound) {
+		uint16_t flags = *(uint16_t*)msg.data;
+		if ((flags & SND_ORIGIN) == 0) {
+			return;
+		}
+
+		int oriOffset = 2;
+		if (flags & SND_ENT) {
+			oriOffset += 2;
+		}
+		if (flags & SND_VOLUME) {
+			oriOffset += 1;
+		}
+		if (flags & SND_PITCH) {
+			oriOffset += 1;
+		}
+		if (flags & SND_ATTENUATION) {
+			oriOffset += 1;
+		}
+
+		if ((flags & SND_ENT)) {
+			uint16_t entidx = *(uint16_t*)(msg.data + 2);
+			if (entidx < MAX_EDICTS && (frame.netedicts[entidx].effects & EF_NODRAW) == 0) {
+				// no need for both an entity attachment and origin if the client knows where the ent is.
+				// So, delete the origin from the message
+				byte* originPtr = (byte*)(msg.data + oriOffset);
+				int oldOriginSz = sizeof(int32_t) * 3;
+				int moveSz = msg.header.sz - (oriOffset + oldOriginSz);
+				memmove(originPtr, originPtr + oldOriginSz, moveSz);
+				msg.header.sz -= oldOriginSz;
+				*(uint16_t*)msg.data = flags & ~SND_ORIGIN;
+				return;
+			}
+		}
+
+		// chop fractional part of origin off. No one will notice 1-unit differences in sound origins
+		int32_t* oldorigin = (int32_t*)(msg.data + oriOffset);
+		int16_t neworigin[3];
+		for (int i = 0; i < 3; i++) {
+			neworigin[i] = oldorigin[i] / 8;
+		}
+
+		int newOriginSz = sizeof(int16_t) * 3;
+		int oldOriginSz = sizeof(int32_t) * 3;
+		int moveSz = msg.header.sz - (oriOffset + oldOriginSz);
+		byte* originPtr = (byte*)oldorigin;
+		memcpy(originPtr, neworigin, newOriginSz);
+		memmove(originPtr + newOriginSz, originPtr + oldOriginSz, moveSz);
+
+		msg.header.sz -= oldOriginSz - newOriginSz;
+	}
+}
+
 mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
 	mstream msgbuffer(netmessagesBuffer, netmessagesBufferSize);
 	for (int i = 0; i < frame.netmessage_count; i++) {
 		NetMessageData& dat = frame.netmessages[i];
+
+		compressNetMessage(frame, dat);
+
 		msgbuffer.write(&dat.header, sizeof(DemoNetMessage));
 
 		g_stats.msgSz[dat.header.type] += dat.header.sz;

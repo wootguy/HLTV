@@ -980,6 +980,45 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 	}
 }
 
+void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
+	if (msg.header.type == MSG_StartSound) {
+		uint16_t flags = *(uint16_t*)msg.data;
+		if ((flags & SND_ORIGIN) == 0) {
+			return;
+		}
+
+		int oriOffset = 2;
+		if (flags & SND_ENT) {
+			oriOffset += 2;
+		}
+		if (flags & SND_VOLUME) {
+			oriOffset += 1;
+		}
+		if (flags & SND_PITCH) {
+			oriOffset += 1;
+		}
+		if (flags & SND_ATTENUATION) {
+			oriOffset += 1;
+		}
+
+		// add fractional part of origin back in
+		int16_t* oldorigin = (int16_t*)(msg.data + oriOffset);
+		int32_t neworigin[3];
+		for (int i = 0; i < 3; i++) {
+			neworigin[i] = (int32_t)oldorigin[i] * 8;
+		}
+
+		int newOriginSz = sizeof(int32_t) * 3;
+		int oldOriginSz = sizeof(int16_t) * 3;
+		int moveSz = msg.header.sz - (oriOffset + oldOriginSz);
+		byte* originPtr = (byte*)oldorigin;
+		memmove(originPtr + newOriginSz, originPtr + oldOriginSz, moveSz);
+		memcpy(originPtr, neworigin, newOriginSz);
+
+		msg.header.sz += newOriginSz - oldOriginSz;
+	}
+}
+
 bool DemoPlayer::readNetworkMessages(mstream& reader) {
 	uint32_t startOffset = reader.tell();
 
@@ -1029,6 +1068,8 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 			msg.eidx = 1;
 			ent = INDEXENT(1);
 		}
+
+		decompressNetMessage(msg);
 
 		if (!processDemoNetMessage(msg)) {
 			continue;
