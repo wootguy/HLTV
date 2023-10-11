@@ -16,6 +16,8 @@
 // - do monsters ever reset sequences to a non-zero frame? (undo frame opt)
 // - punchangle prediction
 // - controller interp
+// - capture SetView calls
+// - NetMessage compression is WIP and broke replays or isn't working I forget
 
 // optimize ideas:
 // - 1-2byte deltaidx for players
@@ -55,7 +57,7 @@ struct ReplayEntity {
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
-	bool clearMapForPlayback = false; // map may crash if entities are not cleared first
+	bool clearMapForPlayback = true; // map may crash if entities are not cleared first
 	bool useBots = false; // try to use bots for player entites
 	float replaySpeed = 1.0f;
 	int netmsgPlrIdx = 1; // player to replay network messages for

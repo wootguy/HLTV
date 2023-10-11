@@ -123,6 +123,12 @@ struct NetMessageData {
 	}
 
 	void send(int msg_dst, edict_t* targetEnt);
+
+	// compresses 4-byte coords into 2-bytes by removing the fractional parts
+	// coords will become integers clamped to +/-32768 (max map size before stuff breaks anyway)
+	// if keepFrac is set, range will be +/-4096 with a 3-bit fractional part
+	void compressCoords(int offset, int count, bool keepFrac=false);
+	void decompressCoords(int offset, int count, bool keepFrac=false);
 };
 
 struct DemoEvent {

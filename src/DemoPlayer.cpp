@@ -961,6 +961,12 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 		} // plugins can't change sentences(?), so client should match server
 		return true;
 	}
+	case MSG_TracerDecal:
+		// Vector start
+		// Vector end
+		// byte showTracer (0/1)
+		// byte ???
+		return true;
 	case MSG_SayText: {
 		// name coloring doesn't work for bots, so copy the name color to p1 and use them as the source
 		uint16_t idx = args[0];
@@ -985,7 +991,95 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 }
 
 void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
-	if (msg.header.type == MSG_StartSound) {
+	switch (msg.header.type) {
+	case SVC_TEMPENTITY: {
+		uint8_t type = msg.data[0];
+
+		switch (type) {
+		case TE_BEAMPOINTS:
+		case TE_BEAMDISK:
+		case TE_BEAMCYLINDER:
+		case TE_BEAMTORUS:
+		case TE_LIGHTNING:
+		case TE_BEAMSPRITE:
+		case TE_SPRITETRAIL:
+		case TE_BUBBLETRAIL:
+		case TE_SPRITE_SPRAY:
+		case TE_SPRAY:
+		case TE_LINE:
+		case TE_SHOWLINE:
+		case TE_BOX:
+		case TE_BLOODSTREAM:
+		case TE_BLOOD:
+		case TE_MODEL:
+		case TE_PROJECTILE:
+		case TE_TRACER:
+		case TE_STREAK_SPLASH:
+		case TE_USERTRACER:
+			msg.decompressCoords(1, 6);
+			break;
+		case TE_BEAMENTPOINT:
+			msg.decompressCoords(3, 3);
+			break;
+		case TE_EXPLOSION:
+		case TE_SMOKE:
+		case TE_SPARKS:
+		case TE_SPRITE:
+		case TE_GLOWSPRITE:
+		case TE_ARMOR_RICOCHET:
+		case TE_DLIGHT:
+		case TE_LARGEFUNNEL:
+		case TE_BLOODSPRITE:
+		case TE_FIREFIELD:
+		case TE_GUNSHOT:
+		case TE_TAREXPLOSION:
+		case TE_EXPLOSION2:
+		case TE_PARTICLEBURST:
+		case TE_LAVASPLASH:
+		case TE_TELEPORT:
+		case TE_IMPLOSION:
+		case TE_DECAL:
+		case TE_GUNSHOTDECAL:
+		case TE_DECALHIGH:
+		case TE_WORLDDECAL:
+		case TE_WORLDDECALHIGH:
+		case TE_BSPDECAL:
+			msg.decompressCoords(1, 3);
+			break;
+		case TE_ELIGHT:
+			msg.decompressCoords(3, 4);
+			msg.decompressCoords(23, 1);
+			break;
+		case TE_PLAYERATTACHMENT:
+			msg.decompressCoords(2, 1, true);
+			break;
+		case TE_BUBBLES:
+			msg.decompressCoords(1, 7);
+			break;
+		case TE_EXPLODEMODEL:
+			msg.decompressCoords(1, 4);
+			break;
+		case TE_BREAKMODEL:
+			msg.decompressCoords(1, 9);
+			break;
+		case TE_PLAYERDECAL:
+			msg.decompressCoords(2, 3);
+			break;
+		case TE_MULTIGUNSHOT:
+			msg.decompressCoords(1, 3);
+			msg.decompressCoords(13, 3, true);
+			msg.decompressCoords(25, 2);
+			break;
+		default:
+			break;
+		}
+		break;
+	}
+	case MSG_TracerDecal: {
+		msg.decompressCoords(0, 6);
+		return;
+	}
+	case MSG_StartSound: {
 		uint16_t& flags = *(uint16_t*)msg.data;
 
 		int oriOffset = 2;
@@ -1001,7 +1095,7 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 		if (flags & SND_ATTENUATION) {
 			oriOffset += 1;
 		}
-		
+
 		if ((flags & SND_ORIGIN) == 0 && (flags & SND_ENT) != 0) {
 			// add origin to suppress "sound without origin" messages.
 			// It doesn't seem necesary otherwise because the sounds still work.
@@ -1027,26 +1121,17 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 			}
 			return;
 		}
-		
+
 		if ((flags & SND_ORIGIN) == 0) {
 			return;
 		}
 
 		// add fractional part of origin back in
-		int16_t* oldorigin = (int16_t*)(msg.data + oriOffset);
-		int32_t neworigin[3];
-		for (int i = 0; i < 3; i++) {
-			neworigin[i] = (int32_t)oldorigin[i] * 8;
-		}
-
-		int newOriginSz = sizeof(int32_t) * 3;
-		int oldOriginSz = sizeof(int16_t) * 3;
-		int moveSz = msg.sz - (oriOffset + oldOriginSz);
-		byte* originPtr = (byte*)oldorigin;
-		memmove(originPtr + newOriginSz, originPtr + oldOriginSz, moveSz);
-		memcpy(originPtr, neworigin, newOriginSz);
-
-		msg.sz += newOriginSz - oldOriginSz;
+		msg.decompressCoords(oriOffset, 3);
+		return;
+	}
+	default:
+		break;
 	}
 }
 

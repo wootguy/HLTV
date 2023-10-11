@@ -180,7 +180,95 @@ mstream DemoWriter::writePlrDeltas(FrameData& frame, uint32_t& plrDeltaBits) {
 }
 
 void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
-	if (msg.header.type == MSG_StartSound) {
+	switch (msg.header.type) {
+	case SVC_TEMPENTITY: {
+		uint8_t type = msg.data[0];
+
+		switch (type) {
+		case TE_BEAMPOINTS:
+		case TE_BEAMDISK:
+		case TE_BEAMCYLINDER:
+		case TE_BEAMTORUS:
+		case TE_LIGHTNING:
+		case TE_BEAMSPRITE:
+		case TE_SPRITETRAIL:
+		case TE_BUBBLETRAIL:
+		case TE_SPRITE_SPRAY:
+		case TE_SPRAY:
+		case TE_LINE:
+		case TE_SHOWLINE:
+		case TE_BOX:
+		case TE_BLOODSTREAM:
+		case TE_BLOOD:
+		case TE_MODEL:
+		case TE_PROJECTILE:
+		case TE_TRACER:
+		case TE_STREAK_SPLASH:
+		case TE_USERTRACER:
+			msg.compressCoords(1, 6);
+			break;
+		case TE_BEAMENTPOINT:
+			msg.compressCoords(3, 3);
+			break;
+		case TE_EXPLOSION:
+		case TE_SMOKE:
+		case TE_SPARKS:
+		case TE_SPRITE:
+		case TE_GLOWSPRITE:
+		case TE_ARMOR_RICOCHET:
+		case TE_DLIGHT:
+		case TE_LARGEFUNNEL:
+		case TE_BLOODSPRITE:
+		case TE_FIREFIELD:
+		case TE_GUNSHOT:
+		case TE_TAREXPLOSION:
+		case TE_EXPLOSION2:
+		case TE_PARTICLEBURST:
+		case TE_LAVASPLASH:
+		case TE_TELEPORT:
+		case TE_IMPLOSION:
+		case TE_DECAL:
+		case TE_GUNSHOTDECAL:
+		case TE_DECALHIGH:
+		case TE_WORLDDECAL:
+		case TE_WORLDDECALHIGH:
+		case TE_BSPDECAL:
+			msg.compressCoords(1, 3);
+			break;
+		case TE_ELIGHT:
+			msg.compressCoords(23, 1);
+			msg.compressCoords(3, 4);
+			break;
+		case TE_PLAYERATTACHMENT:
+			msg.compressCoords(2, 1, true);
+			break;
+		case TE_BUBBLES:
+			msg.compressCoords(1, 7);
+			break;
+		case TE_EXPLODEMODEL:
+			msg.compressCoords(1, 4);
+			break;
+		case TE_BREAKMODEL:
+			msg.compressCoords(1, 9);
+			break;
+		case TE_PLAYERDECAL:
+			msg.compressCoords(2, 3);
+			break;
+		case TE_MULTIGUNSHOT:
+			msg.compressCoords(25, 2);
+			msg.compressCoords(13, 3, true);
+			msg.compressCoords(1, 3);			
+			break;
+		default:
+			break;
+		}
+		break;
+	}
+	case MSG_TracerDecal: {
+		msg.compressCoords(0, 6);
+		break;
+	}
+	case MSG_StartSound: {
 		uint16_t flags = *(uint16_t*)msg.data;
 		if ((flags & SND_ORIGIN) == 0) {
 			return;
@@ -220,9 +308,9 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 				netedict& ed = frame.netedicts[entidx];
 				uint16_t soundIdx = *(uint16_t*)(msg.data + (msg.sz - 2));
 
-				if ((ed.effects & EF_NODRAW) == 0 && ed.modelindex 
-						&& g_indexToModel.find(ed.modelindex) != g_indexToModel.end()
-						&& g_indexToModel[ed.modelindex][0] != '*') {
+				if ((ed.effects & EF_NODRAW) == 0 && ed.modelindex
+					&& g_indexToModel.find(ed.modelindex) != g_indexToModel.end()
+					&& g_indexToModel[ed.modelindex][0] != '*') {
 					// no need for both an entity attachment and origin if the client knows where the ent is.
 					// So, delete the origin from the message.
 					// BSP models need origins because clients don't know mins/maxs (though that can be guessed)
@@ -238,20 +326,11 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 		}
 
 		// chop fractional part of origin off. No one will notice 1-unit differences in sound origins
-		int32_t* oldorigin = (int32_t*)(msg.data + oriOffset);
-		int16_t neworigin[3];
-		for (int i = 0; i < 3; i++) {
-			neworigin[i] = oldorigin[i] / 8;
-		}
-
-		int newOriginSz = sizeof(int16_t) * 3;
-		int oldOriginSz = sizeof(int32_t) * 3;
-		int moveSz = msg.sz - (oriOffset + oldOriginSz);
-		byte* originPtr = (byte*)oldorigin;
-		memcpy(originPtr, neworigin, newOriginSz);
-		memmove(originPtr + newOriginSz, originPtr + oldOriginSz, moveSz);
-
-		msg.sz -= oldOriginSz - newOriginSz;
+		msg.compressCoords(oriOffset, 3);
+		break;
+	}
+	default:
+		break;
 	}
 }
 
