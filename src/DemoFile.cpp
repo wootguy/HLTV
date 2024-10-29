@@ -1,5 +1,4 @@
 #include "DemoFile.h"
-#include "NetMessage.h"
 
 void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 	float forigin[3];

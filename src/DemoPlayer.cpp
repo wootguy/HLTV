@@ -1,10 +1,23 @@
+#include "main.h"
 #include "DemoPlayer.h"
-#include "mmlib.h"
 #include "SvenTV.h"
 
 const char* model_entity = "env_sprite";
 
+#ifdef HLCOOP_BUILD
+#include "animation.h"
+
 void sendScoreInfo(int idx, float score, long deaths, float health, float armor, int classification, short ping, short icon) {
+	// TODO
+}
+
+void sendScoreInfo(edict_t* ent) {
+	// TODO
+}
+
+#else
+void sendScoreInfo(int idx, float score, long deaths, float health, float armor, int classification, short ping, short icon) {
+	// TODO
 	MESSAGE_BEGIN(MSG_BROADCAST, MSG_ScoreInfo);
 	WRITE_BYTE(idx);
 	WRITE_BYTE(((byte*)&score)[0]);
@@ -44,9 +57,10 @@ void sendScoreInfo(edict_t* ent) {
 
 	sendScoreInfo(idx, score, deaths, health, armor, classification, ping, icon);
 }
+#endif
 
-void delayRenamePlayer(EHandle h_plr, string name) {
-	edict_t* ent = h_plr;
+void delayRenamePlayer(EHANDLE h_plr, string name) {
+	edict_t* ent = h_plr.GetEdict();
 	if (!ent) {
 		return;
 	}
@@ -76,31 +90,31 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	memset(&g_stats, 0, sizeof(DemoStats));
 
 	if (!replayFile) {
-		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
+		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
 		return false;
 	}
 
 	if (!fread(&demoHeader, sizeof(DemoHeader), 1, replayFile)) {
-		ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
+		UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
 		closeReplayFile();
 		return false;
 	}
 
 	if (demoHeader.version != DEMO_VERSION) {
-		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", demoHeader.version, DEMO_VERSION));
+		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", demoHeader.version, DEMO_VERSION));
 		closeReplayFile();
 		return false;
 	}
 
 	string mapname = string(demoHeader.mapname, 64);
 	if (!g_engfuncs.pfnIsMapValid((char*)mapname.c_str())) {
-		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
+		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
 		closeReplayFile();
 		return false;
 	}
 
 	if (demoHeader.modelLen > 1024 * 1024 * 32 || demoHeader.soundLen > 1024 * 1024 * 32) {
-		ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", demoHeader.modelLen, demoHeader.soundLen));
+		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", demoHeader.modelLen, demoHeader.soundLen));
 		closeReplayFile();
 		return false;
 	}
@@ -109,7 +123,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		char* modelData = new char[demoHeader.modelLen];
 
 		if (!fread(modelData, demoHeader.modelLen, 1, replayFile)) {
-			ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
+			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
 			closeReplayFile();
 			return false;
 		}
@@ -128,7 +142,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		char* soundData = new char[demoHeader.soundLen];
 
 		if (!fread(soundData, demoHeader.soundLen, 1, replayFile)) {
-			ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
+			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
 			closeReplayFile();
 			return false;
 		}
@@ -141,7 +155,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		println("WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.");
 	}
 
-	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
+	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
 	{
 		time_t rawtime;
 		struct tm* timeinfo;
@@ -151,7 +165,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		timeinfo = localtime(&rawtime);
 
 		strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
-		ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("date       : %s\n", buffer));
+		UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("date       : %s\n", buffer));
 	}
 	{
 		int duration = demoHeader.endTime ? TimeDifference(demoHeader.startTime, demoHeader.endTime) : 0;
@@ -160,18 +174,18 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		int seconds = duration % 60;
 
 		if (duration) {
-			ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %02d:%02d:%02d\n", hours, minutes, seconds));
+			UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %02d:%02d:%02d\n", hours, minutes, seconds));
 		}
 		else {
-			ClientPrint(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
+			UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
 		}
 	}
-	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
-	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
-	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d (offset %d)\n", precacheModels.size(), demoHeader.modelIdxStart));
-	ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
+	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
+	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
+	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d (offset %d)\n", precacheModels.size(), demoHeader.modelIdxStart));
+	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
 
-	ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[SvenTV] Opened: %s\n", path.c_str()));
+	UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[SvenTV] Opened: %s\n", path.c_str()));
 
 	g_stats.totalWriteSz = sizeof(DemoHeader) + demoHeader.modelLen + demoHeader.soundLen;
 
@@ -191,7 +205,7 @@ void DemoPlayer::prepareDemo() {
 		for (int i = 1; i <= gpGlobals->maxClients; i++) {
 			edict_t* ent = INDEXENT(i);
 			CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
-			if (isValidPlayer(ent) && plr) {
+			if (IsValidPlayer(ent) && plr) {
 				// hide weapons
 				//ent->v.viewmodel = 0;
 				//ent->v.weaponmodel = 0;
@@ -237,10 +251,10 @@ void DemoPlayer::precacheDemo() {
 	}
 
 	for (int i = 0; i < precacheModels.size(); i++) {
-		PrecacheModel(precacheModels[i]);
+		PRECACHE_MODEL(precacheModels[i].c_str());
 	}
 	for (int i = 0; i < precacheSounds.size(); i++) {
-		PrecacheSound(precacheSounds[i]);
+		PRECACHE_SOUND_NULLENT(precacheSounds[i].c_str());
 	}
 }
 
@@ -259,23 +273,23 @@ void DemoPlayer::closeReplayFile() {
 	}
 
 	for (int i = 0; i < replayEnts.size(); i++) {
-		edict_t* ent = replayEnts[i].h_ent;
+		edict_t* ent = replayEnts[i].h_ent.GetEdict();
 		if (!ent) {
 			continue;
 		}
 
 		if (ent->v.flags & FL_FAKECLIENT) {
-			kickPlayer(ent);
+			KickPlayer(ent);
 		}
 		else {
-			REMOVE_ENTITY(replayEnts[i].h_ent);
+			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 		}			
 	}
 	replayEnts.clear();
 
 	for (int i = 1; i < gpGlobals->maxClients; i++) {
 		edict_t* ent = INDEXENT(i);
-		if (!isValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
+		if (!IsValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
 			continue;
 		}
 
@@ -368,7 +382,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		// rename real players so that chat colors work for the bots
 		for (int i = 1; i < gpGlobals->maxClients; i++) {
 			edict_t* ent = INDEXENT(i);
-			if (!isValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
+			if (!IsValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
 				continue;
 			}
 
@@ -386,7 +400,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 
 		if (bot) {
 			int eidx = ENTINDEX(bot);
-			REMOVE_ENTITY(replayEnts[i].h_ent);
+			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
 			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", info.name);
@@ -411,14 +425,14 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		}
 	}
 	else if ((fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
-		map<string, string> keys;
-		CBaseEntity* newEnt = CreateEntity("beam", keys, true);
+		unordered_map<string, string> keys;
+		CBaseEntity* newEnt = CBaseEntity::Create("beam", g_vecZero, g_vecZero, NULL, keys);
 
 		if (ent->v.flags & FL_CLIENT) {
-			kickPlayer(ent);
+			KickPlayer(ent);
 		}
 		else {
-			REMOVE_ENTITY(replayEnts[i].h_ent);
+			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 		}
 
 		replayEnts[i].h_ent = ent = newEnt->edict();
@@ -427,16 +441,16 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		SET_MODEL(ent, "sprites/error.spr");
 	}
 	else if (!(fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT)) == 0) {
-		map<string, string> keys;
+		unordered_map<string, string> keys;
 		keys["model"] = "sprites/error.spr";
 
-		CBaseEntity* newEnt = CreateEntity(model_entity, keys, true);
+		CBaseEntity* newEnt = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, NULL, keys);
 
 		if (ent->v.flags & FL_CLIENT) {
-			kickPlayer(ent);
+			KickPlayer(ent);
 		}
 		else {
-			REMOVE_ENTITY(replayEnts[i].h_ent);
+			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 		}
 
 		replayEnts[i].h_ent = ent = newEnt->edict();
@@ -451,10 +465,10 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 
 bool DemoPlayer::createReplayEntities(int count) {
 	while (count >= replayEnts.size()) {
-		map<string, string> keys;
+		unordered_map<string, string> keys;
 		keys["model"] = "sprites/error.spr";
 
-		CBaseEntity* ent = CreateEntity(model_entity, keys, true);
+		CBaseEntity* ent = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, NULL, keys);
 		ent->pev->solid = SOLID_NOT;
 		ent->pev->effects |= EF_NODRAW;
 		ent->pev->movetype = MOVETYPE_NONE;
@@ -463,7 +477,7 @@ bool DemoPlayer::createReplayEntities(int count) {
 		if (!ent) {
 			println("Entity overflow at %d\n", (int)replayEnts.size());
 			for (int i = 0; i < replayEnts.size(); i++) {
-				REMOVE_ENTITY(replayEnts[i].h_ent);
+				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 			}
 			closeReplayFile();
 			return false;
@@ -554,7 +568,7 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 
 edict_t* DemoPlayer::getReplayEntity(int idx) {
 	if (idx < replayEnts.size()) {
-		return replayEnts[idx].h_ent;
+		return replayEnts[idx].h_ent.GetEdict();
 	}
 	return NULL;
 }
@@ -575,7 +589,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 			return false;
 		}
 
-		edict_t* ent = replayEnts[i].h_ent;
+		edict_t* ent = replayEnts[i].h_ent.GetEdict();
 		ent = convertEdictType(ent, i);
 		
 		int oldModelIdx = ent->v.modelindex;
@@ -641,7 +655,7 @@ void DemoPlayer::convReplayEntIdx(uint16_t& eidx) {
 		eidx = 0;
 		return;
 	}
-	eidx = ENTINDEX(replayEnts[eidx].h_ent);
+	eidx = ENTINDEX(replayEnts[eidx].h_ent.GetEdict());
 }
 
 void DemoPlayer::convReplayModelIdx(uint16_t& modelIdx) {
@@ -681,7 +695,7 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 		numPlayerDeltas++;
 
 		if (i+1 < replayEnts.size()) {
-			edict_t* bot = replayEnts[i+1].h_ent;
+			edict_t* bot = replayEnts[i+1].h_ent.GetEdict();
 			if (!bot || (bot->v.flags & FL_FAKECLIENT) == 0) {
 				continue;
 			}
@@ -949,6 +963,7 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 	case SVC_TEMPENTITY:
 		g_stats.msgSz[256 + msg.data[0]] += msg.sz;
 		return processTempEntityMessage(msg);
+#ifndef HLCOOP_BUILD
 	case MSG_StartSound: {
 		uint16_t& flags = *(uint16_t*)(args);
 		if (flags & SND_ENT) {
@@ -984,6 +999,7 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 		}
 		return false;
 	}
+#endif
 	default:
 		println("Unhandled netmsg %d", (int)msg.header.type);
 		return false;
@@ -1075,6 +1091,7 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 		}
 		break;
 	}
+#ifndef HLCOOP_BUILD
 	case MSG_TracerDecal: {
 		msg.decompressCoords(0, 6);
 		return;
@@ -1130,6 +1147,7 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 		msg.decompressCoords(oriOffset, 3);
 		return;
 	}
+#endif
 	default:
 		break;
 	}
@@ -1338,7 +1356,7 @@ bool DemoPlayer::readDemoFrame() {
 
 	DemoFrame header;
 	if (!fread(&header, sizeof(DemoFrame), 1, replayFile)) {
-		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
+		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
 	}
@@ -1379,7 +1397,7 @@ bool DemoPlayer::readDemoFrame() {
 	lastFrameDemoTime = demoTime;
 
 	if (frameSize > 1024 * 1024 * 32 || frameSize == 0) {
-		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Invalid frame size\n");
+		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Invalid frame size\n");
 		closeReplayFile();
 		return false;
 	}
@@ -1402,7 +1420,7 @@ bool DemoPlayer::readDemoFrame() {
 	char* frameData = new char[frameSize];
 	if (!fread(frameData, frameSize, 1, replayFile)) {
 		delete[] frameData;
-		ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
+		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
 	}
@@ -1493,11 +1511,11 @@ void DemoPlayer::interpolateEdicts() {
 			continue;
 		}
 
-		if (!replayEnts[i].h_ent.IsValid() || replayEnts[i].h_ent.GetEdict()->v.effects & EF_NODRAW) {
+		if (!replayEnts[i].h_ent || replayEnts[i].h_ent.GetEdict()->v.effects & EF_NODRAW) {
 			continue;
 		}
 
-		edict_t* ent = replayEnts[i].h_ent;
+		edict_t* ent = replayEnts[i].h_ent.GetEdict();
 		InterpInfo& interp = replayEnts[i].interp;
 
 		if (fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) {

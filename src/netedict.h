@@ -1,7 +1,12 @@
 #pragma once
+#ifdef HLCOOP_BUILD
+#include "extdll.h"
+#else
+#include "mmlib.h"
+#endif
+
 #include <stdint.h>
 #include "mstream.h"
-#include "mmlib.h"
 #include <vector>
 
 // flags for indicating which edict fields were updated

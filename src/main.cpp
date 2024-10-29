@@ -1,9 +1,11 @@
 #include "main.h"
-#include "mmlib.h"
 #include <string>
-#include "misc_utils.h"
 #include "ThreadSafeInt.h"
 #include "SvenTV.h"
+
+#ifndef HLCOOP_BUILD
+#include "mmlib.h"
+#include "misc_utils.h"
 
 // Description of plugin
 plugin_info_t Plugin_info = {
@@ -17,6 +19,31 @@ plugin_info_t Plugin_info = {
 	PT_ANYTIME,	// (when) loadable
 	PT_ANYPAUSE,	// (when) unloadable
 };
+
+#define DEFAULT_HOOK_RETURN RETURN_META(MRES_IGNORED)
+
+#define isValidPlayer IsValidPlayer
+#else
+
+vector<string> g_SoundCacheFiles; // maps index to sound path
+unordered_map<string, int> g_SoundCache; // maps sound path to index
+
+#define DEFAULT_HOOK_RETURN return HOOK_CONTINUE
+
+bool cgetline(FILE* file, string& output) {
+	static char buffer[4096];
+
+	if (fgets(buffer, sizeof(buffer), file)) {
+		output = string(buffer);
+		if (output[output.length() - 1] == '\n') {
+			output = output.substr(0, output.length() - 1);
+		}
+		return true;
+	}
+
+	return false;
+}
+#endif
 
 volatile bool g_plugin_exiting = false;
 const bool singleThreadMode = false;
@@ -82,14 +109,15 @@ const char* te_names[TE_NAMES] = {
 	"TE_MULTIGUNSHOT", "TE_USERTRACER"
 };
 
-void ClientLeave(edict_t* ent) {
+HOOK_RET_VOID ClientLeaveHook(edict_t* ent) {
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.flags = 0;
 	demoStatPlayers[ENTINDEX(ent)] = false;
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void Changelevel() {
+HOOK_RET_VOID Changelevel() {
 	if (g_sventv) {
 		g_sventv->enableDemoFile = false;
 		g_demoPlayer->stopReplay();
@@ -100,6 +128,8 @@ void Changelevel() {
 		g_playerModels.clear();
 	}
 	remove(stateFilePath);
+
+	DEFAULT_HOOK_RETURN;
 }
 
 void writeSvenTvState() {
@@ -143,7 +173,12 @@ void loadSvenTvState() {
 	fclose(file);
 }
 
-void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
+#ifdef HLCOOP_BUILD
+HOOK_RET_VOID MapInitHook()
+#else
+HOOK_RET_VOID MapInitHook(edict_t * pEdictList, int edictCount, int maxClients)
+#endif
+{
 	if (!g_sventv) {
 		g_sventv = new SvenTV(singleThreadMode);
 		g_demoPlayer = new DemoPlayer();
@@ -153,15 +188,22 @@ void MapInit(edict_t* pEdictList, int edictCount, int maxClients) {
 	memset(demoStatPlayers, 0, sizeof(demoStatPlayers));
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 	
-	RETURN_META(MRES_IGNORED);
+	DEFAULT_HOOK_RETURN;
 }
 
-void MapInit_post(edict_t* pEdictList, int edictCount, int maxClients) {
+#ifdef HLCOOP_BUILD
+HOOK_RET_VOID MapInit_post()
+#else
+HOOK_RET_VOID MapInit_post(edict_t * pEdictList, int edictCount, int maxClients)
+#endif
+{
+#ifndef HLCOOP_BUILD
 	loadSoundCacheFile();
+#endif
 
 	writeSvenTvState();
 
-	RETURN_META(MRES_IGNORED);
+	DEFAULT_HOOK_RETURN;
 }
 
 void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
@@ -190,14 +232,14 @@ void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
 	}
 }
 
-void ClientUserInfoChanged(edict_t* pEntity, char* infobuffer) {
-	if (!isValidPlayer(pEntity)) {
-		RETURN_META(MRES_IGNORED);
+HOOK_RET_VOID ClientUserInfoChangedHook(edict_t* pEntity, char* infobuffer) {
+	if (!IsValidPlayer(pEntity)) {
+		DEFAULT_HOOK_RETURN;
 	}
 
 	loadPlayerInfo(pEntity, infobuffer);
 
-	RETURN_META(MRES_IGNORED);
+	DEFAULT_HOOK_RETURN;
 }
 
 float lastPingUpdate = 0;
@@ -222,9 +264,11 @@ uint64_t getSteamId64(edict_t* ent) {
 	}
 }
 
-void StartFrame() {
+HOOK_RET_VOID StartFrameHook() {
+#ifndef HLCOOP_BUILD
 	handleThreadPrints();
 	g_Scheduler.Think();
+#endif
 
 	g_server_frame_count++;
 
@@ -242,18 +286,23 @@ void StartFrame() {
 	g_demoPlayer->playDemo();
 
 	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
-		RETURN_META(MRES_IGNORED);
+		DEFAULT_HOOK_RETURN;
 	}
 
 	for (int i = 1; i <= gpGlobals->maxClients; i++) {
 		edict_t* ent = INDEXENT(i);
 		CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
 
-		if (!isValidPlayer(ent) || !plr) {
+		if (!IsValidPlayer(ent) || !plr) {
 			continue;
 		}
 
+#ifdef HLCOOP_BUILD
+		CBasePlayerWeapon* wep = (CBasePlayerWeapon*)plr->m_pActiveItem.GetEntity();
+#else
 		CBasePlayerWeapon* wep = (CBasePlayerWeapon*)plr->m_hActiveItem.GetEntity();
+#endif
+
 		DemoPlayerEnt& dplr = g_demoplayers[i - 1];
 		dplr.button |= (plr->m_afButtonLast | plr->m_afButtonPressed | plr->m_afButtonReleased | ent->v.button) & 0xffff;
 
@@ -261,7 +310,13 @@ void StartFrame() {
 			int pammo = wep->m_iPrimaryAmmoType;
 			int sammo = wep->m_iSecondaryAmmoType;
 			dplr.clip = clamp(wep->m_iClip, 0, 65535);
-			dplr.clip2 = clamp(wep->m_iClip2, 0, 65535);
+
+			#ifdef HLCOOP_BUILD
+				dplr.clip2 = 0;
+			#else
+				dplr.clip2 = clamp(wep->m_iClip2, 0, 65535);
+			#endif
+
 			dplr.ammo = pammo >= 0 && pammo < 64 ? clamp(plr->m_rgAmmo[pammo], 0, 65535) : 0;
 			dplr.ammo2 = sammo >= 0 && sammo < 64 ? clamp(plr->m_rgAmmo[sammo], 0, 65535) : 0;
 		}
@@ -274,7 +329,7 @@ void StartFrame() {
 			DemoPlayerEnt& plr = g_demoplayers[i - 1];
 			edict_t* ent = INDEXENT(i);
 			
-			if (!isValidPlayer(ent)) {
+			if (!IsValidPlayer(ent)) {
 				plr.flags = 0;
 				continue;
 			}
@@ -298,22 +353,29 @@ void StartFrame() {
 		g_sventv->think_mainThread();
 	}
 
-	RETURN_META(MRES_IGNORED);
+	DEFAULT_HOOK_RETURN;
 }
 
-void ClientJoin(edict_t* ent) {
+#ifdef HLCOOP_BUILD
+HOOK_RET_VOID ClientJoin(CBasePlayer* pPlayer)
+#else
+HOOK_RET_VOID ClientJoin(edict_t* ent)
+#endif
+{
+	edict_t* ent = pPlayer->edict();
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.steamid64 = getSteamId64(ent);
 	plr.flags |= PLR_FL_CONNECTED;
 	
-	RETURN_META(MRES_IGNORED);
+	DEFAULT_HOOK_RETURN;
 }
 
-void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
+HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
 	//println("NET MESG: %d", msg_type);
 	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
 		g_should_write_next_message = false;
-		RETURN_META(MRES_IGNORED);
+
+		DEFAULT_HOOK_RETURN;
 	}
 
 	g_should_write_next_message = true;
@@ -349,10 +411,10 @@ void MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed)
 	msg.header.sz = 0;
 	msg.sz = 0;
 
-	RETURN_META(MRES_IGNORED);
+	DEFAULT_HOOK_RETURN;
 }
 
-void MessageEnd() {
+HOOK_RET_VOID MessageEnd() {
 	if (g_should_write_next_message) {
 		g_netmessage_count++;
 
@@ -361,86 +423,95 @@ void MessageEnd() {
 			println("[SvenTV] Network message capture overflow!");
 		}
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteAngle(float angle) {
+HOOK_RET_VOID WriteAngle(float angle) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = (int64)(fmod((double)angle, 360.0) * 256.0 / 360.0) & 0xFF;
 		memcpy(msg.data + msg.sz, &angle, sizeof(byte));
 		msg.sz += sizeof(byte);
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteByte(int b) {
+HOOK_RET_VOID WriteByte(int b) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = b;
 		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
 		msg.sz += sizeof(byte);
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteChar(int c) {
+HOOK_RET_VOID WriteChar(int c) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = c;
 		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
 		msg.sz += sizeof(byte);
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteCoord(float coord) {
+HOOK_RET_VOID WriteCoord(float coord) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (msg.sz + sizeof(float) < MAX_NETMSG_DATA) {
 		int32_t arg = coord * 8;
 		memcpy(msg.data + msg.sz, &arg, sizeof(int32_t));
 		msg.sz += sizeof(int32_t);
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteEntity(int ent) {
+HOOK_RET_VOID WriteEntity(int ent) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (msg.sz + sizeof(uint16_t) < MAX_NETMSG_DATA) {
 		uint16_t dat = ent;
 		memcpy(msg.data + msg.sz, &dat, sizeof(uint16_t));
 		msg.sz += sizeof(uint16_t);
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteLong(int val) {
+HOOK_RET_VOID WriteLong(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (msg.sz + sizeof(int) < MAX_NETMSG_DATA) {
 		memcpy(msg.data + msg.sz, &val, sizeof(int));
 		msg.sz += sizeof(int);
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteShort(int val) {
+HOOK_RET_VOID WriteShort(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
 		int16_t dat = val;
 		memcpy(msg.data + msg.sz, &dat, sizeof(int16_t));
 		msg.sz += sizeof(int16_t);
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
-void WriteString(const char* s) {
+HOOK_RET_VOID WriteString(const char* s) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	int len = strlen(s)+1;
 	if (msg.sz + len < MAX_NETMSG_DATA) {
 		memcpy(msg.data + msg.sz, s, len);
 		msg.sz += len;
 	}
-	RETURN_META(MRES_IGNORED);
+	
+	DEFAULT_HOOK_RETURN;
 }
 
 bool doCommand(edict_t* plr) {
@@ -464,7 +535,7 @@ bool doCommand(edict_t* plr) {
 			g_sventv->enableDemoFile = false;
 		}
 		else {
-			ClientPrint(plr, HUD_PRINTTALK, "Usage: .demo [demo file path]\n");
+			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Usage: .demo [demo file path]\n");
 		}
 
 		return true;
@@ -505,8 +576,18 @@ bool doCommand(edict_t* plr) {
 	return false;
 }
 
-void ClientCommand(edict_t* pEntity) {
+#ifdef HLCOOP_BUILD
+HOOK_RET_VOID ClientCommand(CBasePlayer* pPlayer)
+#else
+HOOK_RET_VOID ClientCommand(edict_t* pEntity)
+#endif
+{
+#ifdef HLCOOP_BUILD
+	edict_t* pEntity = pPlayer->edict();
+	bool ret = doCommand(pEntity);
+#else
 	META_RES ret = doCommand(pEntity) ? MRES_SUPERCEDE : MRES_IGNORED;
+#endif
 
 	if (g_sventv->enableDemoFile || g_sventv->enableServer) {
 		string lowerArg0 = toLowerCase(CMD_ARGV(0));
@@ -526,23 +607,34 @@ void ClientCommand(edict_t* pEntity) {
 		}
 	}	
 
+#ifdef HLCOOP_BUILD
+	if (ret) {
+		return HOOK_HANDLED_OVERRIDE(0);
+	}
+	else {
+		return HOOK_CONTINUE;
+	}
+#else
 	RETURN_META(ret);
+#endif
+	
 }
 
 // maps BSP model indexes
-void SetModel(edict_t* e, const char* m) {
+HOOK_RET_VOID SetModel_post(edict_t* e, const char* m) {
 	int index = MODEL_INDEX(m);
 	g_indexToModel[index] = m;
+	DEFAULT_HOOK_RETURN;
 }
 
 // maps .mdl indexes
-int PrecacheModel_post(char* m) {
+HOOK_RET_INT PrecacheModel_post(const char* m) {
 	int index = MODEL_INDEX(m);
 	g_indexToModel[index] = m;
-	RETURN_META_VALUE(MRES_IGNORED, 0);
+	DEFAULT_HOOK_RETURN;
 }
 
-void PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex, float delay, 
+HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex, float delay, 
 	float* origin, float* angles, float fparam1, float fparam2,
 	int iparam1, int iparam2, int bparam1, int bparam2) {
 	
@@ -555,7 +647,7 @@ void PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex
 		}
 		else {
 			// reduce event spam from gauss charging
-			RETURN_META(MRES_IGNORED);
+			DEFAULT_HOOK_RETURN;
 		}
 	}
 	/*
@@ -608,8 +700,83 @@ void PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex
 		g_event_count--; // overwrite last event
 	}
 
-	RETURN_META(MRES_IGNORED);
+	DEFAULT_HOOK_RETURN;
 }
+
+#ifdef HLCOOP_BUILD
+HLCOOP_PLUGIN_HOOKS g_hooks;
+
+extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
+	g_plugin_exiting = false;
+
+	g_hooks.pfnMapInit = MapInitHook;
+	g_hooks.pfnServerActivate = MapInit_post;
+	g_hooks.pfnServerDeactivate = Changelevel;
+	g_hooks.pfnStartFrame = StartFrameHook;
+	g_hooks.pfnClientDisconnect = ClientLeaveHook;
+	g_hooks.pfnClientUserInfoChanged = ClientUserInfoChangedHook;
+	g_hooks.pfnClientPutInServer = ClientJoin;
+	g_hooks.pfnClientCommand = ClientCommand;
+
+	g_hooks.pfnMessageBegin = MessageBegin;
+	g_hooks.pfnWriteAngle = WriteAngle;
+	g_hooks.pfnWriteByte = WriteByte;
+	g_hooks.pfnWriteChar = WriteChar;
+	g_hooks.pfnWriteCoord = WriteCoord;
+	g_hooks.pfnWriteEntity = WriteEntity;
+	g_hooks.pfnWriteLong = WriteLong;
+	g_hooks.pfnWriteShort = WriteShort;
+	g_hooks.pfnWriteString = WriteString;
+	g_hooks.pfnMessageEnd = MessageEnd;
+
+	g_hooks.pfnPlaybackEvent = PlaybackEvent;
+
+	g_hooks.pfnSetModelPost = SetModel_post;
+	g_hooks.pfnPrecacheModelPost = PrecacheModel_post;
+
+	const char* stringPoolStart = gpGlobals->pStringBase;
+
+#ifdef HLCOOP_BUILD
+	// start writing demo file automatically when map starts, if 1
+	g_auto_demo_file = RegisterPluginCVar(plugin, "hltv.autodemofile", "0", 0, 0);
+	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.demofilepath", "HLTV/demos/", 0, 0);
+#else
+	g_main_thread_id = std::this_thread::get_id();
+
+	// start writing demo file automatically when map starts, if 1
+	g_auto_demo_file = RegisterCVar("sventv.autodemofile", "0", 0, 0);
+	g_demo_file_path = RegisterCVar("sventv.demofilepath", "svencoop_addon/scripts/plugins/metamod/SvenTV/", 0, 0);
+#endif
+
+
+	if (gpGlobals->time > 3.0f) {
+		g_sventv = new SvenTV(singleThreadMode);
+		g_demoPlayer = new DemoPlayer();
+		loadSvenTvState();
+	}
+
+	g_demoplayers = new DemoPlayerEnt[32];
+	g_netmessages = new NetMessageData[MAX_NETMSG_FRAME];
+	g_cmds = new CommandData[MAX_CMD_FRAME];
+	g_events = new DemoEventData[MAX_EVENT_FRAME];
+	memset(g_demoplayers, 0, 32 * sizeof(DemoPlayerEnt));
+	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
+
+	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
+}
+
+extern "C" void DLLEXPORT PluginExit() {
+	writeSvenTvState();
+	if (g_sventv) delete g_sventv;
+	if (g_demoPlayer) delete g_demoPlayer;
+	delete[] g_demoplayers;
+	delete[] g_netmessages;
+	delete[] g_cmds;
+	delete[] g_events;
+
+	println("Plugin exit finish");
+}
+#else
 
 void PluginInit() {
 	g_plugin_exiting = false;
@@ -674,3 +841,5 @@ void PluginExit() {
 
 	println("Plugin exit finish");
 }
+
+#endif

@@ -173,7 +173,7 @@ void netedict::load(const edict_t& ed) {
 	rendercolor[2] = vars.rendercolor[2];
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
 	colormap = vars.colormap;
-	health = vars.health > 0 ? Min(vars.health, UINT32_MAX) : 0;
+	health = vars.health > 0 ? V_min(vars.health, UINT32_MAX) : 0;
 
 	CBaseAnimating* anim = (CBaseAnimating*)GET_PRIVATE((&ed));
 	bool animationReset = framerate != newFramerate || newSequence != sequence || newModelindex != modelindex;
@@ -245,7 +245,13 @@ void netedict::load(const edict_t& ed) {
 
 	if (ed.v.flags & (FL_CLIENT | FL_MONSTER)) {
 		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed)); // TODO: not thread safe
+
+#ifdef HLCOOP_BUILD
+		uint8_t classifyBits = bent && bent->m_Classify ? bent->m_Classify : 0;
+#else
 		uint8_t classifyBits = bent && bent->m_fOverrideClass ? bent->m_iClassSelection : 0;
+#endif
+		
 		classify = classifyBits;
 	}
 }
@@ -285,8 +291,12 @@ void netedict::apply(edict_t* ed) {
 
 	CBaseEntity* baseent = (CBaseEntity*)GET_PRIVATE(ed);
 	if (baseent) {
+#ifdef HLCOOP_BUILD
+		baseent->m_Classify = classify;
+#else
 		baseent->m_iClassSelection = classify;
 		baseent->m_fOverrideClass = baseent->m_iClassSelection != 0;
+#endif
 	}
 
 	//vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NONE;

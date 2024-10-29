@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.6)
 
-project(SvenTV)
+project(HLTV)
 
-set(SOURCE_FILES
+add_library(${PROJECT_NAME} SHARED
 	src/main.h src/main.cpp
 	src/SvenTV.h src/SvenTV.cpp
 	src/DemoWriter.h src/DemoWriter.cpp
@@ -14,6 +14,4 @@ set(SOURCE_FILES
 	src/DemoFile.h src/DemoFile.cpp
 )
 
-add_library(${PROJECT_NAME} SHARED)
-add_subdirectory(mmlib)
-mmlib_default_setup()
+hlcoop_setup_plugin("plugins/server/")

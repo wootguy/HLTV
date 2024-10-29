@@ -4,6 +4,7 @@
 #include "main.h"
 #include "mstream.h"
 #include "netedict.h"
+#include <deque>
 
 struct DeltaUpdate {
 	uint16_t updateId; // client will use this to ack

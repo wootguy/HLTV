@@ -1,5 +1,5 @@
-#include "DemoWriter.h"
 #include "main.h"
+#include "DemoWriter.h"
 
 using namespace std;
 
@@ -264,6 +264,7 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 		}
 		break;
 	}
+#ifndef HLCOOP_BUILD
 	case MSG_TracerDecal: {
 		msg.compressCoords(0, 6);
 		break;
@@ -329,6 +330,7 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 		msg.compressCoords(oriOffset, 3);
 		break;
 	}
+#endif
 	default:
 		break;
 	}

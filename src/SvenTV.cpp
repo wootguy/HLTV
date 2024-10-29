@@ -1,7 +1,10 @@
 #include "SvenTV.h"
-#include "mmlib.h"
 #include <iostream>
 #include <ctime>
+
+#ifdef HLCOOP_BUILD
+#define FL_NOWEAPONS 134217728
+#endif
 
 SvenTV::SvenTV(bool singleThreadMode) {
 	threadShouldExit = false;
@@ -455,7 +458,7 @@ void SvenTV::think_tvThread() {
 				DemoPlayerEnt& dplr = frame.playerinfos[i - 1];
 				edict_t* ent = INDEXENT(i);
 
-				if (!isValidPlayer(ent)) {
+				if (!IsValidPlayer(ent)) {
 					continue;
 				}
 

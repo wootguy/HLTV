@@ -1,12 +1,52 @@
 #pragma once
+
+#ifdef HLCOOP_BUILD
+
+#include "extdll.h"
+#include "util.h"
+#include "cbase.h"
+#include "CBasePlayer.h"
+#include "CBasePlayerWeapon.h"
+#include "CommandArgs.h"
+#include "PluginHooks.h"
+#include "Scheduler.h"
+
+#define HOOK_RET_INT HOOK_RETURN_DATA
+#define HOOK_RET_STR HOOK_RETURN_DATA
+#define HOOK_RET_VOID HOOK_RETURN_DATA
+
+#if defined(__GNUC__) || defined (_MSC_VER) && _MSC_VER >= 1400
+#define snprintf	_snprintf
+#define vsnprintf	_vsnprintf
+#define unlink		_unlink
+#define strlwr		_strlwr
+#define strdup		_strdup
+#define strcasecmp	_stricmp
+#define strncasecmp	_strnicmp
+#endif
+
+#else
+#include "mmlib.h"
 #include "meta_utils.h"
+
+#define HOOK_RET_INT int
+#define HOOK_RET_STR const char*
+#define HOOK_RET_VOID void
+#endif
+
 #include <map>
 #include <set>
+#include <string>
 #include "DemoStats.h"
 
 class DemoPlayer;
 
 using namespace std;
+
+#ifdef HLCOOP_BUILD
+extern vector<string> g_SoundCacheFiles;
+extern unordered_map<string, int> g_SoundCache;
+#endif
 
 #define MAX_EDICTS 8192 // sven co-op
 

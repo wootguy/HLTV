@@ -107,9 +107,11 @@ bool compareByBytes(const DeltaStat& a, const DeltaStat& b)
 	return a.bytes > b.bytes;
 }
 
-void DemoStats::showStats(edict_t* ent) {
+void DemoStats::showStats(edict_t* edt) {
 	hudtextparms_t params;
 	memset(&params, 0, sizeof(params));
+
+	CBaseEntity* ent = CBaseEntity::Instance(edt);
 
 	params.x = 0.5;
 	params.y = 1;
@@ -133,7 +135,7 @@ void DemoStats::showStats(edict_t* ent) {
 	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);
 	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCount);
 
-	HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+	UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 
 	{
 		vector<DeltaStat> deltaStats;
@@ -192,7 +194,7 @@ void DemoStats::showStats(edict_t* ent) {
 		params.x = 0;
 		params.y = 0;
 		params.channel = 1;
-		HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 
 	{
@@ -234,7 +236,7 @@ void DemoStats::showStats(edict_t* ent) {
 		params.x = 0.5f;
 		params.y = 0;
 		params.channel = 4;
-		HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 
 	{
@@ -283,7 +285,7 @@ void DemoStats::showStats(edict_t* ent) {
 		params.x = 0;
 		params.y = -1;
 		params.channel = 2;
-		HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 
 	{
@@ -320,7 +322,7 @@ void DemoStats::showStats(edict_t* ent) {
 		params.x = 0;
 		params.y = 1;
 		params.channel = 3;
-		HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 }
 

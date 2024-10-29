@@ -1,4 +1,5 @@
 #pragma once
+#include "main.h"
 #include <stdint.h>
 #include "DemoPlayerEnt.h"
 #include "netedict.h"

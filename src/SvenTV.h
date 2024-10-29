@@ -1,5 +1,4 @@
 #pragma once
-#include "meta_init.h"
 #include "ThreadSafeInt.h"
 #include <thread>
 #include <mutex>
@@ -9,6 +8,7 @@
 #include "DemoPlayer.h"
 #include "DemoFile.h"
 #include "DemoWriter.h"
+#include "mstream.h"
 
 #define SVENTV_PORT 28015
 #define MAX_CLIENTS 64

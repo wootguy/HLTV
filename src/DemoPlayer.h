@@ -1,5 +1,14 @@
 #pragma once
+#ifdef HLCOOP_BUILD
+#include "extdll.h"
+#include "util.h"
+#include "cbase.h"
+#define MAX_PLAYERS 32
+#else
 #include "meta_init.h"
+#define EHANDLE EHandle
+#endif
+
 #include "mstream.h"
 #include "DemoFile.h"
 #include "NetClient.h"
@@ -50,7 +59,7 @@ struct InterpInfo {
 };
 
 struct ReplayEntity {
-	EHandle h_ent;
+	EHANDLE h_ent;
 	InterpInfo interp;
 };
 

@@ -1,6 +1,11 @@
 #pragma once
 #include <stdint.h>
+
+#ifdef HLCOOP_BUILD
+#include "extdll.h"
+#else
 #include "mmlib.h"
+#endif
 
 struct DemoStats {
 	uint32_t frameCount;
