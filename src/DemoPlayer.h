@@ -92,6 +92,8 @@ struct DemoDataTest {
 	int entDeltaSz[ABSOLUTE_MAX_EDICTS]; // hopefully big enough
 	netedict oldEntState[ABSOLUTE_MAX_EDICTS];
 	netedict newEntState[ABSOLUTE_MAX_EDICTS];
+
+	NetMessageData expectedMsg[MAX_NETMSG_FRAME];
 };
 
 class DemoPlayer {
@@ -134,6 +136,7 @@ private:
 	uint32_t lastFrameDemoTime = 0;
 	vector<ReplayEntity> replayEnts;
 	map<int, string> replayModelPath; // maps model index in demo file to a path
+	map<int, string> replaySoundPath; // maps a sound index in a demo file to a path
 	DemoHeader demoHeader;
 	DemoFrame lastReplayFrame;
 
@@ -175,11 +178,11 @@ private:
 	void decompressNetMessage(NetMessageData& msg);
 
 	// update network message data to point to the proper entities
-	// return false if message should not be sent
-	bool processDemoNetMessage(NetMessageData& msg);
+	// return 0 = do not send, 1 = send, -1 = error parsing
+	int processDemoNetMessage(NetMessageData& msg, DemoDataTest* validate);
 
 	// really like 127 different messages
-	bool processTempEntityMessage(NetMessageData& msg);
+	bool processTempEntityMessage(NetMessageData& msg, DemoDataTest* validate);
 
 	// clears existing map entities for playback
 	void prepareDemo();
@@ -194,10 +197,10 @@ private:
 	string getReplayModel(uint16_t modelIdx);
 
 	// convert from a demo file entity index to an entity index in the current game
-	void convReplayEntIdx(byte* dat, int offset);
+	void convReplayEntIdx(byte* dat, int offset, int dataSz);
 
 	// convert from a demo file model idx to a model idx in the current game
-	void convReplayModelIdx(byte* dat, int offset);
+	void convReplayModelIdx(byte* dat, int offset, int dataSz);
 
 	// convert from a demo file sound idx to a sound idx idx in the current game
 	void convReplaySoundIdx(uint16_t& soundIdx);

@@ -4,6 +4,8 @@
 
 const char* model_entity = "env_sprite";
 
+set<uint16_t> unknownSpam; // don't show repeat errors
+
 void DemoDataStream::seek(uint64_t to) {
 	if (fileStream) {
 		fseek(fileStream, to, SEEK_SET);
@@ -123,49 +125,63 @@ DemoPlayer::~DemoPlayer() {
 	closeReplayFile();
 }
 
+void show_message(edict_t* plr, int mode, const char* msg) {
+	if (plr)
+		UTIL_ClientPrint(plr, mode, msg);
+	else
+		g_engfuncs.pfnServerPrint(msg);
+}
+
 bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache) {
 	this->offsetSeconds = offsetSeconds;
 	stopReplay();
+	unknownSpam.clear();
 
 	replayData = new DemoDataStream(fopen(path.c_str(), "rb"));
 
 	memset(&g_stats, 0, sizeof(DemoStats));
 
 	if (!replayData->valid()) {
-		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
+		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
 		return false;
 	}
 
 	if (!replayData->read(&demoHeader, sizeof(DemoHeader))) {
-		UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
+		show_message(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
 		closeReplayFile();
 		return false;
 	}
 
 	if (demoHeader.version != DEMO_VERSION) {
-		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", demoHeader.version, DEMO_VERSION));
+		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", demoHeader.version, DEMO_VERSION));
 		closeReplayFile();
 		return false;
 	}
 
 	string mapname = string(demoHeader.mapname, 64);
 	if (!g_engfuncs.pfnIsMapValid((char*)mapname.c_str())) {
-		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
+		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
 		closeReplayFile();
 		return false;
 	}
 
 	if (demoHeader.modelLen > 1024 * 1024 * 32 || demoHeader.soundLen > 1024 * 1024 * 32) {
-		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", demoHeader.modelLen, demoHeader.soundLen));
+		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", demoHeader.modelLen, demoHeader.soundLen));
 		closeReplayFile();
 		return false;
 	}
 
 	if (demoHeader.modelLen) {
+		uint16_t* modelIndexes = new uint16_t[demoHeader.modelCount];
 		char* modelData = new char[demoHeader.modelLen];
 
+		if (!replayData->read(modelIndexes, demoHeader.modelCount*sizeof(uint16_t))) {
+			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
+			closeReplayFile();
+			return false;
+		}
 		if (!replayData->read(modelData, demoHeader.modelLen)) {
-			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
+			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
 			closeReplayFile();
 			return false;
 		}
@@ -173,31 +189,42 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		precacheModels = splitString(string(modelData, demoHeader.modelLen), "\n");
 
 		for (int i = 0; i < precacheModels.size(); i++) {
-			int replayIdx = demoHeader.modelIdxStart + i;
-			replayModelPath[replayIdx] = precacheModels[i];
+			replayModelPath[modelIndexes[i]] = precacheModels[i];
 			//println("Replay model %d: %s", replayIdx, precacheModels[i].c_str());
 		}
 
 		delete[] modelData;
+		delete[] modelIndexes;
 	}
 	if (demoHeader.soundLen) {
+		uint16_t* soundIndexes = new uint16_t[demoHeader.soundCount];
 		char* soundData = new char[demoHeader.soundLen];
 
+		if (!replayData->read(soundIndexes, demoHeader.soundCount*sizeof(uint16_t))) {
+			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
+			closeReplayFile();
+			return false;
+		}
 		if (!replayData->read(soundData, demoHeader.soundLen)) {
-			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
+			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
 			closeReplayFile();
 			return false;
 		}
 
 		precacheSounds = splitString(string(soundData, demoHeader.soundLen), "\n");
 
+		for (int i = 0; i < precacheSounds.size(); i++) {
+			replaySoundPath[soundIndexes[i]] = precacheSounds[i];
+		}
+
 		delete[] soundData;
+		delete[] soundIndexes;
 	}
 	if (demoHeader.modelLen == 0) {
 		println("WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.");
 	}
 
-	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
+	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
 	{
 		time_t rawtime;
 		struct tm* timeinfo;
@@ -207,7 +234,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		timeinfo = localtime(&rawtime);
 
 		strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
-		UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("date       : %s\n", buffer));
+		show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("date       : %s\n", buffer));
 	}
 	{
 		int duration = demoHeader.endTime ? TimeDifference(demoHeader.startTime, demoHeader.endTime) : 0;
@@ -216,18 +243,18 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		int seconds = duration % 60;
 
 		if (duration) {
-			UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %02d:%02d:%02d\n", hours, minutes, seconds));
+			show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %02d:%02d:%02d\n", hours, minutes, seconds));
 		}
 		else {
-			UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
+			show_message(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
 		}
 	}
-	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
-	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
-	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d (offset %d)\n", precacheModels.size(), demoHeader.modelIdxStart));
-	UTIL_ClientPrint(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
+	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
+	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
+	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d\n", precacheModels.size()));
+	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
 
-	UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[SvenTV] Opened: %s\n", path.c_str()));
+	UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[HLTV] Opened: %s\n", path.c_str()));
 
 	g_stats.totalWriteSz = sizeof(DemoHeader) + demoHeader.modelLen + demoHeader.soundLen;
 
@@ -682,6 +709,9 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 		setupInterpolation(ent, i);
 
 		if (oldModelIdx != ent->v.modelindex) {
+			if (i == 529) {
+				ALERT(at_console, "checkem\n");
+			}
 			string newModel = getReplayModel(ent->v.modelindex);
 			bool isSprite = newModel.find(".spr") != string::npos;
 
@@ -712,15 +742,9 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 }
 
 string DemoPlayer::getReplayModel(uint16_t modelIdx) {
-	static set<uint16_t> unknownSpam;
-
 	if (replayModelPath.count(modelIdx)) {
 		// Demo file model path
 		return replayModelPath[modelIdx];
-	}
-	else if (g_indexToModel.count(modelIdx)) {
-		// BSP model or whatever the game has loaded for this idx
-		return g_indexToModel[modelIdx];
 	}
 	else {
 		if (!unknownSpam.count(modelIdx)) {
@@ -732,7 +756,12 @@ string DemoPlayer::getReplayModel(uint16_t modelIdx) {
 	}
 }
 
-void DemoPlayer::convReplayEntIdx(byte* dat, int offset) {
+void DemoPlayer::convReplayEntIdx(byte* dat, int offset, int dataSz) {
+	if (offset >= dataSz) {
+		ALERT(at_console, "Tried to write past end of message\n");
+		return;
+	}
+
 	uint16_t* eidx = (uint16_t*)(dat + offset);
 	if (*eidx >= replayEnts.size()) {
 		//println("Invalid replay ent idx %d", (int)eidx);
@@ -740,9 +769,18 @@ void DemoPlayer::convReplayEntIdx(byte* dat, int offset) {
 		return;
 	}
 	*eidx = ENTINDEX(replayEnts[*eidx].h_ent.GetEdict());
+
+	if (*eidx >= sv_max_client_edicts->value) {
+		ALERT(at_console, "Invalid client msg edict idx %d (max %d)\n", (int)*eidx, (int)sv_max_client_edicts->value);
+	}
 }
 
-void DemoPlayer::convReplayModelIdx(byte* dat, int offset) {
+void DemoPlayer::convReplayModelIdx(byte* dat, int offset, int dataSz) {
+	if (offset >= dataSz) {
+		ALERT(at_console, "Tried to write past end of message\n");
+		return;
+	}
+
 	uint16_t* modelIdx = (uint16_t*)(dat + offset);
 	*modelIdx = g_engfuncs.pfnModelIndex(getReplayModel(*modelIdx).c_str());
 }
@@ -755,13 +793,13 @@ void DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 	}
 
 	string path = precacheSounds[soundIdx];
-	if (g_SoundCache.find(path) == g_SoundCache.end()) {
-		println("Invalid replay sound: %s", path.c_str());
+	if (g_precachedSounds.find(path) == g_precachedSounds.end()) {
+		println("Not precached replay sound: %s", path.c_str());
 		soundIdx = 0;
 		return;
 	}
 
-	soundIdx = g_SoundCache[path];
+	soundIdx = SOUND_INDEX(path.c_str());
 }
 
 bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
@@ -821,12 +859,13 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
 	return !reader.eom();
 }
 
-bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
+bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* validate) {
 	uint8_t type = msg.data[0];
 
 	byte* args = msg.data + 1;
 	uint16_t* args16 = (uint16_t*)args;
 	float* fargs = (float*)args;
+	int dataSz = msg.sz - 1;
 
 	if (type > TE_USERTRACER) {
 		println("Invalid temp ent type %d", (int)type);
@@ -850,77 +889,6 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 
 #ifdef HLCOOP_BUILD
 	static uint8_t expectedSzLookup[TE_USERTRACER+1] = {
-		25, // TE_BEAMPOINTS
-		9, // TE_BEAMENTPOINT
-		10, // TE_GUNSHOT
-		12, // TE_EXPLOSION
-		7, // TE_TAREXPLOSION
-		11, // TE_SMOKE
-		13, // TE_TRACER
-		18, // TE_LIGHTNING
-		17, // TE_BEAMENTS
-		7, // TE_SPARKS
-		7, // TE_LAVASPLASH
-		7, // TE_TELEPORT
-		9, // TE_EXPLOSION2
-		0, // TE_BSPDECAL (13 or 11!!!)
-		10, // TE_IMPLOSION
-		20, // TE_SPRITETRAIL
-		0, // unused index
-		11, // TE_SPRITE
-		17, // TE_BEAMSPRITE
-		25, // TE_BEAMTORUS
-		25, // TE_BEAMDISK
-		25, // TE_BEAMCYLINDER
-		11, // TE_BEAMFOLLOW
-		12, // TE_GLOWSPRITE
-		17, // TE_BEAMRING
-		20, // TE_STREAK_SPLASH
-		0, // unused index
-		13, // TE_DLIGHT
-		17, // TE_ELIGHT
-		0, // TE_TEXTMESSAGE (depends on text/effect)
-		18, // TE_LINE
-		18, // TE_BOX
-
-		// unused indexes
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-
-		3, // TE_KILLBEAM
-		11, // TE_LARGEFUNNEL
-		15, // TE_BLOODSTREAM
-		13, // TE_SHOWLINE
-		15, // TE_BLOOD
-		10, // TE_DECAL
-		6, // TE_FIZZ
-		18, // TE_MODEL
-		14, // TE_EXPLODEMODEL
-		25, // TE_BREAKMODEL
-		10, // TE_GUNSHOTDECAL
-		18, // TE_SPRITE_SPRAY
-		8, // TE_ARMOR_RICOCHET
-		11, // TE_PLAYERDECAL
-		20, // TE_BUBBLES
-		20, // TE_BUBBLETRAIL
-		13, // TE_BLOODSPRITE
-		8, // TE_WORLDDECAL
-		8, // TE_WORLDDECALHIGH
-		10, // TE_DECALHIGH
-		17, // TE_PROJECTILE
-		19, // TE_SPRAY
-		7, // TE_PLAYERSPRITES
-		11, // TE_PARTICLEBURST
-		14, // TE_FIREFIELD
-		8, // TE_PLAYERATTACHMENT
-		2, // TE_KILLPLAYERATTACHMENTS
-		19, // TE_MULTIGUNSHOT
-		16 // TE_USERTRACER		
-	};
-
-	static uint8_t entIndexOffset[TE_USERTRACER + 1] = {
 		25, // TE_BEAMPOINTS
 		9, // TE_BEAMENTPOINT
 		10, // TE_GUNSHOT
@@ -1087,42 +1055,42 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_SPRITE_SPRAY:
 	case TE_SPRAY:
 	case TE_PROJECTILE:
-		convReplayModelIdx(args, COORDsz*6);
+		convReplayModelIdx(args, COORDsz*6, dataSz);
 		//args16[12] = g_engfuncs.pfnModelIndex("sprites/laserbeam.spr");
 		break;
 	case TE_BEAMENTPOINT:
-		convReplayEntIdx(args, 0);
-		convReplayModelIdx(args, EIDXsz + COORDsz*3);
+		convReplayEntIdx(args, 0, dataSz);
+		convReplayModelIdx(args, EIDXsz + COORDsz*3, dataSz);
 		break;
 	case TE_KILLBEAM:
-		convReplayEntIdx(args, 0);
+		convReplayEntIdx(args, 0, dataSz);
 		break;
 	case TE_BEAMENTS:
 	case TE_BEAMRING:
-		convReplayEntIdx(args, 0);
-		convReplayEntIdx(args, EIDXsz);
-		convReplayModelIdx(args, EIDXsz*2);
+		convReplayEntIdx(args, 0, dataSz);
+		convReplayEntIdx(args, EIDXsz, dataSz);
+		convReplayModelIdx(args, EIDXsz*2, dataSz);
 		break;
 	case TE_LIGHTNING: {
-		convReplayModelIdx(args, COORDsz*6 + BYTEsz*3);
+		convReplayModelIdx(args, COORDsz*6 + BYTEsz*3, dataSz);
 		break;
 	}
 	case TE_BEAMSPRITE:
-		convReplayModelIdx(args, COORDsz*6);
-		convReplayModelIdx(args, COORDsz*6 + SHORTsz);
+		convReplayModelIdx(args, COORDsz*6, dataSz);
+		convReplayModelIdx(args, COORDsz*6 + SHORTsz, dataSz);
 		break;
 	case TE_BEAMFOLLOW:
 	case TE_FIZZ:
-		convReplayEntIdx(args, 0);
-		convReplayModelIdx(args, EIDXsz);
+		convReplayEntIdx(args, 0, dataSz);
+		convReplayModelIdx(args, EIDXsz, dataSz);
 		break;
 	case TE_PLAYERSPRITES: {
-		convReplayEntIdx(args, 0);
+		convReplayEntIdx(args, 0, dataSz);
 		edict_t* plr = INDEXENT(args16[0]);
 		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			args16[0] = 1; // prevent fatal error
 		}
-		convReplayModelIdx(args, EIDXsz);
+		convReplayModelIdx(args, EIDXsz, dataSz);
 		break;
 	}
 	case TE_EXPLOSION:
@@ -1130,12 +1098,12 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_SPRITE:
 	case TE_GLOWSPRITE:
 	case TE_LARGEFUNNEL:
-		convReplayModelIdx(args, COORDsz*3);
+		convReplayModelIdx(args, COORDsz*3, dataSz);
 		break;
 	case TE_PLAYERATTACHMENT: {
 		uint16_t entIdx = args[0];
-		convReplayEntIdx((byte*)&entIdx, 0);
-		convReplayModelIdx(args, BYTEsz + COORDsz);
+		convReplayEntIdx((byte*)&entIdx, 0, dataSz);
+		convReplayModelIdx(args, BYTEsz + COORDsz, dataSz);
 		edict_t* plr = INDEXENT(entIdx);
 		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			entIdx = 1; // prevent fatal error
@@ -1146,7 +1114,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_KILLPLAYERATTACHMENTS:
 	case TE_PLAYERDECAL: {
 		uint16_t entIdx = args[0];
-		convReplayEntIdx((byte*)&entIdx, 0);
+		convReplayEntIdx((byte*)&entIdx, 0, dataSz);
 		edict_t* plr = INDEXENT(entIdx);
 		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			entIdx = 1; // prevent fatal error
@@ -1156,33 +1124,35 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	}
 	case TE_BUBBLETRAIL:
 	case TE_BUBBLES:
-		convReplayModelIdx(args, COORDsz*7);
+		convReplayModelIdx(args, COORDsz*7, dataSz);
 		break;
 	case TE_BLOODSPRITE:
-		convReplayModelIdx(args, COORDsz*3);
-		convReplayModelIdx(args, COORDsz*3 + SHORTsz);
+		convReplayModelIdx(args, COORDsz*3, dataSz);
+		convReplayModelIdx(args, COORDsz*3 + SHORTsz, dataSz);
 		break;
 	case TE_FIREFIELD:
-		convReplayModelIdx(args, COORDsz*3 + SHORTsz);
+		convReplayModelIdx(args, COORDsz*3 + SHORTsz, dataSz);
 		break;
 	case TE_EXPLODEMODEL:
-		convReplayModelIdx(args, COORDsz*4);
+		convReplayModelIdx(args, COORDsz*4, dataSz);
 		break;
 	case TE_MODEL:
-		convReplayModelIdx(args, COORDsz*6 + ANGLsz);
+		convReplayModelIdx(args, COORDsz*6 + ANGLsz, dataSz);
 		break;
 	case TE_BREAKMODEL:
-		convReplayModelIdx(args, COORDsz*9 + BYTEsz);
+		convReplayModelIdx(args, COORDsz*9 + BYTEsz, dataSz);
 		break;
 	case TE_DECAL:
-	case TE_GUNSHOTDECAL:
 	case TE_DECALHIGH:
-		convReplayModelIdx(args, COORDsz*3 + BYTEsz);
+		convReplayModelIdx(args, COORDsz*3 + BYTEsz, dataSz);
+		break;
+	case TE_GUNSHOTDECAL:
+		convReplayModelIdx(args, COORDsz*3, dataSz);
 		break;
 	case TE_BSPDECAL: {
 		uint16_t* entIdx = (uint16_t*)(args + COORDsz * 3 + SHORTsz);
 		if (*entIdx) { // not world entity?
-			convReplayEntIdx(args, COORDsz*3 + SHORTsz);
+			convReplayEntIdx(args, COORDsz*3 + SHORTsz, dataSz);
 			//convReplayModelIdx(args16[5]); // (BSP model idx in demo should always match the game)
 		}
 		break;
@@ -1196,7 +1166,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	return true;
 }
 
-bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
+int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validate) {
 	byte* args = msg.data;
 	uint16_t* args16 = (uint16_t*)args;
 
@@ -1205,7 +1175,7 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 	switch (msg.header.type) {
 	case SVC_TEMPENTITY:
 		g_stats.msgSz[256 + msg.data[0]] += msg.sz;
-		return processTempEntityMessage(msg);
+		return processTempEntityMessage(msg, validate) ? 1 : -1;
 #ifndef HLCOOP_BUILD
 	case MSG_StartSound: {
 		uint16_t& flags = *(uint16_t*)(args);
@@ -1217,20 +1187,20 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 			uint16_t& soundIdx = *(uint16_t*)(args + (msg.sz - 2));
 			convReplaySoundIdx(soundIdx);
 		} // plugins can't change sentences(?), so client should match server
-		return true;
+		return 1;
 	}
 	case MSG_TracerDecal:
 		// Vector start
 		// Vector end
 		// byte showTracer (0/1)
 		// byte ???
-		return true;
+		return 1;
 	case MSG_SayText: {
 		// name coloring doesn't work for bots, so copy the name color to p1 and use them as the source
 		uint16_t idx = args[0];
 		convReplayEntIdx(idx);
 		args[0] = idx;
-		return true;
+		return 1;
 	}
 	case MSG_ScoreInfo: {
 		if (useBots) {
@@ -1238,14 +1208,14 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 			convReplayEntIdx(idx);
 			args[0] = idx;
 
-			return true;
+			return 1;
 		}
-		return false;
+		return 0;
 	}
 #endif
 	default:
 		//println("Unhandled netmsg %d", (int)msg.header.type);
-		return false;
+		return 0;
 	}
 }
 
@@ -1432,10 +1402,6 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 		reader.read(&msg.header, sizeof(DemoNetMessage));
 		msg.sz = (msg.header.szHighBit << 8) | msg.header.sz;
 
-		if (validate && msg.header.type == SVC_BAD) {
-			ALERT(at_console, "Read SVC_BAD at offset %d\n", i);
-		}
-
 		if (msg.header.hasOrigin) {
 			int sz = msg.header.hasLongOrigin ? 3 : 2;
 			reader.read(&msg.origin[0], sz);
@@ -1473,7 +1439,42 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 
 		decompressNetMessage(msg);
 
-		if (!processDemoNetMessage(msg)) {
+		if (validate) {
+			NetMessageData& expected = validate->expectedMsg[i];
+			if (memcmp(&expected.header, &msg.header, sizeof(DemoNetMessage))) {
+				ALERT(at_console, "Read unexpected header for %s!\n", msgTypeStr(expected.header.type));
+				return false;
+			}
+			for (int z = 0; z < 3 && expected.header.hasOrigin; z++) {
+				if (expected.header.hasLongOrigin && !FIXED_EQUALS(expected.origin[z], msg.origin[z], 24)) {
+					ALERT(at_console, "Read unexpected long origin[%d] for %s!\n", (int)z, msgTypeStr(expected.header.type));
+					return false;
+				}
+				else if ((int16_t)expected.origin[z] != (int16_t)msg.origin[z]) {
+					ALERT(at_console, "Read unexpected short origin[%d] for %s!\n", (int)z, msgTypeStr(expected.header.type));
+					return false;
+				}
+			}
+			if (expected.sz != msg.sz) {
+				ALERT(at_console, "Read unexpected size for %s!\n", msgTypeStr(expected.header.type));
+				return false;
+			}
+			if (expected.eidx != msg.eidx) {
+				ALERT(at_console, "Read unexpected eidx for %s!\n", msgTypeStr(expected.header.type));
+				return false;
+			}
+			if (memcmp(expected.data, msg.data, expected.sz)) {
+				ALERT(at_console, "Read unexpected data for %s!\n", msgTypeStr(expected.header.type));
+				return false;
+			}
+		}
+
+		int parseResult = processDemoNetMessage(msg, validate);
+
+		if (parseResult == -1) {
+			return false;
+		}
+		else if (parseResult == 0) {
 			continue;
 		}
 
@@ -1549,7 +1550,7 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 			}
 		}
 		else { // play the event
-			convReplayEntIdx((byte*)&eidx, 0);
+			convReplayEntIdx((byte*)&eidx, 0, 2);
 			if (eidx >= replayEnts.size()) {
 				println("Invalid event edict %d", (int)ev.header.entindex);
 				continue;
@@ -1625,7 +1626,7 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate) {
 		}
 
 		if (!validate) {
-			println("[SvenTV][Cmd][%s][%s] %s", legacySteamId, plr.name, commandChars);
+			println("[Cmd][%s][%s] %s", legacySteamId, plr.name, commandChars);
 		}
 	}
 
@@ -1645,7 +1646,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 
 	DemoFrame header;
 	if (!replayData->read(&header, sizeof(DemoFrame))) {
-		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
+		UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
 	}
@@ -1691,7 +1692,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	lastFrameDemoTime = demoTime;
 
 	if (frameSize > 1024 * 1024 * 32 || frameSize == 0) {
-		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Invalid frame size\n");
+		UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Invalid frame size\n");
 		closeReplayFile();
 		return false;
 	}
@@ -1715,7 +1716,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	char* frameData = new char[frameSize];
 	if (!replayData->read(frameData, frameSize)) {
 		delete[] frameData;
-		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
+		UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
 	}

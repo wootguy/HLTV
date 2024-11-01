@@ -27,7 +27,7 @@ private:
 
 	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, DemoDataTest* testData);
 	mstream writePlrDeltas(FrameData& frame, uint32_t& numEntDeltas);
-	mstream writeMsgDeltas(FrameData& frame);
+	mstream writeMsgDeltas(FrameData& frame, DemoDataTest* testData);
 	mstream writeCmdDeltas(FrameData& frame);
 	mstream writeEvtDeltas(FrameData& frame);
 

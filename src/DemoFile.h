@@ -59,10 +59,13 @@ struct DemoHeader {
 	uint64_t endTime; // epoch time when demo recording stopped (0 = server crashed before finishing)
 	char mapname[64];
 	uint8_t maxPlayers;
-	uint32_t modelIdxStart; // idx of the first non-bsp model
-	uint32_t modelLen; // size of model string data (model idx = string idx + modelIdxStart)
-	uint32_t soundLen; // size of sound string data (sound idx = string idx)
+	uint16_t modelCount;
+	uint16_t soundCount;
+	uint32_t modelLen; // size of model string data
+	uint32_t soundLen; // size of sound string data
+	// modelCount of 2-byte model indexes which map to a string below
 	// modelLen bytes of model strings delimtted by \n
+	// soundCount of 2-byte sound indexes which map to a string below
 	// soundLen bytes of sound strings delimtted by \n
 };
 

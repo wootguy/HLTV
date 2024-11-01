@@ -25,9 +25,6 @@ plugin_info_t Plugin_info = {
 #define isValidPlayer IsValidPlayer
 #else
 
-vector<string> g_SoundCacheFiles; // maps index to sound path
-unordered_map<string, int> g_SoundCache; // maps sound path to index
-
 bool g_compressMessages = false;
 
 #define DEFAULT_HOOK_RETURN return HOOK_CONTINUE
@@ -66,13 +63,10 @@ bool g_should_write_next_message = false;
 bool g_pause_message_logging = false;
 
 // maps indexes to model names, for all models that were used so far in this map
-map<int, string> g_indexToModel;
 set<string> g_playerModels; // all player model names used during the game
 
 cvar_t* g_auto_demo_file;
 cvar_t* g_demo_file_path;
-
-const char* stateFilePath = "valve/plugins/server/hltv/state.txt";
 
 DemoStats g_stats;
 bool demoStatPlayers[33] = { false };
@@ -127,53 +121,10 @@ HOOK_RET_VOID Changelevel() {
 		g_server_frame_count = 0;
 		g_netmessage_count = 0;
 		g_server_frame_count = 0;
-		g_indexToModel.clear();
 		g_playerModels.clear();
 	}
-	remove(stateFilePath);
 
 	DEFAULT_HOOK_RETURN;
-}
-
-void writeSvenTvState() {
-	FILE* file = fopen(stateFilePath, "w");
-	if (!file) {
-		println("Failed to write sventv state file");
-		return;
-	}
-
-	for (auto item : g_indexToModel) {
-		string line = to_string(item.first) + "=" + item.second + "\n";
-		fwrite(line.c_str(), line.size(), 1, file);
-	}
-
-	fclose(file);
-}
-
-void loadSvenTvState() {
-	FILE* file = fopen(stateFilePath, "r");
-	if (!file) {
-		println("Failed to open sventv state file");
-		return;
-	}
-
-	string line;
-	bool parsingSounds = false;
-	while (cgetline(file, line)) {
-		if (line.empty()) {
-			continue;
-		}
-
-		vector<string> parts = splitString(line, "=");
-
-		if (parts.size() != 2) {
-			continue;
-		}
-
-		g_indexToModel[atoi(parts[0].c_str())] = parts[1];
-	}
-
-	fclose(file);
 }
 
 #ifdef HLCOOP_BUILD
@@ -187,7 +138,6 @@ HOOK_RET_VOID MapInitHook(edict_t * pEdictList, int edictCount, int maxClients)
 		g_demoPlayer = new DemoPlayer();
 	}
 	g_demoPlayer->precacheDemo();
-	remove(stateFilePath);
 	memset(demoStatPlayers, 0, sizeof(demoStatPlayers));
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 	
@@ -203,8 +153,6 @@ HOOK_RET_VOID MapInit_post(edict_t * pEdictList, int edictCount, int maxClients)
 #ifndef HLCOOP_BUILD
 	loadSoundCacheFile();
 #endif
-
-	writeSvenTvState();
 
 	DEFAULT_HOOK_RETURN;
 }
@@ -422,8 +370,10 @@ HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edi
 	}
 	else {
 		msg.header.hasEdict = 0;
+		msg.eidx = 0;
 	}
 	msg.header.sz = 0;
+	msg.header.szHighBit = 0;
 	msg.sz = 0;
 
 	DEFAULT_HOOK_RETURN;
@@ -437,7 +387,7 @@ HOOK_RET_VOID MessageEnd() {
 
 		if (g_netmessage_count >= MAX_NETMSG_FRAME) {
 			g_netmessage_count--; // overwrite last message
-			println("[SvenTV] Network message capture overflow!");
+			println("Network message capture overflow!");
 		}
 	}
 	
@@ -446,7 +396,7 @@ HOOK_RET_VOID MessageEnd() {
 
 HOOK_RET_VOID WriteAngle(float angle) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = (int64)(fmod((double)angle, 360.0) * 256.0 / 360.0) & 0xFF;
 		memcpy(msg.data + msg.sz, &angle, sizeof(byte));
 		msg.sz += sizeof(byte);
@@ -457,7 +407,7 @@ HOOK_RET_VOID WriteAngle(float angle) {
 
 HOOK_RET_VOID WriteByte(int b) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = b;
 		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
 		msg.sz += sizeof(byte);
@@ -468,7 +418,7 @@ HOOK_RET_VOID WriteByte(int b) {
 
 HOOK_RET_VOID WriteChar(int c) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = c;
 		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
 		msg.sz += sizeof(byte);
@@ -481,13 +431,13 @@ HOOK_RET_VOID WriteCoord(float coord) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 
 #ifdef HLCOOP_BUILD
-	if (msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
 		int16_t arg = coord * 8;
 		memcpy(msg.data + msg.sz, &arg, sizeof(int16_t));
 		msg.sz += sizeof(int16_t);
 	}
 #else
-	if (msg.sz + sizeof(int32_t) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(int32_t) < MAX_NETMSG_DATA) {
 		int32_t arg = coord * 8;
 		memcpy(msg.data + msg.sz, &arg, sizeof(int32_t));
 		msg.sz += sizeof(int32_t);
@@ -499,7 +449,7 @@ HOOK_RET_VOID WriteCoord(float coord) {
 
 HOOK_RET_VOID WriteEntity(int ent) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(uint16_t) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(uint16_t) < MAX_NETMSG_DATA) {
 		uint16_t dat = ent;
 		memcpy(msg.data + msg.sz, &dat, sizeof(uint16_t));
 		msg.sz += sizeof(uint16_t);
@@ -510,7 +460,7 @@ HOOK_RET_VOID WriteEntity(int ent) {
 
 HOOK_RET_VOID WriteLong(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(int) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(int) < MAX_NETMSG_DATA) {
 		memcpy(msg.data + msg.sz, &val, sizeof(int));
 		msg.sz += sizeof(int);
 	}
@@ -520,7 +470,7 @@ HOOK_RET_VOID WriteLong(int val) {
 
 HOOK_RET_VOID WriteShort(int val) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
 		int16_t dat = val;
 		memcpy(msg.data + msg.sz, &dat, sizeof(int16_t));
 		msg.sz += sizeof(int16_t);
@@ -532,12 +482,25 @@ HOOK_RET_VOID WriteShort(int val) {
 HOOK_RET_VOID WriteString(const char* s) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	int len = strlen(s)+1;
-	if (msg.sz + len < MAX_NETMSG_DATA) {
+	if (g_should_write_next_message && msg.sz + len < MAX_NETMSG_DATA) {
 		memcpy(msg.data + msg.sz, s, len);
 		msg.sz += len;
 	}
 	
 	DEFAULT_HOOK_RETURN;
+}
+
+void replay_demo(edict_t* plr) {
+	CommandArgs args = CommandArgs();
+	args.loadArgs();
+
+	string path = g_demo_file_path->string + args.ArgV(1);
+	if (args.ArgV(1).empty()) {
+		path += string(STRING(gpGlobals->mapname)) + ".demo";
+	}
+	float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
+	g_demoPlayer->openDemo(NULL, path, offsetSeconds, true);
+	g_sventv->enableDemoFile = false;
 }
 
 bool doCommand(edict_t* plr) {
@@ -552,13 +515,7 @@ bool doCommand(edict_t* plr) {
 
 	if (args.ArgC() > 0 && lowerArg == ".replay") {
 		if (args.ArgC() > 1 || true) {
-			string path = g_demo_file_path->string + args.ArgV(1);
-			if (args.ArgV(1).empty()) {
-				path += string(STRING(gpGlobals->mapname)) + ".demo";
-			}
-			float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
-			g_demoPlayer->openDemo(plr, path, offsetSeconds, true);
-			g_sventv->enableDemoFile = false;
+			replay_demo(plr);
 		}
 		else {
 			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Usage: .demo [demo file path]\n");
@@ -628,7 +585,7 @@ HOOK_RET_VOID ClientCommand(edict_t* pEntity)
 
 		g_command_count++;
 		if (g_command_count >= MAX_CMD_FRAME) {
-			println("[SvenTV] Command capture overflow!");
+			println("Command capture overflow!");
 			g_command_count--; // overwrite last command
 		}
 	}	
@@ -644,20 +601,6 @@ HOOK_RET_VOID ClientCommand(edict_t* pEntity)
 	RETURN_META(ret);
 #endif
 	
-}
-
-// maps BSP model indexes
-HOOK_RET_VOID SetModel_post(edict_t* e, const char* m) {
-	int index = MODEL_INDEX(m);
-	g_indexToModel[index] = m;
-	DEFAULT_HOOK_RETURN;
-}
-
-// maps .mdl indexes
-HOOK_RET_INT PrecacheModel_post(const char* m) {
-	int index = MODEL_INDEX(m);
-	g_indexToModel[index] = m;
-	DEFAULT_HOOK_RETURN;
 }
 
 HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex, float delay, 
@@ -722,7 +665,7 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 
 	g_event_count++;
 	if (g_event_count >= MAX_EVENT_FRAME) {
-		println("[SvenTV] Event capture overflow!");
+		println("Event capture overflow!");
 		g_event_count--; // overwrite last event
 	}
 
@@ -731,6 +674,10 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 
 void demo_command() {
 	g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
+}
+
+void replay_command() {
+	replay_demo(NULL);
 }
 
 #ifdef HLCOOP_BUILD
@@ -761,10 +708,8 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 
 	g_hooks.pfnPlaybackEvent = PlaybackEvent;
 
-	g_hooks.pfnSetModelPost = SetModel_post;
-	g_hooks.pfnPrecacheModelPost = PrecacheModel_post;
-
 	RegisterPluginCommand(plugin, "demo", demo_command);
+	RegisterPluginCommand(plugin, "replay", replay_command);
 
 	const char* stringPoolStart = gpGlobals->pStringBase;
 
@@ -784,7 +729,6 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	if (gpGlobals->time > 3.0f) {
 		g_sventv = new SvenTV(singleThreadMode);
 		g_demoPlayer = new DemoPlayer();
-		loadSvenTvState();
 	}
 
 	g_demoplayers = new DemoPlayerEnt[32];
@@ -798,7 +742,6 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 }
 
 extern "C" void DLLEXPORT PluginExit() {
-	writeSvenTvState();
 	if (g_sventv) delete g_sventv;
 	if (g_demoPlayer) delete g_demoPlayer;
 	delete[] g_demoplayers;

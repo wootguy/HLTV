@@ -81,28 +81,28 @@ void DemoWriter::initDemoFile() {
 	demoStartTime = now;
 	lastDemoFrameTime = now;
 
+	const int max_indexes = 8192;
 	string modelData;
-	int maxModelIdx = 0;
-	int minModelIdx = 0;
-	for (pair<int, string> item : g_indexToModel) {
-		if (item.first > maxModelIdx) {
-			maxModelIdx = item.first;
-		}
-	}
-	for (int i = 0; i <= maxModelIdx; i++) {
-		if (g_indexToModel[i].empty() || g_indexToModel[i].size() > 1 && g_indexToModel[i][0] == '*') {
-			minModelIdx = i + 1;
+	uint16_t modelCount = 0;
+	uint16_t soundCount = 0;
+	uint16_t* modelIndexes = new uint16_t[max_indexes];
+	uint16_t* soundIndexes = new uint16_t[max_indexes];
+	for (pair<string, string> item : g_precachedModels) {
+		if (item.second.empty()) {
 			continue;
 		}
-		modelData += g_indexToModel[i] + "\n";
+		modelData += item.second + "\n";
+		modelIndexes[modelCount++] = MODEL_INDEX(item.second.c_str());
 	}
 
 	string soundData;
-	for (int i = 0; i < g_SoundCacheFiles.size(); i++) {
-		soundData += g_SoundCacheFiles[i] + "\n";
+	for (const std::string& sound : g_precachedSounds) {
+		soundData += sound + "\n";
+		soundIndexes[soundCount++] = SOUND_INDEX(sound.c_str());
 	}
 
-	header.modelIdxStart = minModelIdx;
+	header.modelCount = modelCount;
+	header.soundCount = soundCount;
 	header.modelLen = modelData.size();
 	header.soundLen = soundData.size();
 
@@ -111,10 +111,17 @@ void DemoWriter::initDemoFile() {
 
 	fwrite(&header, sizeof(DemoHeader), 1, demoFile);
 
-	if (modelData.size())
+	if (modelData.size()) {
+		fwrite(modelIndexes, modelCount*sizeof(uint16_t), 1, demoFile);
 		fwrite(modelData.c_str(), modelData.size(), 1, demoFile);
-	if (soundData.size())
+	}
+	if (soundData.size()) {
+		fwrite(soundIndexes, soundCount * sizeof(uint16_t), 1, demoFile);
 		fwrite(soundData.c_str(), soundData.size(), 1, demoFile);
+	}
+
+	delete[] modelIndexes;
+	delete[] soundIndexes;
 }
 
 mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, DemoDataTest* testData) {
@@ -352,15 +359,29 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 	}
 }
 
-mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
+mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 	mstream msgbuffer(netmessagesBuffer, netmessagesBufferSize);
 	for (int i = 0; i < frame.netmessage_count; i++) {
 		NetMessageData& dat = frame.netmessages[i];
+		uint16_t oldSz = dat.sz;
+
+		if (testData) {
+			if (!dat.header.hasOrigin) {
+				memset(dat.origin, 0, 3 * sizeof(uint32_t));
+			}
+			memcpy(&testData->expectedMsg[i], &dat, sizeof(NetMessageData));
+		}
 
 		compressNetMessage(frame, dat);
 
 		dat.header.sz = dat.sz & 0xff;
 		dat.header.szHighBit = (dat.sz & 0x100) != 0;
+
+		if (testData) {
+			testData->expectedMsg[i].header.sz = dat.header.sz;
+			testData->expectedMsg[i].header.szHighBit = dat.header.szHighBit;
+			testData->expectedMsg[i].sz = (dat.header.szHighBit << 8) | dat.header.sz;
+		}
 
 		if (dat.header.type == SVC_BAD)
 			ALERT(at_console, "Wrote SVC_BAD!!\n");
@@ -378,6 +399,7 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
 			msgbuffer.write(&dat.origin[1], sz);
 			msgbuffer.write(&dat.origin[2], sz);
 		}
+
 		if (dat.header.hasEdict) {
 			msgbuffer.write(&dat.eidx, sizeof(uint16_t));
 		}
@@ -489,7 +511,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
 	mstream plrbuffer = writePlrDeltas(frame, plrDeltaBits);
-	mstream msgbuffer = writeMsgDeltas(frame);
+	mstream msgbuffer = writeMsgDeltas(frame, testData);
 	mstream cmdbuffer = writeCmdDeltas(frame);	
 	mstream evtbuffer = writeEvtDeltas(frame);	
 

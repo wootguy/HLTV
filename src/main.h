@@ -50,18 +50,12 @@ class DemoPlayer;
 
 using namespace std;
 
-#ifdef HLCOOP_BUILD
-extern vector<string> g_SoundCacheFiles;
-extern unordered_map<string, int> g_SoundCache;
-#endif
-
 extern bool g_compressMessages; // for debugging
 
 void MapInit(edict_t* pEdictList, int edictCount, int maxClients);
 void StartFrame();
 void ClientLeave(edict_t* plr);
 
-extern map<int, string> g_indexToModel;
 extern set<string> g_playerModels;
 
 extern DemoPlayer* g_demoPlayer;

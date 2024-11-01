@@ -83,11 +83,23 @@ void SvenTV::think_mainThread() {
 	*/
 	{ // multi-threaded mode. Main thread only needs to copy current edict states
 		if (edictCopyState.getValue() == EDICT_COPY_REQUESTED) {
-			memcpy(edicts, INDEXENT(0), sizeof(edict_t) * MAX_EDICTS);
-			memcpy(frame.playerinfos, g_demoplayers, gpGlobals->maxClients*sizeof(DemoPlayerEnt));
-			memcpy(frame.netmessages, g_netmessages, g_netmessage_count*sizeof(NetMessageData));
-			memcpy(frame.cmds, g_cmds, g_command_count*sizeof(CommandData));
-			memcpy(frame.events, g_events, g_event_count*sizeof(DemoEventData));
+			if (singleThreadMode) {
+				edicts = INDEXENT(0);
+				frame.playerinfos = g_demoplayers;
+				frame.netmessages = g_netmessages;
+				frame.cmds = g_cmds;
+				frame.events = g_events;
+			}
+			else {
+				// need to duplicate because the server thread will be running in parallel to the
+				// tv thread which is working on these ents
+				memcpy(edicts, INDEXENT(0), sizeof(edict_t) * MAX_EDICTS);
+				memcpy(frame.playerinfos, g_demoplayers, gpGlobals->maxClients * sizeof(DemoPlayerEnt));
+				memcpy(frame.netmessages, g_netmessages, g_netmessage_count * sizeof(NetMessageData));
+				memcpy(frame.cmds, g_cmds, g_command_count * sizeof(CommandData));
+				memcpy(frame.events, g_events, g_event_count * sizeof(DemoEventData));
+			}
+
 			frame.netmessage_count = g_netmessage_count;
 			frame.cmds_count = g_command_count;
 			frame.serverFrameCount = g_server_frame_count;
