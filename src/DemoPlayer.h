@@ -100,7 +100,7 @@ class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
 	bool clearMapForPlayback = true; // map may crash if entities are not cleared first
-	bool useBots = false; // try to use bots for player entites
+	bool useBots = true; // try to use bots for player entites
 	float replaySpeed = 1.0f;
 	int netmsgPlrIdx = 1; // player to replay network messages for
 

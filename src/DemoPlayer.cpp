@@ -539,6 +539,11 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			bot->v.takedamage = DAMAGE_NO;
 			bot->v.movetype = MOVETYPE_NOCLIP;
 			bot->v.solid = SOLID_SLIDEBOX;
+			bot->v.flags |= FL_FAKECLIENT;
+
+			CBasePlayer* plr = (CBasePlayer*)CBaseEntity::Instance(bot);
+			plr->m_isObserver = false;
+			plr->UpdateTeamInfo();
 
 			replayEnts[i].h_ent = ent = bot;
 		}
@@ -659,7 +664,7 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 			interp.animTime = gpGlobals->time; // time frame was set
 
 			if (sequenceChanged || interp.framerateSmd == 0) {
-				CBaseAnimating* anim = (CBaseAnimating*)GET_PRIVATE(ent);
+				CBaseAnimating* anim = CBaseEntity::Instance(ent)->MyAnimatingPointer();
 
 				if (anim) {
 					void* pmodel = GET_MODEL_PTR(ent);
@@ -1215,7 +1220,7 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		if (field_mask & SND_FL_VOLUME)
 			bitbuffer.writeBits(volume, 8);
 		if (field_mask & SND_FL_ATTENUATION)
-			bitbuffer.writeBits((uint32)(attenuation * 64.0f), 8);
+			bitbuffer.writeBits(attenuation, 8);
 		bitbuffer.writeBits(channel, 3);
 		bitbuffer.writeBits(ient, 11);
 		bitbuffer.writeBits(sound_num, (field_mask & SND_FL_LARGE_INDEX) ? 16 : 8);
@@ -1586,11 +1591,11 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 		}
 		if (ev.header.hasFparam1) {
 			reader.read(&ev.fparam1, 3);
-			fparam1 = ev.fparam1 / 128.0f;
+			fparam1 = FIXED_TO_FLOAT(ev.fparam1, 24, 0) / 128.0f;
 		}
 		if (ev.header.hasFparam2) {
 			reader.read(&ev.fparam2, 3);
-			fparam2 = ev.fparam2 / 128.0f;
+			fparam2 = FIXED_TO_FLOAT(ev.fparam2, 24, 0) / 128.0f;
 		}
 		if (ev.header.hasIparam1) {
 			reader.read(&ev.iparam1, 2);
@@ -1608,7 +1613,7 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 		}
 		else { // play the event
 			convReplayEntIdx((byte*)&eidx, 0, 2);
-			if (eidx >= replayEnts.size()) {
+			if ((!useBots && eidx >= replayEnts.size()) || (useBots && eidx > gpGlobals->maxClients)) {
 				println("Invalid event edict %d", (int)ev.header.entindex);
 				continue;
 			}
@@ -1918,7 +1923,7 @@ void DemoPlayer::interpolateEdicts() {
 				}
 				else {
 					// bot code sets gait/blends automatically
-					ent->v.angles.x = normalizeRangef(ent->v.angles.x, -180.0f, 180.0f) * 0.5f;
+					ent->v.angles.x = normalizeRangef(ent->v.angles.x, -180.0f, 180.0f) * -0.33f;
 				}
 			}
 		}

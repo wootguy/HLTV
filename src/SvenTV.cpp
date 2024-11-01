@@ -497,6 +497,14 @@ void SvenTV::think_tvThread() {
 				dplr.weaponanim = ent->v.weaponanim;
 				dplr.view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
 				dplr.observer = ((uint8_t)ent->v.iuser2 << 6) | ((ent->v.iuser1 & 0x3) << 1) | (ent->v.deadflag != DEAD_NO);
+				
+				// not thread safe
+				char* info = g_engfuncs.pfnGetInfoKeyBuffer(ent);
+				char* model = g_engfuncs.pfnInfoKeyValue(info, "model");
+				dplr.topColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "topcolor"));
+				dplr.bottomColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "bottomcolor"));
+				strcpy_safe(dplr.model, model, 23);
+				strcpy_safe(dplr.name, STRING(ent->v.netname), 64);
 
 				int fl = ent->v.flags;
 				if (dplr.flags & PLR_FL_CONNECTED) {

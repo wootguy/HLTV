@@ -176,9 +176,10 @@ void netedict::load(const edict_t& ed) {
 	health = vars.health > 0 ? V_min(vars.health, UINT32_MAX) : 0;
 
 
-	//CBaseEntity* ent = CBaseEntity::Instance(&ed); 
-	//CBaseAnimating* anim = ent ? ent->MyAnimatingPointer() : NULL; // TODO: not thread safe
-	CBaseAnimating* anim = NULL;
+	CBaseEntity* ent = CBaseEntity::Instance(&ed); 
+	CBaseAnimating* anim = ent ? ent->MyAnimatingPointer() : NULL; // TODO: not thread safe
+	//CBaseAnimating* anim = NULL;
+	bool isBspModel = anim && anim->IsBSPModel();
 
 	bool animationReset = framerate != newFramerate || newSequence != sequence || newModelindex != modelindex;
 	if (anim) {
@@ -189,13 +190,14 @@ void netedict::load(const edict_t& ed) {
 		animationReset |= lastAnimationReset < anim->m_flLastEventCheck && (vars.frame == 0 || (ed.v.flags & FL_CLIENT));
 		lastAnimationReset = anim->m_flLastEventCheck;
 	}
-
-	if (animationReset || (anim && anim->IsBSPModel())) {
+	
+	uint8_t oldFrame = frame;
+	if (animationReset || isBspModel) {
 		// clients can no longer predict the current frame
 		frame = vars.frame;
 	}
 
-	forceNextFrame = animationReset;
+	forceNextFrame = animationReset || (isBspModel && oldFrame != frame);
 	framerate = newFramerate;
 	sequence = newSequence;
 	modelindex = newModelindex;
