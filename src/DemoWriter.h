@@ -16,6 +16,8 @@ public:
 	// return true if more data requested
 	bool writeDemoFile(FrameData& frame);
 
+	bool shouldWriteDemoFrame();
+
 	void closeDemoFile();
 
 	bool isFileOpen();

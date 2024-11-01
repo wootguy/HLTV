@@ -256,3 +256,14 @@ struct playermove_s
 	vec3_t player_mins[4];
 	vec3_t player_maxs[4];
 };
+
+HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed);
+HOOK_RET_VOID MessageEnd();
+HOOK_RET_VOID WriteAngle(float angle);
+HOOK_RET_VOID WriteByte(int b);
+HOOK_RET_VOID WriteChar(int c);
+HOOK_RET_VOID WriteCoord(float coord);
+HOOK_RET_VOID WriteEntity(int ent);
+HOOK_RET_VOID WriteLong(int val);
+HOOK_RET_VOID WriteShort(int val);
+HOOK_RET_VOID WriteString(const char* s);

@@ -490,6 +490,10 @@ HOOK_RET_VOID WriteString(const char* s) {
 	DEFAULT_HOOK_RETURN;
 }
 
+void begin_replay(std::string path, int offsetSeconds) {
+	g_demoPlayer->openDemo(NULL, path, offsetSeconds, true);
+}
+
 void replay_demo(edict_t* plr) {
 	CommandArgs args = CommandArgs();
 	args.loadArgs();
@@ -499,7 +503,13 @@ void replay_demo(edict_t* plr) {
 		path += string(STRING(gpGlobals->mapname)) + ".demo";
 	}
 	float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
-	g_demoPlayer->openDemo(NULL, path, offsetSeconds, true);
+
+	g_demoPlayer->prepareDemo();
+
+	static ScheduledFunction sched;
+	g_Scheduler.RemoveTimer(sched);
+	sched = g_Scheduler.SetTimeout(begin_replay, 0.5f, path, offsetSeconds);
+	
 	g_sventv->enableDemoFile = false;
 }
 
@@ -680,6 +690,65 @@ void replay_command() {
 	replay_demo(NULL);
 }
 
+HOOK_RET_VOID EMIT_SOUND_HOOK(edict_t* entity, int channel, const char* sample, float fvolume, float attenuation, int fFlags, int pitch) {
+	Vector origin = (entity->v.maxs + entity->v.mins) * 0.5f + entity->v.origin;
+	float* ori = origin;
+	mstream* stream = BuildStartSoundMessage(entity, channel, sample, fvolume, attenuation, fFlags, pitch, ori);
+
+	if (!stream) {
+		DEFAULT_HOOK_RETURN;
+	}
+
+	int sz = stream->tell() + 1;
+	char* buffer = stream->getBuffer();
+	bool sendPAS = channel != CHAN_STATIC && !(fFlags & SND_STOP);
+
+	// can't hook engine messages, so pretend the game sent this
+	MessageBegin(sendPAS ? MSG_PAS : MSG_BROADCAST, SVC_SOUND, sendPAS ? ori : NULL, NULL);
+	//MessageBegin(MSG_BROADCAST, SVC_SOUND, NULL, NULL); // save space in the demo
+	for (int i = 0; i < sz; i++) {
+		WriteByte(buffer[i]);
+	}
+	MessageEnd();
+
+	DEFAULT_HOOK_RETURN;
+}
+
+HOOK_RET_VOID EMIT_AMBIENT_SOUND_HOOK(edict_t* entity, const float* pos, const char* samp, float vol, float attenuation, int fFlags, int pitch) {
+	int soundnum;
+
+	if (samp[0] == '!')
+	{
+		fFlags |= SND_SENTENCE;
+		soundnum = atoi(samp + 1);
+		if (soundnum >= CVOXFILESENTENCEMAX)
+		{
+			ALERT(at_error, "invalid sentence number: %s", &samp[1]);
+			DEFAULT_HOOK_RETURN;
+		}
+	}
+	else
+	{
+		soundnum = PRECACHE_SOUND_ENT(NULL, samp);
+	}
+
+	// can't hook engine messages, so pretend the game sent this
+	MessageBegin(MSG_BROADCAST, SVC_SPAWNSTATICSOUND, NULL, NULL);
+	WriteCoord(pos[0]);
+	WriteCoord(pos[1]);
+	WriteCoord(pos[2]);
+
+	WriteShort(soundnum);
+	WriteByte(vol * 255.0);
+	WriteByte(attenuation * 64.0);
+	WriteShort(ENTINDEX(entity));
+	WriteByte(pitch);
+	WriteByte(fFlags);
+	MessageEnd();	
+
+	DEFAULT_HOOK_RETURN;
+}
+
 #ifdef HLCOOP_BUILD
 HLCOOP_PLUGIN_HOOKS g_hooks;
 
@@ -707,6 +776,8 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnMessageEnd = MessageEnd;
 
 	g_hooks.pfnPlaybackEvent = PlaybackEvent;
+	g_hooks.pfnEmitSound = EMIT_SOUND_HOOK;
+	g_hooks.pfnEmitAmbientSound = EMIT_AMBIENT_SOUND_HOOK;
 
 	RegisterPluginCommand(plugin, "demo", demo_command);
 	RegisterPluginCommand(plugin, "replay", replay_command);

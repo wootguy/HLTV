@@ -82,7 +82,11 @@ void SvenTV::think_mainThread() {
 	else 
 	*/
 	{ // multi-threaded mode. Main thread only needs to copy current edict states
-		if (edictCopyState.getValue() == EDICT_COPY_REQUESTED) {
+
+		// single thread mode must use new data immediately to avoid missing messages while waiting to write
+		bool shouldCopy = (demoWriter->shouldWriteDemoFrame() || !singleThreadMode);
+		
+		if (edictCopyState.getValue() == EDICT_COPY_REQUESTED && shouldCopy) {
 			if (singleThreadMode) {
 				edicts = INDEXENT(0);
 				frame.playerinfos = g_demoplayers;
@@ -458,7 +462,7 @@ void SvenTV::think_tvThread() {
 	bool loadNewData = true;
 
 	while (!threadShouldExit) {
-		while (edictCopyState.getValue() != EDICT_COPY_FINISHED && !threadShouldExit) {
+		while (!singleThreadMode && edictCopyState.getValue() != EDICT_COPY_FINISHED && !threadShouldExit) {
 			if (demoWriter->isFileOpen() && !enableDemoFile) {
 				demoWriter->closeDemoFile();
 			}

@@ -279,13 +279,15 @@ void DemoPlayer::prepareDemo() {
 				//ent->v.viewmodel = 0;
 				//ent->v.weaponmodel = 0;
 				//plr->m_iHideHUD = 1;
+				plr->RemoveAllItems(FALSE);
 			}
 		}
 		for (int i = gpGlobals->maxClients; i < gpGlobals->maxEntities; i++) {
 			edict_t* ent = INDEXENT(i);
 
 			// kill everything that isn't attached to a player
-			if (ent && strlen(STRING(ent->v.classname)) > 0 && (!ent->v.aiment || (ent->v.aiment->v.flags & FL_CLIENT) == 0)) {
+			//if (ent && strlen(STRING(ent->v.classname)) > 0 && (!ent->v.aiment || (ent->v.aiment->v.flags & FL_CLIENT) == 0)) {
+			if (ent && strlen(STRING(ent->v.classname)) > 0) {
 				REMOVE_ENTITY(ent);
 			}
 		}
@@ -308,9 +310,14 @@ void DemoPlayer::prepareDemo() {
 		oldPlayerNames[i] = "";
 	}
 
+	MESSAGE_BEGIN(MSG_ALL, SVC_STUFFTEXT);
+	WRITE_STRING("stopsound\n");
+	MESSAGE_END();
+	UTIL_StopGlobalMp3();
+
 	replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
 	replayFrame = 0;
-	nextFrameOffset = replayData->tell();
+	nextFrameOffset = replayData ? replayData->tell() : 0;
 	nextFrameTime = 0;
 }
 
@@ -343,6 +350,11 @@ void DemoPlayer::closeReplayFile() {
 		replayData->close();
 		delete replayData;
 		replayData = NULL;
+
+		MESSAGE_BEGIN(MSG_ALL, SVC_STUFFTEXT);
+		WRITE_STRING("stopsound\n");
+		MESSAGE_END();
+		UTIL_StopGlobalMp3();
 	}
 
 	for (int i = 0; i < replayEnts.size(); i++) {
@@ -785,21 +797,15 @@ void DemoPlayer::convReplayModelIdx(byte* dat, int offset, int dataSz) {
 	*modelIdx = g_engfuncs.pfnModelIndex(getReplayModel(*modelIdx).c_str());
 }
 
-void DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
-	if (soundIdx >= precacheSounds.size()) {
-		println("Invalid replay sound idx %d", (int)soundIdx);
+bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
+	if (replaySoundPath.find(soundIdx) == replaySoundPath.end()) {
+		println("Invalid replay sound index %d", soundIdx);
 		soundIdx = 0;
-		return;
+		return false;
 	}
 
-	string path = precacheSounds[soundIdx];
-	if (g_precachedSounds.find(path) == g_precachedSounds.end()) {
-		println("Not precached replay sound: %s", path.c_str());
-		soundIdx = 0;
-		return;
-	}
-
-	soundIdx = SOUND_INDEX(path.c_str());
+	soundIdx = SOUND_INDEX(replaySoundPath[soundIdx].c_str());
+	return true;
 }
 
 bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
@@ -1176,6 +1182,57 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 	case SVC_TEMPENTITY:
 		g_stats.msgSz[256 + msg.data[0]] += msg.sz;
 		return processTempEntityMessage(msg, validate) ? 1 : -1;
+	case SVC_SOUND: {
+		mstream bitbuffer((char*)msg.data, msg.sz);
+		uint16_t field_mask = bitbuffer.readBits(9);
+		uint8_t volume = 0;
+		uint8_t attenuation = 0;
+		uint8_t pitch = 100;
+		if (field_mask & SND_FL_VOLUME) {
+			volume = bitbuffer.readBits(8);
+		}
+		if (field_mask & SND_FL_ATTENUATION) {
+			attenuation = bitbuffer.readBits(8);
+		}
+		uint8_t channel = bitbuffer.readBits(3);
+		uint16_t ient = bitbuffer.readBits(11); // ent index (11 = rehlds value)
+		convReplayEntIdx((uint8_t*)&ient, 0, 2);
+		uint16_t old_sound_num = bitbuffer.readBits((field_mask & SND_FL_LARGE_INDEX) ? 16 : 8); // sound index
+		uint16_t sound_num = old_sound_num;
+		if (!validate && !convReplaySoundIdx(sound_num)) {
+			return -1;
+		}
+		if (sound_num > 255) {
+			field_mask |= SND_FL_LARGE_INDEX;
+		}
+		Vector origin = bitbuffer.readBitVec3Coord();
+		if (field_mask & SND_FL_PITCH)
+			pitch = bitbuffer.readBits(8);
+
+		// rewrite with the new index
+		bitbuffer.seek(0);
+		bitbuffer.writeBits(field_mask, 9);
+		if (field_mask & SND_FL_VOLUME)
+			bitbuffer.writeBits(volume, 8);
+		if (field_mask & SND_FL_ATTENUATION)
+			bitbuffer.writeBits((uint32)(attenuation * 64.0f), 8);
+		bitbuffer.writeBits(channel, 3);
+		bitbuffer.writeBits(ient, 11);
+		bitbuffer.writeBits(sound_num, (field_mask & SND_FL_LARGE_INDEX) ? 16 : 8);
+		bitbuffer.writeBitVec3Coord(origin);
+		if (field_mask & SND_FL_PITCH)
+			bitbuffer.writeBits(pitch, 8);
+		return 1;
+	}
+	case SVC_SPAWNSTATICSOUND: {
+		uint16_t* sound_num = args16 + 3;
+		if (!validate && !convReplaySoundIdx(*sound_num)) {
+			return -1;
+		}
+		return 1;
+	}
+	case SVC_STUFFTEXT:
+		return 1;
 #ifndef HLCOOP_BUILD
 	case MSG_StartSound: {
 		uint16_t& flags = *(uint16_t*)(args);

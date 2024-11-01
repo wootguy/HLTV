@@ -1,6 +1,7 @@
 #include "main.h"
 #include "DemoWriter.h"
 #include "DemoPlayer.h"
+#include "CAmbientGeneric.h"
 
 using namespace std;
 
@@ -469,6 +470,63 @@ mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 #define ASSERT_FRAME(desc, expect, actual) \
 	if (expect != actual) { ALERT(at_console, "Read unexpected %s! %d != %d\n", desc, expect, actual); valid = false; }
 
+void initAmbientSounds() {
+	edict_t* ent = NULL;
+	edict_t* forEnt = ENT(0);
+
+	while (!FNullEnt(ent = FIND_ENTITY_BY_CLASSNAME(ent, "ambient_generic"))) {
+		CAmbientGeneric* ambient = (CAmbientGeneric*)GET_PRIVATE(ent);
+		if (ambient && ambient->m_isWav && ambient->m_fActive && ambient->m_fLooping) {
+			MessageBegin(MSG_BROADCAST, SVC_SPAWNSTATICSOUND, NULL, NULL);
+			WriteCoord(ambient->pev->origin[0]);
+			WriteCoord(ambient->pev->origin[1]);
+			WriteCoord(ambient->pev->origin[2]);
+
+			WriteShort(SOUND_INDEX(STRING(ambient->pev->message)));
+			WriteByte(ambient->m_dpv.vol * 255.0);
+			WriteByte(ambient->m_flAttenuation * 64.0);
+			WriteShort(ambient->entindex());
+			WriteByte(ambient->m_dpv.pitch);
+			WriteByte(SND_CHANGE_VOL);
+			MessageEnd();
+		}
+	}
+
+	ent = NULL;
+	while (!FNullEnt(ent = FIND_ENTITY_BY_CLASSNAME(ent, "ambient_music"))) {
+		CAmbientGeneric* ambient = (CAmbientGeneric*)GET_PRIVATE(ent);
+		if (ambient) {
+			MessageBegin(MSG_BROADCAST, SVC_SPAWNSTATICSOUND, NULL, NULL);
+			WriteCoord(ambient->pev->origin[0]);
+			WriteCoord(ambient->pev->origin[1]);
+			WriteCoord(ambient->pev->origin[2]);
+
+			WriteShort(SOUND_INDEX(STRING(ambient->pev->message)));
+			WriteByte(ambient->m_dpv.vol * 255.0);
+			WriteByte(ambient->m_flAttenuation * 64.0);
+			WriteShort(ambient->entindex());
+			WriteByte(ambient->m_dpv.pitch);
+			WriteByte(SND_CHANGE_VOL);
+			MessageEnd();
+		}
+	}
+
+	if (g_mp3Command.size()) {
+		// start global music
+		MessageBegin(MSG_BROADCAST, SVC_STUFFTEXT, NULL, NULL);
+		WriteString(g_mp3Command.c_str());
+		MessageEnd();
+	}
+}
+
+bool DemoWriter::shouldWriteDemoFrame() {
+	uint64_t now = getEpochMillis();
+	if (now < nextDemoUpdate) {
+		return false;
+	}
+	return true;
+}
+
 bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (!demoFile) {
 		initDemoFile();
@@ -477,13 +535,18 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		return false;
 	}
 
-	uint64_t now = getEpochMillis();
-	if (now < nextDemoUpdate) {
+	if (!shouldWriteDemoFrame()) {
 		return false;
 	}
+
+	uint64_t now = getEpochMillis();
 	uint64_t updateDelay = (1.0f / demoFileFps) * 1000;
 	uint32_t frameTimeDelta = now - lastDemoFrameTime;
 	nextDemoUpdate = now + updateDelay;
+
+	if (g_stats.frameCount == 5) {
+		initAmbientSounds();
+	}
 
 	bool isKeyframe = now >= nextDemoKeyframe;
 
@@ -502,12 +565,12 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	DemoPlayer* testPlayer = NULL;
 
 	if (validateOutput) {
-		testData = new DemoDataTest();
+		testData = new DemoDataTest;
 		testPlayer = new DemoPlayer();
 		memset(testData, 0, sizeof(DemoDataTest));
 		memcpy(testData->oldEntState, fileedicts, sizeof(netedict) * MAX_EDICTS);
 		memcpy(testPlayer->fileedicts, fileedicts, sizeof(netedict) * MAX_EDICTS);
-	}	
+	}
 
 	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
 	mstream plrbuffer = writePlrDeltas(frame, plrDeltaBits);
@@ -548,6 +611,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 	bool hasAnyDeltas = header.hasEntityDeltas + header.hasPlayerDeltas + header.hasNetworkMessages + header.hasEvents + header.hasCommands;
 	if (!hasAnyDeltas) {
+		if (validateOutput) {
+			delete testData;
+			delete testPlayer;
+		}
 		return true;
 	}
 

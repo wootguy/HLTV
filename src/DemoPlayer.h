@@ -119,6 +119,9 @@ public:
 
 	void stopReplay();
 
+	// clears existing map entities for playback
+	void prepareDemo();
+
 	edict_t* getReplayEntity(int idx);
 
 	void validateFrame(DemoDataStream& reader, DemoDataTest* results);
@@ -184,9 +187,6 @@ private:
 	// really like 127 different messages
 	bool processTempEntityMessage(NetMessageData& msg, DemoDataTest* validate);
 
-	// clears existing map entities for playback
-	void prepareDemo();
-
 	// ent = replay entitiy to update pitch/gait angles
 	// dt = seconds between current time and last time
 	void updatePlayerModelGait(edict_t* ent, float dt);
@@ -203,7 +203,7 @@ private:
 	void convReplayModelIdx(byte* dat, int offset, int dataSz);
 
 	// convert from a demo file sound idx to a sound idx idx in the current game
-	void convReplaySoundIdx(uint16_t& soundIdx);
+	bool convReplaySoundIdx(uint16_t& soundIdx);
 
 	bool validateEdicts(); // debug
 
