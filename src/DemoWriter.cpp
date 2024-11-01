@@ -1,5 +1,6 @@
 #include "main.h"
 #include "DemoWriter.h"
+#include "DemoPlayer.h"
 
 using namespace std;
 
@@ -55,7 +56,13 @@ void DemoWriter::initDemoFile() {
 	string fpath = g_demo_file_path->string + fname;
 	println("Open demo file: %s", fpath.c_str());
 
-	demoFile = fopen(fpath.c_str(), "wb");
+	demoFile = fopen(fpath.c_str(), "wb+");
+
+	if (!demoFile) {
+		ALERT(at_error, "Failed to open demo file: %s\n", fpath.c_str());
+		return;
+	}
+
 	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
 	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 
@@ -110,7 +117,7 @@ void DemoWriter::initDemoFile() {
 		fwrite(soundData.c_str(), soundData.size(), 1, demoFile);
 }
 
-mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas) {
+mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, DemoDataTest* testData) {
 	mstream entbuffer(fileDeltaBuffer, fileDeltaBufferSize);
 
 	uint16_t offset = 0; // always write full index for first entity delta
@@ -149,6 +156,11 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas) {
 			indexWriteSz += offset > 127 ? 2 : 1;
 			offset = 1;
 			numEntDeltas++;
+
+			if (testData) {
+				int sz = entbuffer.tell() - startOffset;
+				testData->entDeltaSz[i] = sz;
+			}
 		}
 	}
 
@@ -180,6 +192,10 @@ mstream DemoWriter::writePlrDeltas(FrameData& frame, uint32_t& plrDeltaBits) {
 }
 
 void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
+	if (!g_compressMessages) {
+		return;
+	}
+	
 	switch (msg.header.type) {
 	case SVC_TEMPENTITY: {
 		uint8_t type = msg.data[0];
@@ -346,6 +362,9 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame) {
 		dat.header.sz = dat.sz & 0xff;
 		dat.header.szHighBit = (dat.sz & 0x100) != 0;
 
+		if (dat.header.type == SVC_BAD)
+			ALERT(at_console, "Wrote SVC_BAD!!\n");
+
 		msgbuffer.write(&dat.header, sizeof(DemoNetMessage));
 
 		g_stats.msgSz[dat.header.type] += dat.sz;
@@ -425,9 +444,15 @@ mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 	return evbuffer;
 }
 
+#define ASSERT_FRAME(desc, expect, actual) \
+	if (expect != actual) { ALERT(at_console, "Read unexpected %s! %d != %d\n", desc, expect, actual); valid = false; }
+
 bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (!demoFile) {
 		initDemoFile();
+	}
+	if (!demoFile) {
+		return false;
 	}
 
 	uint64_t now = getEpochMillis();
@@ -449,7 +474,20 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	uint16_t numEntDeltas = 0;
 	uint32_t plrDeltaBits = 0;
 
-	mstream entbuffer = writeEntDeltas(frame, numEntDeltas);
+	bool validateOutput = true;
+
+	DemoDataTest* testData = NULL;
+	DemoPlayer* testPlayer = NULL;
+
+	if (validateOutput) {
+		testData = new DemoDataTest();
+		testPlayer = new DemoPlayer();
+		memset(testData, 0, sizeof(DemoDataTest));
+		memcpy(testData->oldEntState, fileedicts, sizeof(netedict) * MAX_EDICTS);
+		memcpy(testPlayer->fileedicts, fileedicts, sizeof(netedict) * MAX_EDICTS);
+	}	
+
+	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
 	mstream plrbuffer = writePlrDeltas(frame, plrDeltaBits);
 	mstream msgbuffer = writeMsgDeltas(frame);
 	mstream cmdbuffer = writeCmdDeltas(frame);	
@@ -493,12 +531,16 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 	lastDemoFrameTime = now;
 
+	size_t frameStartOffset = ftell(demoFile);
+	uint32_t expectedDemoTime = 0;
+
 	fwrite(&header, sizeof(DemoFrame), 1, demoFile);
 
 	if (header.isGiantFrame) {
 		g_stats.currentWriteSz += sizeof(uint32_t) * 2;
 		uint32_t demoTime = now - demoStartTime;
 		uint32_t frameSize = g_stats.currentWriteSz;
+		expectedDemoTime = demoTime;
 		fwrite(&demoTime, sizeof(uint32_t), 1, demoFile);
 		fwrite(&frameSize, sizeof(uint32_t), 1, demoFile);
 		g_stats.giantFrameCount++;
@@ -507,6 +549,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		g_stats.currentWriteSz += sizeof(uint16_t) + sizeof(uint8_t);
 		uint8_t demoTimeDelta = frameTimeDelta;
 		uint16_t frameSize = g_stats.currentWriteSz;
+		expectedDemoTime = demoTimeDelta;
 		fwrite(&demoTimeDelta, sizeof(uint8_t), 1, demoFile);
 		fwrite(&frameSize, sizeof(uint16_t), 1, demoFile);
 		g_stats.bigFrameCount++;
@@ -515,6 +558,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		g_stats.currentWriteSz += sizeof(uint8_t) + sizeof(uint8_t);
 		uint8_t demoTimeDelta = frameTimeDelta;
 		uint16_t frameSize = g_stats.currentWriteSz;
+		expectedDemoTime = demoTimeDelta;
 		fwrite(&demoTimeDelta, sizeof(uint8_t), 1, demoFile);
 		fwrite(&frameSize, sizeof(uint8_t), 1, demoFile);
 	}
@@ -540,6 +584,65 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (header.hasCommands) {
 		fwrite(&frame.cmds_count, sizeof(uint8_t), 1, demoFile);
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
+	}
+
+	if (validateOutput) {
+		size_t oldOffset = ftell(demoFile);
+		
+		uint32_t expectedEntSz = g_stats.entDeltaCurrentSz;
+		uint32_t expectedPlrSz = g_stats.plrDeltaCurrentSz;
+		uint32_t expectedNetSz = g_stats.msgCurrentSz;
+		uint32_t expectedEvtSz = g_stats.eventCurrentSz;
+		uint32_t expectedCmdSz = g_stats.cmdCurrentSz;
+		uint32_t expectedFrameSz = g_stats.currentWriteSz;
+
+		DemoStats oldStats = g_stats;
+		memset(&g_stats, 0, sizeof(DemoStats));
+
+		memcpy(testData->newEntState, frame.netedicts, sizeof(netedict) * MAX_EDICTS);
+
+		DemoDataStream testStream(demoFile);
+		testStream.seek(frameStartOffset);
+
+		testPlayer->validateFrame(testStream, testData);
+		g_stats.calcFrameSize();
+
+		bool valid = testData->success;
+
+		if (memcmp(&testData->header, &header, sizeof(DemoFrame))) {
+			ALERT(at_console, "Read unexpected demo header!\n");
+		}
+
+		ASSERT_FRAME("demo time delta", testData->demoTime, expectedDemoTime);
+
+		ASSERT_FRAME("ent count", testData->numEntDeltas, numEntDeltas);
+		ASSERT_FRAME("ent bytes", g_stats.entDeltaCurrentSz, expectedEntSz);
+
+		ASSERT_FRAME("plr bits", testData->playerDeltaBits, plrDeltaBits);
+		ASSERT_FRAME("plr bytes", g_stats.plrDeltaCurrentSz, expectedPlrSz);
+
+		ASSERT_FRAME("msg count", testData->msgCount, frame.netmessage_count);
+		ASSERT_FRAME("msg bytes", g_stats.msgCurrentSz, expectedNetSz);
+
+		ASSERT_FRAME("evt count", testData->evtCount, frame.event_count);
+		ASSERT_FRAME("evt bytes", g_stats.eventCurrentSz, expectedEvtSz);
+
+		ASSERT_FRAME("evt count", testData->cmdCount, frame.cmds_count);
+		ASSERT_FRAME("evt bytes", g_stats.cmdCurrentSz, expectedCmdSz);
+
+		ASSERT_FRAME("frame bytes", g_stats.currentWriteSz, expectedFrameSz);
+
+		if (!valid) {
+			println("WROTE BAD FRAME %d!\n", oldStats.frameCount);
+			memset(&g_stats, 0, sizeof(DemoStats));
+			testStream.seek(frameStartOffset);
+			testPlayer->validateFrame(testStream, testData); // now debug it!
+		}
+
+		testStream.seek(oldOffset);
+		g_stats = oldStats;
+		delete testData;
+		delete testPlayer;
 	}
 
 	return true;

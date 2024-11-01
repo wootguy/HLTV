@@ -140,23 +140,25 @@ uint32_t DemoPlayerEnt::readDeltas(mstream& reader) {
 
 	static char strBuffer[256];
 
-	uint8_t oldFlags = flags;
-	uint8_t newFlags = flags;
+	if (deltaBits & FL_DELTA_FLAGS) {
+		uint8_t oldFlags = flags;
+		uint8_t newFlags = flags;
 
-	READ_DELTA(reader, deltaBits, FL_DELTA_FLAGS, newFlags, 1);
+		READ_DELTA(reader, deltaBits, FL_DELTA_FLAGS, newFlags, 1);
 
-	if (!oldFlags && newFlags) {
-		// new player joined. Start from a fresh state.
-		memset(this, 0, sizeof(DemoPlayerEnt));
-	}
-	flags = newFlags;
+		if (!oldFlags && newFlags) {
+			// new player joined. Start from a fresh state.
+			memset(this, 0, sizeof(DemoPlayerEnt));
+		}
+		flags = newFlags;
 
-	if (!flags) {
-		return deltaBits;
+		if (!flags) {
+			return deltaBits;
+		}
 	}
 
 	READ_DELTA(reader, deltaBits, FL_DELTA_BUTTON, button, 2);
-	READ_DELTA(reader, deltaBits, FL_DELTA_PING, ping, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_PING, ping, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CLIP, clip, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_PUNCHANGLE_X, punchangle[0], 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_PUNCHANGLE_Y, punchangle[1], 2);

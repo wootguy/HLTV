@@ -63,6 +63,37 @@ struct ReplayEntity {
 	InterpInfo interp;
 };
 
+class DemoDataStream {
+public:
+	DemoDataStream(FILE* file) : fileStream(file) {}
+	DemoDataStream(mstream& mem) : memoryStream(mem) {}
+
+	void seek(uint64_t to);
+	size_t read(void* dst, size_t sz);
+	void close();
+	bool valid();
+	size_t tell();
+
+private:
+	FILE* fileStream = NULL;
+	mstream memoryStream;
+};
+
+struct DemoDataTest {
+	DemoFrame header;
+	uint32_t demoTime;
+	uint32_t numEntDeltas;
+	uint32_t playerDeltaBits;
+	uint32_t msgCount;
+	uint32_t evtCount;
+	uint32_t cmdCount;
+	bool success;
+
+	int entDeltaSz[ABSOLUTE_MAX_EDICTS]; // hopefully big enough
+	netedict oldEntState[ABSOLUTE_MAX_EDICTS];
+	netedict newEntState[ABSOLUTE_MAX_EDICTS];
+};
+
 class DemoPlayer {
 public:
 	const float demoFileFps = 60; // TODO: calculate this or smth
@@ -88,9 +119,12 @@ public:
 
 	edict_t* getReplayEntity(int idx);
 
+	void validateFrame(DemoDataStream& reader, DemoDataTest* results);
+
 private:
 	// vars for replaying a demo file
-	FILE* replayFile = NULL;
+	DemoDataStream* replayData = NULL;
+	bool isValidating = false; // if true, demo data is being validated, so don't mess with the input data
 	vector<string> precacheModels;
 	vector<string> precacheSounds;
 	uint64_t replayStartTime = 0;
@@ -114,14 +148,15 @@ private:
 	void closeReplayFile();
 
 	// returns true if more frames are needed to catch up with current playback time
-	bool readDemoFrame();
+	// if validate passed, only validate the frame and set results in the var passed
+	bool readDemoFrame(DemoDataTest* validate=NULL);
 
 	bool simulate(DemoFrame& header); // create entities and replay the demo through them
-	bool readEntDeltas(mstream& reader);
-	bool readPlayerDeltas(mstream& reader);
-	bool readNetworkMessages(mstream& reader);
-	bool readEvents(mstream& reader);
-	bool readClientCommands(mstream& reader);
+	bool readEntDeltas(mstream& reader, DemoDataTest* validate = NULL);
+	bool readPlayerDeltas(mstream& reader, DemoDataTest* validate = NULL);
+	bool readNetworkMessages(mstream& reader, DemoDataTest* validate=NULL); // only validate if given a validate arg
+	bool readEvents(mstream& reader, DemoDataTest* validate = NULL);
+	bool readClientCommands(mstream& reader, DemoDataTest* validate = NULL);
 	
 	// converts a simulated entity into a class best suited for the demo entity
 	// i = index into replayEntities
@@ -159,13 +194,15 @@ private:
 	string getReplayModel(uint16_t modelIdx);
 
 	// convert from a demo file entity index to an entity index in the current game
-	void convReplayEntIdx(uint16_t& eidx);
+	void convReplayEntIdx(byte* dat, int offset);
 
 	// convert from a demo file model idx to a model idx in the current game
-	void convReplayModelIdx(uint16_t& modelIdx);
+	void convReplayModelIdx(byte* dat, int offset);
 
 	// convert from a demo file sound idx to a sound idx idx in the current game
 	void convReplaySoundIdx(uint16_t& soundIdx);
 
 	bool validateEdicts(); // debug
+
+	friend class DemoWriter;
 };

@@ -26,10 +26,12 @@ SvenTV::SvenTV(bool singleThreadMode) {
 	deltaPacketBufferSz = 508; // max UDP payload before possible fragmentation
 	deltaPacketBuffer = new char[deltaPacketBufferSz];
 
-	if (!singleThreadMode) {
+	if (!singleThreadMode || true) {
 		edicts = new edict_t[MAX_EDICTS];
 		edictCopyState.setValue(EDICT_COPY_REQUESTED);
-		tv_thread = new thread(&SvenTV::think_tvThread, this);
+
+		if (!singleThreadMode)
+			tv_thread = new thread(&SvenTV::think_tvThread, this);
 	}
 	else {
 		socket = new Socket(SOCKET_UDP | SOCKET_NONBLOCKING, SVENTV_PORT);
@@ -62,7 +64,7 @@ SvenTV::~SvenTV() {
 
 void SvenTV::think_mainThread() {
 	uint64_t startMillis = getEpochMillis();
-
+	/*
 	if (singleThreadMode) {
 		uint64_t now = getEpochMillis();
 		if (TimeDifference(lastTvThink, now) >= 0.05f) {
@@ -77,7 +79,9 @@ void SvenTV::think_mainThread() {
 			updateId++;
 		}
 	}
-	else { // multi-threaded mode. Main thread only needs to copy current edict states
+	else 
+	*/
+	{ // multi-threaded mode. Main thread only needs to copy current edict states
 		if (edictCopyState.getValue() == EDICT_COPY_REQUESTED) {
 			memcpy(edicts, INDEXENT(0), sizeof(edict_t) * MAX_EDICTS);
 			memcpy(frame.playerinfos, g_demoplayers, gpGlobals->maxClients*sizeof(DemoPlayerEnt));
@@ -105,6 +109,10 @@ void SvenTV::think_mainThread() {
 			g_copyTime = getEpochMillis() - startMillis;
 			//println("Copy %.1fKB in %lums", copySz / 1024.0f, copyTime);
 		}
+	}
+
+	if (singleThreadMode) {
+		think_tvThread();
 	}
 }
 
@@ -447,7 +455,7 @@ void SvenTV::think_tvThread() {
 		uint64_t startMillis = getEpochMillis();
 
 		if (loadNewData) {
-			for (int i = 0; i < MAX_EDICTS; i++) {
+			for (int i = 0; i < gpGlobals->maxEntities; i++) {
 				if (i > 0 && i <= MAX_PLAYERS && (edicts[i].v.flags & FL_CLIENT) == 0) {
 					frame.netedicts[i].reset();
 					continue;
@@ -515,11 +523,16 @@ void SvenTV::think_tvThread() {
 			loadNewData = true;
 			g_thinkTime = getEpochMillis() - startMillis;
 		}
+
+		if (singleThreadMode) {
+			break;
+		}
 	}
 
-	demoWriter->closeDemoFile();
-
-	delete socket;
+	if (threadShouldExit) {
+		demoWriter->closeDemoFile();
+		delete socket;
+	}
 }
 
 bool SvenTV::validateEdicts() {

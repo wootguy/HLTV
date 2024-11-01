@@ -10,6 +10,7 @@
 #include "CommandArgs.h"
 #include "PluginHooks.h"
 #include "Scheduler.h"
+#include "user_messages.h"
 
 #define HOOK_RET_INT HOOK_RETURN_DATA
 #define HOOK_RET_STR HOOK_RETURN_DATA
@@ -23,6 +24,8 @@
 #define strdup		_strdup
 #define strcasecmp	_stricmp
 #define strncasecmp	_strnicmp
+
+#define MAX_EDICTS (gpGlobals->maxEntities)
 #endif
 
 #else
@@ -32,7 +35,11 @@
 #define HOOK_RET_INT int
 #define HOOK_RET_STR const char*
 #define HOOK_RET_VOID void
+
+#define MAX_EDICTS 8192 // sven co-op
 #endif
+
+#define ABSOLUTE_MAX_EDICTS 8192 // the max edicts a server can ever have with -num_edicts
 
 #include <map>
 #include <set>
@@ -48,7 +55,7 @@ extern vector<string> g_SoundCacheFiles;
 extern unordered_map<string, int> g_SoundCache;
 #endif
 
-#define MAX_EDICTS 8192 // sven co-op
+extern bool g_compressMessages; // for debugging
 
 void MapInit(edict_t* pEdictList, int edictCount, int maxClients);
 void StartFrame();

@@ -34,27 +34,27 @@ bool netedict::matches(netedict& other) {
 		println("Mismatch isValid");
 		return false;
 	}
-	if (origin[0] != other.origin[0]) {
+	if (!FIXED_EQUALS(origin[0], other.origin[0], 24)) {
 		println("Mismatch origin[0]");
 		return false;
 	}
-	if (origin[1] != other.origin[1]) {
-		println("Mismatch isValid");
-		return false;
-	}
-	if (origin[1] != other.origin[1]) {
+	if (!FIXED_EQUALS(origin[1], other.origin[1], 24)) {
 		println("Mismatch origin[1]");
 		return false;
 	}
-	if (angles[0] != other.angles[0]) {
+	if (!FIXED_EQUALS(origin[2], other.origin[2], 24)) {
+		println("Mismatch origin[2]");
+		return false;
+	}
+	if (!FIXED_EQUALS(angles[0], other.angles[0], 24)) {
 		println("Mismatch angles[0]");
 		return false;
 	}
-	if (other.angles[1] != other.angles[1]) {
+	if (!FIXED_EQUALS(angles[1], other.angles[1], 24)) {
 		println("Mismatch angles[1]");
 		return false;
 	}
-	if (angles[2] != other.angles[2]) {
+	if (!FIXED_EQUALS(angles[2], other.angles[2], 24)) {
 		println("Mismatch angles[2]");
 		return false;
 	}
@@ -175,7 +175,11 @@ void netedict::load(const edict_t& ed) {
 	colormap = vars.colormap;
 	health = vars.health > 0 ? V_min(vars.health, UINT32_MAX) : 0;
 
-	CBaseAnimating* anim = (CBaseAnimating*)GET_PRIVATE((&ed));
+
+	//CBaseEntity* ent = CBaseEntity::Instance(&ed); 
+	//CBaseAnimating* anim = ent ? ent->MyAnimatingPointer() : NULL; // TODO: not thread safe
+	CBaseAnimating* anim = NULL;
+
 	bool animationReset = framerate != newFramerate || newSequence != sequence || newModelindex != modelindex;
 	if (anim) {
 		// probably set in other cases than ResetSequenceInfo, but not in the HLSDK
@@ -186,7 +190,7 @@ void netedict::load(const edict_t& ed) {
 		lastAnimationReset = anim->m_flLastEventCheck;
 	}
 
-	if (animationReset || anim->IsBSPModel()) {
+	if (animationReset || (anim && anim->IsBSPModel())) {
 		// clients can no longer predict the current frame
 		frame = vars.frame;
 	}

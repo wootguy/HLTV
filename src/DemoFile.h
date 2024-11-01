@@ -28,6 +28,12 @@ inline float FIXED_TO_FLOAT(int x, int whole_bits, int frac_bits) {
 	return r / (float)(1 << frac_bits);
 }
 
+// compares two fixed point integers for equality, where each may or may not be sign extended
+inline bool FIXED_EQUALS(int x, int y, int totalBits) {
+	int m = (1 << totalBits) - 1; // mask of value without extended sign
+	return (x & m) == (y & m);
+}
+
 #define MAX_EVENT_FRAME 256 // max events per frame
 #define MAX_CMD_FRAME 256 // max client commands per frame
 #define MAX_NETMSG_FRAME 4096 // max network messages per frame

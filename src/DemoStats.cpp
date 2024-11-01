@@ -5,6 +5,7 @@
 #include "DemoFile.h"
 
 string getMessageName(int messageType) {
+#ifndef HLCOOP_BUILD
 	static const char* svc_names[146] = {
 		"SVC_BAD", "SVC_NOP", "SVC_DISCONNECT", "SVC_EVENT",
 		"SVC_VERSION", "SVC_SETVIEW", "SVC_SOUND", "SVC_TIME",
@@ -44,6 +45,7 @@ string getMessageName(int messageType) {
 		"CustSpr", "NumDisplay", "UpdateNum", "TimeDisplay",
 		"UpdateTime", "VModelPos"
 	};
+#endif
 
 	if (messageType >= 256) {
 		uint8_t teType = messageType - 256;
@@ -51,7 +53,12 @@ string getMessageName(int messageType) {
 		return name ? name : "TE_???";
 	}
 	if (messageType < 146) {
+#ifdef HLCOOP_BUILD
+		return msgTypeStr(messageType);
+#else
 		return svc_names[messageType];
+#endif
+		
 	}
 
 	return "MSG_" + to_string(messageType);

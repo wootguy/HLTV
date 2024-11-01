@@ -14,4 +14,4 @@ add_library(${PROJECT_NAME} SHARED
 	src/DemoFile.h src/DemoFile.cpp
 )
 
-hlcoop_setup_plugin("plugins/server/")
+hlcoop_setup_plugin("plugins/server/hltv/")

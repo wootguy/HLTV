@@ -2,6 +2,8 @@
 #include "DemoFile.h"
 #include "netedict.h"
 
+struct DemoDataTest;
+
 class DemoWriter {
 public:
 	int showStats = 0;
@@ -23,7 +25,7 @@ public:
 private:
 	void compressNetMessage(FrameData& frame, NetMessageData& msg);
 
-	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas);
+	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, DemoDataTest* testData);
 	mstream writePlrDeltas(FrameData& frame, uint32_t& numEntDeltas);
 	mstream writeMsgDeltas(FrameData& frame);
 	mstream writeCmdDeltas(FrameData& frame);

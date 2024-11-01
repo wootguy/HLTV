@@ -4,6 +4,47 @@
 
 const char* model_entity = "env_sprite";
 
+void DemoDataStream::seek(uint64_t to) {
+	if (fileStream) {
+		fseek(fileStream, to, SEEK_SET);
+	}
+	else {
+		memoryStream.seek(to);
+	}
+}
+
+bool DemoDataStream::valid() {
+	return fileStream || memoryStream.getBuffer();
+}
+
+size_t DemoDataStream::read(void* dst, size_t sz) {
+	if (fileStream) {
+		return fread(dst, sz, 1, fileStream);
+	}
+	else {
+		return memoryStream.read(dst, sz);
+	}
+}
+
+size_t DemoDataStream::tell() {
+	if (fileStream) {
+		return ftell(fileStream);
+	}
+	else {
+		return memoryStream.tell();
+	}
+}
+
+void DemoDataStream::close() {
+	if (fileStream) {
+		fclose(fileStream);
+		fileStream = NULL;
+	}
+	else  if (memoryStream.getBuffer()) {
+		memoryStream.freeBuf();
+	}
+}
+
 #ifdef HLCOOP_BUILD
 #include "animation.h"
 
@@ -85,16 +126,17 @@ DemoPlayer::~DemoPlayer() {
 bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache) {
 	this->offsetSeconds = offsetSeconds;
 	stopReplay();
-	replayFile = fopen(path.c_str(), "rb");
+
+	replayData = new DemoDataStream(fopen(path.c_str(), "rb"));
 
 	memset(&g_stats, 0, sizeof(DemoStats));
 
-	if (!replayFile) {
+	if (!replayData->valid()) {
 		UTIL_ClientPrint(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
 		return false;
 	}
 
-	if (!fread(&demoHeader, sizeof(DemoHeader), 1, replayFile)) {
+	if (!replayData->read(&demoHeader, sizeof(DemoHeader))) {
 		UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
 		closeReplayFile();
 		return false;
@@ -122,7 +164,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	if (demoHeader.modelLen) {
 		char* modelData = new char[demoHeader.modelLen];
 
-		if (!fread(modelData, demoHeader.modelLen, 1, replayFile)) {
+		if (!replayData->read(modelData, demoHeader.modelLen)) {
 			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
 			closeReplayFile();
 			return false;
@@ -141,7 +183,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	if (demoHeader.soundLen) {
 		char* soundData = new char[demoHeader.soundLen];
 
-		if (!fread(soundData, demoHeader.soundLen, 1, replayFile)) {
+		if (!replayData->read(soundData, demoHeader.soundLen)) {
 			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
 			closeReplayFile();
 			return false;
@@ -241,12 +283,12 @@ void DemoPlayer::prepareDemo() {
 
 	replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
 	replayFrame = 0;
-	nextFrameOffset = ftell(replayFile);
+	nextFrameOffset = replayData->tell();
 	nextFrameTime = 0;
 }
 
 void DemoPlayer::precacheDemo() {
-	if (!replayFile) {
+	if (!replayData) {
 		return;
 	}
 
@@ -267,9 +309,13 @@ void DemoPlayer::stopReplay() {
 }
 
 void DemoPlayer::closeReplayFile() {
-	if (replayFile) {
-		fclose(replayFile);
-		replayFile = NULL;
+	if (isValidating) {
+		return;
+	}
+	if (replayData) {
+		replayData->close();
+		delete replayData;
+		replayData = NULL;
 	}
 
 	for (int i = 0; i < replayEnts.size(); i++) {
@@ -302,11 +348,13 @@ void DemoPlayer::closeReplayFile() {
 	}
 }
 
-bool DemoPlayer::readEntDeltas(mstream& reader) {
+bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 	uint32_t startOffset = reader.tell();
 
 	uint16_t numEntDeltas = 0;
 	reader.read(&numEntDeltas, 2);
+
+	if (validate) validate->numEntDeltas = numEntDeltas;
 
 	//println("Reading %d deltas", (int)numEntDeltas);
 
@@ -339,10 +387,45 @@ bool DemoPlayer::readEntDeltas(mstream& reader) {
 
 		uint64_t startPos = reader.tell();
 
+		netedict temp;
+		memcpy(&temp, &fileedicts[fullIndex], sizeof(netedict));
+
 		netedict* ed = &fileedicts[fullIndex];
 		if (!ed->readDeltas(reader)) {
 			//println("Skip free %d", fullIndex);
 			continue;
+		}
+
+		if (validate) {
+			int szRead = reader.tell() - readOffset;
+			netedict& expectedEd = validate->newEntState[fullIndex];
+
+			if (!expectedEd.matches(*ed)) {
+				ALERT(at_console, "Read unexpected ent state for %d!\n", (int)fullIndex);
+				// now debug it
+				expectedEd.matches(*ed);
+
+				memcpy(ed, &temp, sizeof(netedict));
+				reader.seek(startPos);
+				ed->readDeltas(reader);
+
+				mstream testStream(1024 * 512); // no delta should be this big, being safe
+				validate->newEntState[fullIndex].writeDeltas(testStream, validate->oldEntState[fullIndex]);
+				testStream.freeBuf();
+				
+				return false;
+			}
+			if (validate->entDeltaSz[fullIndex] != szRead) {
+				ALERT(at_console, "Read unexpected ent delta for %d! %d != %d\n",
+					(int)fullIndex, validate->entDeltaSz[fullIndex], szRead);
+
+				// now debug it
+				memcpy(ed, &temp, sizeof(netedict));
+				reader.seek(startPos);
+				ed->readDeltas(reader);
+				return false;
+			}
+			
 		}
 
 		//println("Read index %d (%d bytes)", (int)fullIndex, (int)(reader.tell() - startPos));
@@ -438,11 +521,11 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		replayEnts[i].h_ent = ent = newEnt->edict();
 		ent->v.flags |= FL_CUSTOMENTITY;
 		ent->v.effects |= EF_NODRAW;
-		SET_MODEL(ent, "sprites/error.spr");
+		SET_MODEL(ent, NOT_PRECACHED_MODEL);
 	}
 	else if (!(fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT)) == 0) {
 		unordered_map<string, string> keys;
-		keys["model"] = "sprites/error.spr";
+		keys["model"] = NOT_PRECACHED_MODEL;
 
 		CBaseEntity* newEnt = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, NULL, keys);
 
@@ -466,7 +549,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 bool DemoPlayer::createReplayEntities(int count) {
 	while (count >= replayEnts.size()) {
 		unordered_map<string, string> keys;
-		keys["model"] = "sprites/error.spr";
+		keys["model"] = NOT_PRECACHED_MODEL;
 
 		CBaseEntity* ent = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, NULL, keys);
 		ent->pev->solid = SOLID_NOT;
@@ -574,7 +657,7 @@ edict_t* DemoPlayer::getReplayEntity(int idx) {
 }
 
 bool DemoPlayer::simulate(DemoFrame& header) {
-	int errorSprIdx = g_engfuncs.pfnModelIndex("sprites/error.spr");
+	int errorSprIdx = g_engfuncs.pfnModelIndex(NOT_PRECACHED_MODEL);
 
 	for (int i = 1; i < MAX_EDICTS; i++) {
 		if (!fileedicts[i].edflags) {
@@ -645,21 +728,23 @@ string DemoPlayer::getReplayModel(uint16_t modelIdx) {
 			unknownSpam.insert(modelIdx);
 		}
 
-		return "sprites/error.spr";
+		return NOT_PRECACHED_MODEL;
 	}
 }
 
-void DemoPlayer::convReplayEntIdx(uint16_t& eidx) {
-	if (eidx >= replayEnts.size()) {
-		println("Invalid replay ent idx %d", (int)eidx);
-		eidx = 0;
+void DemoPlayer::convReplayEntIdx(byte* dat, int offset) {
+	uint16_t* eidx = (uint16_t*)(dat + offset);
+	if (*eidx >= replayEnts.size()) {
+		//println("Invalid replay ent idx %d", (int)eidx);
+		*eidx = 0;
 		return;
 	}
-	eidx = ENTINDEX(replayEnts[eidx].h_ent.GetEdict());
+	*eidx = ENTINDEX(replayEnts[*eidx].h_ent.GetEdict());
 }
 
-void DemoPlayer::convReplayModelIdx(uint16_t& modelIdx) {
-	modelIdx = g_engfuncs.pfnModelIndex(getReplayModel(modelIdx).c_str());
+void DemoPlayer::convReplayModelIdx(byte* dat, int offset) {
+	uint16_t* modelIdx = (uint16_t*)(dat + offset);
+	*modelIdx = g_engfuncs.pfnModelIndex(getReplayModel(*modelIdx).c_str());
 }
 
 void DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
@@ -679,11 +764,13 @@ void DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 	soundIdx = g_SoundCache[path];
 }
 
-bool DemoPlayer::readPlayerDeltas(mstream& reader) {
+bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
 	uint32_t startOffset = reader.tell();
 
 	uint32_t includedPlayers = 0;
 	reader.read(&includedPlayers, 4);
+
+	if (validate) validate->playerDeltaBits = includedPlayers;
 
 	int numPlayerDeltas = 0;
 	for (int i = 0; i < gpGlobals->maxClients; i++) {
@@ -694,7 +781,7 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader) {
 		uint32_t deltas = fileplayerinfos[i].readDeltas(reader);
 		numPlayerDeltas++;
 
-		if (i+1 < replayEnts.size()) {
+		if (!validate && i+1 < replayEnts.size()) {
 			edict_t* bot = replayEnts[i+1].h_ent.GetEdict();
 			if (!bot || (bot->v.flags & FL_FAKECLIENT) == 0) {
 				continue;
@@ -746,7 +833,165 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		return false;
 	}
 
+	const int BYTEsz = 1;
+	const int CHARsz = 1;
+	const int ANGLsz = 1;
+	const int EIDXsz = 2;
+	const int SHORTsz = 2;
+	const int LONGsz = 4;
+
+#ifdef HLCOOP_BUILD
+	const int COORDsz = 2;
+#else
+	const int COORDsz = 4; // sven coords are 4 bytes for larger maps
+#endif
+
+	// TODO: use sz consts and get rid of this ifdef
+
+#ifdef HLCOOP_BUILD
 	static uint8_t expectedSzLookup[TE_USERTRACER+1] = {
+		25, // TE_BEAMPOINTS
+		9, // TE_BEAMENTPOINT
+		10, // TE_GUNSHOT
+		12, // TE_EXPLOSION
+		7, // TE_TAREXPLOSION
+		11, // TE_SMOKE
+		13, // TE_TRACER
+		18, // TE_LIGHTNING
+		17, // TE_BEAMENTS
+		7, // TE_SPARKS
+		7, // TE_LAVASPLASH
+		7, // TE_TELEPORT
+		9, // TE_EXPLOSION2
+		0, // TE_BSPDECAL (13 or 11!!!)
+		10, // TE_IMPLOSION
+		20, // TE_SPRITETRAIL
+		0, // unused index
+		11, // TE_SPRITE
+		17, // TE_BEAMSPRITE
+		25, // TE_BEAMTORUS
+		25, // TE_BEAMDISK
+		25, // TE_BEAMCYLINDER
+		11, // TE_BEAMFOLLOW
+		12, // TE_GLOWSPRITE
+		17, // TE_BEAMRING
+		20, // TE_STREAK_SPLASH
+		0, // unused index
+		13, // TE_DLIGHT
+		17, // TE_ELIGHT
+		0, // TE_TEXTMESSAGE (depends on text/effect)
+		18, // TE_LINE
+		18, // TE_BOX
+
+		// unused indexes
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+
+		3, // TE_KILLBEAM
+		11, // TE_LARGEFUNNEL
+		15, // TE_BLOODSTREAM
+		13, // TE_SHOWLINE
+		15, // TE_BLOOD
+		10, // TE_DECAL
+		6, // TE_FIZZ
+		18, // TE_MODEL
+		14, // TE_EXPLODEMODEL
+		25, // TE_BREAKMODEL
+		10, // TE_GUNSHOTDECAL
+		18, // TE_SPRITE_SPRAY
+		8, // TE_ARMOR_RICOCHET
+		11, // TE_PLAYERDECAL
+		20, // TE_BUBBLES
+		20, // TE_BUBBLETRAIL
+		13, // TE_BLOODSPRITE
+		8, // TE_WORLDDECAL
+		8, // TE_WORLDDECALHIGH
+		10, // TE_DECALHIGH
+		17, // TE_PROJECTILE
+		19, // TE_SPRAY
+		7, // TE_PLAYERSPRITES
+		11, // TE_PARTICLEBURST
+		14, // TE_FIREFIELD
+		8, // TE_PLAYERATTACHMENT
+		2, // TE_KILLPLAYERATTACHMENTS
+		19, // TE_MULTIGUNSHOT
+		16 // TE_USERTRACER		
+	};
+
+	static uint8_t entIndexOffset[TE_USERTRACER + 1] = {
+		25, // TE_BEAMPOINTS
+		9, // TE_BEAMENTPOINT
+		10, // TE_GUNSHOT
+		12, // TE_EXPLOSION
+		7, // TE_TAREXPLOSION
+		11, // TE_SMOKE
+		13, // TE_TRACER
+		18, // TE_LIGHTNING
+		17, // TE_BEAMENTS
+		7, // TE_SPARKS
+		7, // TE_LAVASPLASH
+		7, // TE_TELEPORT
+		9, // TE_EXPLOSION2
+		0, // TE_BSPDECAL (13 or 11!!!)
+		10, // TE_IMPLOSION
+		20, // TE_SPRITETRAIL
+		0, // unused index
+		11, // TE_SPRITE
+		17, // TE_BEAMSPRITE
+		25, // TE_BEAMTORUS
+		25, // TE_BEAMDISK
+		25, // TE_BEAMCYLINDER
+		11, // TE_BEAMFOLLOW
+		12, // TE_GLOWSPRITE
+		17, // TE_BEAMRING
+		20, // TE_STREAK_SPLASH
+		0, // unused index
+		13, // TE_DLIGHT
+		17, // TE_ELIGHT
+		0, // TE_TEXTMESSAGE (depends on text/effect)
+		18, // TE_LINE
+		18, // TE_BOX
+
+		// unused indexes
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+
+		3, // TE_KILLBEAM
+		11, // TE_LARGEFUNNEL
+		15, // TE_BLOODSTREAM
+		13, // TE_SHOWLINE
+		15, // TE_BLOOD
+		10, // TE_DECAL
+		6, // TE_FIZZ
+		18, // TE_MODEL
+		14, // TE_EXPLODEMODEL
+		25, // TE_BREAKMODEL
+		10, // TE_GUNSHOTDECAL
+		18, // TE_SPRITE_SPRAY
+		8, // TE_ARMOR_RICOCHET
+		11, // TE_PLAYERDECAL
+		20, // TE_BUBBLES
+		20, // TE_BUBBLETRAIL
+		13, // TE_BLOODSPRITE
+		8, // TE_WORLDDECAL
+		8, // TE_WORLDDECALHIGH
+		10, // TE_DECALHIGH
+		17, // TE_PROJECTILE
+		19, // TE_SPRAY
+		7, // TE_PLAYERSPRITES
+		11, // TE_PARTICLEBURST
+		14, // TE_FIREFIELD
+		8, // TE_PLAYERATTACHMENT
+		2, // TE_KILLPLAYERATTACHMENTS
+		19, // TE_MULTIGUNSHOT
+		16 // TE_USERTRACER		
+	};
+#else
+	static uint8_t expectedSzLookup[TE_USERTRACER + 1] = {
 		37, // TE_BEAMPOINTS
 		27, // TE_BEAMENTPOINT
 		13, // TE_GUNSHOT
@@ -815,12 +1060,17 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 		2, // TE_KILLPLAYERATTACHMENTS
 		35, // TE_MULTIGUNSHOT
 		31 // TE_USERTRACER		
-	};
+};
+#endif
 
 	int expectedSz = expectedSzLookup[type];
 
 	if (type == TE_BSPDECAL) {
+#ifdef HLCOOP_BUILD
+		expectedSz = args16[7] ? 13 : 11;
+#else
 		expectedSz = args16[7] ? 19 : 17;
+#endif
 	}
 	if (type != TE_TEXTMESSAGE && msg.sz != expectedSz) {
 		println("Bad size for %s (%d): %d != %d", te_names[type], (int)type, (int)msg.sz, expectedSz);
@@ -837,43 +1087,42 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_SPRITE_SPRAY:
 	case TE_SPRAY:
 	case TE_PROJECTILE:
-		convReplayModelIdx(args16[12]);
+		convReplayModelIdx(args, COORDsz*6);
 		//args16[12] = g_engfuncs.pfnModelIndex("sprites/laserbeam.spr");
 		break;
 	case TE_BEAMENTPOINT:
-		convReplayEntIdx(args16[0]);
-		convReplayModelIdx(args16[7]);
+		convReplayEntIdx(args, 0);
+		convReplayModelIdx(args, EIDXsz + COORDsz*3);
 		break;
 	case TE_KILLBEAM:
-		convReplayEntIdx(args16[0]);
+		convReplayEntIdx(args, 0);
 		break;
 	case TE_BEAMENTS:
 	case TE_BEAMRING:
-		convReplayEntIdx(args16[0]);
-		convReplayEntIdx(args16[1]);
-		convReplayModelIdx(args16[2]);
+		convReplayEntIdx(args, 0);
+		convReplayEntIdx(args, EIDXsz);
+		convReplayModelIdx(args, EIDXsz*2);
 		break;
 	case TE_LIGHTNING: {
-		uint16_t& arg = *(uint16_t*)(args + 27);
-		convReplayModelIdx(arg);
+		convReplayModelIdx(args, COORDsz*6 + BYTEsz*3);
 		break;
 	}
 	case TE_BEAMSPRITE:
-		convReplayModelIdx(args16[12]);
-		convReplayModelIdx(args16[13]);
+		convReplayModelIdx(args, COORDsz*6);
+		convReplayModelIdx(args, COORDsz*6 + SHORTsz);
 		break;
 	case TE_BEAMFOLLOW:
 	case TE_FIZZ:
-		convReplayEntIdx(args16[0]);
-		convReplayModelIdx(args16[1]);
+		convReplayEntIdx(args, 0);
+		convReplayModelIdx(args, EIDXsz);
 		break;
 	case TE_PLAYERSPRITES: {
-		convReplayEntIdx(args16[0]);
+		convReplayEntIdx(args, 0);
 		edict_t* plr = INDEXENT(args16[0]);
 		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			args16[0] = 1; // prevent fatal error
 		}
-		convReplayModelIdx(args16[1]);
+		convReplayModelIdx(args, EIDXsz);
 		break;
 	}
 	case TE_EXPLOSION:
@@ -881,13 +1130,12 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_SPRITE:
 	case TE_GLOWSPRITE:
 	case TE_LARGEFUNNEL:
-		convReplayModelIdx(args16[6]);
+		convReplayModelIdx(args, COORDsz*3);
 		break;
 	case TE_PLAYERATTACHMENT: {
 		uint16_t entIdx = args[0];
-		uint16_t& modelIdx = *(uint16_t*)(args + 5);
-		convReplayEntIdx(entIdx);
-		convReplayModelIdx(modelIdx);
+		convReplayEntIdx((byte*)&entIdx, 0);
+		convReplayModelIdx(args, BYTEsz + COORDsz);
 		edict_t* plr = INDEXENT(entIdx);
 		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			entIdx = 1; // prevent fatal error
@@ -898,7 +1146,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	case TE_KILLPLAYERATTACHMENTS:
 	case TE_PLAYERDECAL: {
 		uint16_t entIdx = args[0];
-		convReplayEntIdx(entIdx);
+		convReplayEntIdx((byte*)&entIdx, 0);
 		edict_t* plr = INDEXENT(entIdx);
 		if (!plr || !(plr->v.flags & FL_CLIENT)) {
 			entIdx = 1; // prevent fatal error
@@ -908,42 +1156,37 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg) {
 	}
 	case TE_BUBBLETRAIL:
 	case TE_BUBBLES:
-		convReplayModelIdx(args16[14]);
+		convReplayModelIdx(args, COORDsz*7);
 		break;
 	case TE_BLOODSPRITE:
-		convReplayModelIdx(args16[6]);
-		convReplayModelIdx(args16[7]);
+		convReplayModelIdx(args, COORDsz*3);
+		convReplayModelIdx(args, COORDsz*3 + SHORTsz);
 		break;
 	case TE_FIREFIELD:
-		convReplayModelIdx(args16[7]);
+		convReplayModelIdx(args, COORDsz*3 + SHORTsz);
 		break;
 	case TE_EXPLODEMODEL:
-		convReplayModelIdx(args16[8]);
+		convReplayModelIdx(args, COORDsz*4);
 		break;
-	case TE_MODEL: {
-		uint16_t& modelIdx = *(uint16_t*)(args + 25);
-		convReplayModelIdx(modelIdx);
+	case TE_MODEL:
+		convReplayModelIdx(args, COORDsz*6 + ANGLsz);
 		break;
-	}
-	case TE_BREAKMODEL: {
-		uint16_t& modelIdx = *(uint16_t*)(args + 37);
-		convReplayModelIdx(modelIdx);
+	case TE_BREAKMODEL:
+		convReplayModelIdx(args, COORDsz*9 + BYTEsz);
 		break;
-	}
 	case TE_DECAL:
 	case TE_GUNSHOTDECAL:
 	case TE_DECALHIGH:
-	{
-		uint16_t& modelIdx = *(uint16_t*)(args + 13);
-		convReplayModelIdx(modelIdx);
+		convReplayModelIdx(args, COORDsz*3 + BYTEsz);
 		break;
-	}
-	case TE_BSPDECAL:
-		if (args16[7]) { // not world entity?
-			convReplayEntIdx(args16[7]);
+	case TE_BSPDECAL: {
+		uint16_t* entIdx = (uint16_t*)(args + COORDsz * 3 + SHORTsz);
+		if (*entIdx) { // not world entity?
+			convReplayEntIdx(args, COORDsz*3 + SHORTsz);
 			//convReplayModelIdx(args16[5]); // (BSP model idx in demo should always match the game)
 		}
 		break;
+	}
 	default:
 		break;
 	}
@@ -1001,12 +1244,16 @@ bool DemoPlayer::processDemoNetMessage(NetMessageData& msg) {
 	}
 #endif
 	default:
-		println("Unhandled netmsg %d", (int)msg.header.type);
+		//println("Unhandled netmsg %d", (int)msg.header.type);
 		return false;
 	}
 }
 
 void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
+	if (!g_compressMessages) {
+		return;
+	}
+
 	switch (msg.header.type) {
 	case SVC_TEMPENTITY: {
 		uint8_t type = msg.data[0];
@@ -1153,11 +1400,26 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 	}
 }
 
-bool DemoPlayer::readNetworkMessages(mstream& reader) {
+void DemoPlayer::validateFrame(DemoDataStream& reader, DemoDataTest* results) {
+	uint32_t startOffset = reader.tell();
+
+	replayData = &reader;
+	isValidating = true;
+
+	readDemoFrame(results);
+
+	reader.seek(startOffset);
+	replayData = NULL;
+	isValidating = false;
+}
+
+bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 	uint32_t startOffset = reader.tell();
 
 	uint16_t numMessages;
 	reader.read(&numMessages, 2);
+
+	if (validate) validate->msgCount = numMessages;
 
 	if (numMessages > MAX_NETMSG_FRAME) {
 		println("Invalid net msg count %d", (int)numMessages);
@@ -1169,6 +1431,10 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 	for (int i = 0; i < numMessages; i++) {
 		reader.read(&msg.header, sizeof(DemoNetMessage));
 		msg.sz = (msg.header.szHighBit << 8) | msg.header.sz;
+
+		if (validate && msg.header.type == SVC_BAD) {
+			ALERT(at_console, "Read SVC_BAD at offset %d\n", i);
+		}
 
 		if (msg.header.hasOrigin) {
 			int sz = msg.header.hasLongOrigin ? 3 : 2;
@@ -1188,16 +1454,17 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 		}
 		reader.read(msg.data, msg.sz);
 
-		if (msg.eidx >= replayEnts.size()) {
-			println("Invalid msg ent %d", (int)msg.eidx);
+		if ((msg.eidx >= replayEnts.size() && !validate) || (validate && msg.eidx > MAX_EDICTS)) {
+			println("Invalid msg ent %d for %s", (int)msg.eidx, msgTypeStr(msg.header.type));
+			if (validate) return false;
 			continue;
 		}
 
-		if (msg.header.hasEdict && replayEnts[msg.eidx].h_ent.GetEdict() && !(replayEnts[msg.eidx].h_ent.GetEdict()->v.flags & FL_CLIENT)) {
+		if (!validate && msg.header.hasEdict && replayEnts[msg.eidx].h_ent.GetEdict() && !(replayEnts[msg.eidx].h_ent.GetEdict()->v.flags & FL_CLIENT)) {
 			continue; // target is not a player (bots disabled probably)
 		}
 
-		edict_t* ent = msg.header.hasEdict ? replayEnts[msg.eidx].h_ent.GetEdict() : NULL;
+		edict_t* ent = msg.header.hasEdict && !validate ? replayEnts[msg.eidx].h_ent.GetEdict() : NULL;
 		if (msg.eidx == netmsgPlrIdx) {
 			// redirect to game player
 			msg.eidx = 1;
@@ -1210,7 +1477,9 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 			continue;
 		}
 
-		msg.send(msg.header.dest, ent);
+		if (!validate) {
+			msg.send(msg.header.dest, ent);
+		}
 	}
 
 	g_stats.msgCurrentSz = reader.tell() - startOffset;
@@ -1219,11 +1488,13 @@ bool DemoPlayer::readNetworkMessages(mstream& reader) {
 	return true;
 }
 
-bool DemoPlayer::readEvents(mstream& reader) {
+bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 	uint32_t startOffset = reader.tell();
 
 	uint8_t numEvents;
 	reader.read(&numEvents, 1);
+
+	if (validate) validate->evtCount = numEvents;
 
 	if (numEvents > MAX_EVENT_FRAME) {
 		println("Invalid net msg count %d", (int)numEvents);
@@ -1271,23 +1542,32 @@ bool DemoPlayer::readEvents(mstream& reader) {
 		}
 
 		uint16_t eidx = ev.header.entindex;
-		convReplayEntIdx(eidx);
-		if (eidx >= replayEnts.size()) {
-			println("Invalid event edict %d", (int)ev.header.entindex);
-			continue;
+		if (validate) {
+			if (eidx > MAX_EDICTS) {
+				println("Invalid event edict %d", (int)ev.header.entindex);
+				return false;
+			}
 		}
-		edict_t* ent = INDEXENT(eidx);
+		else { // play the event
+			convReplayEntIdx((byte*)&eidx, 0);
+			if (eidx >= replayEnts.size()) {
+				println("Invalid event edict %d", (int)ev.header.entindex);
+				continue;
+			}
+			edict_t* ent = INDEXENT(eidx);
 
-		/*
-		println("PLAY EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d",
-			(int)ev.header.flags, eidx, (int)ev.header.eventindex, 0.0f,
-			origin[0], origin[1], origin[2], angles[0], angles[1], angles[2],
-			fparam1, fparam2, (int)ev.iparam1, (int)ev.iparam2,
-			(int)ev.header.bparam1, (int)ev.header.bparam2);
-		*/
+			/*
+			println("PLAY EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d",
+				(int)ev.header.flags, eidx, (int)ev.header.eventindex, 0.0f,
+				origin[0], origin[1], origin[2], angles[0], angles[1], angles[2],
+				fparam1, fparam2, (int)ev.iparam1, (int)ev.iparam2,
+				(int)ev.header.bparam1, (int)ev.header.bparam2);
+			*/
 
-		g_engfuncs.pfnPlaybackEvent(ev.header.flags, ent, ev.header.eventindex, 0.0f, origin, angles,
-			fparam1, fparam2, ev.iparam1, ev.iparam2, ev.header.bparam1, ev.header.bparam2);
+			g_engfuncs.pfnPlaybackEvent(ev.header.flags, ent, ev.header.eventindex, 0.0f, origin, angles,
+				fparam1, fparam2, ev.iparam1, ev.iparam2, ev.header.bparam1, ev.header.bparam2);
+		}
+		
 	}
 
 	g_stats.eventCurrentSz = reader.tell() - startOffset;
@@ -1296,11 +1576,13 @@ bool DemoPlayer::readEvents(mstream& reader) {
 	return true;
 }
 
-bool DemoPlayer::readClientCommands(mstream& reader) {
+bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate) {
 	uint32_t startOffset = reader.tell();
 
 	uint8_t numCommands;
 	reader.read(&numCommands, 1);
+
+	if (validate) validate->cmdCount = numCommands;
 
 	static char commandChars[MAX_CMD_LENGTH + 1];
 
@@ -1318,10 +1600,12 @@ bool DemoPlayer::readClientCommands(mstream& reader) {
 
 		if (cmd.idx > demoHeader.maxPlayers) {
 			println("Invalid command player %d / %d", (int)cmd.idx, (int)demoHeader.maxPlayers);
+			if (validate) return false;
 			continue;
 		}
 		if (cmd.idx == 0) {
-			println("[SvenTV][Cmd][Server] %s", commandChars);
+			if (!validate)
+				println("[SvenTV][Cmd][Server] %s", commandChars);
 			continue;
 		}
 
@@ -1340,7 +1624,9 @@ bool DemoPlayer::readClientCommands(mstream& reader) {
 			legacySteamId = UTIL_VarArgs("STEAM_0:%u:%u", accountIdLowBit, accountIdHighBits);
 		}
 
-		println("[SvenTV][Cmd][%s][%s] %s", legacySteamId, plr.name, commandChars);
+		if (!validate) {
+			println("[SvenTV][Cmd][%s][%s] %s", legacySteamId, plr.name, commandChars);
+		}
 	}
 
 	g_stats.cmdCurrentSz = reader.tell() - startOffset;
@@ -1349,13 +1635,16 @@ bool DemoPlayer::readClientCommands(mstream& reader) {
 	return true;
 }
 
-bool DemoPlayer::readDemoFrame() {
+bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	uint32_t t = (getEpochMillis() - replayStartTime) * replaySpeed;
 
-	fseek(replayFile, nextFrameOffset, SEEK_SET);
+	if (!validate)
+		replayData->seek(nextFrameOffset);
+
+	if (validate) validate->success = false;
 
 	DemoFrame header;
-	if (!fread(&header, sizeof(DemoFrame), 1, replayFile)) {
+	if (!replayData->read(&header, sizeof(DemoFrame))) {
 		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
@@ -1364,21 +1653,26 @@ bool DemoPlayer::readDemoFrame() {
 	uint32_t frameSize = 0;
 	uint32_t headerSz = sizeof(DemoFrame);
 	if (header.isGiantFrame) {
-		fread(&demoTime, sizeof(uint32_t), 1, replayFile);
-		fread(&frameSize, sizeof(uint32_t), 1, replayFile);
+		replayData->read(&demoTime, sizeof(uint32_t));
+		replayData->read(&frameSize, sizeof(uint32_t));
 		headerSz += 8;
 	}
 	else if (header.isBigFrame) {
-		fread(&demoTime, sizeof(uint8_t), 1, replayFile);
-		fread(&frameSize, sizeof(uint16_t), 1, replayFile);
+		replayData->read(&demoTime, sizeof(uint8_t));
+		replayData->read(&frameSize, sizeof(uint16_t));
 		demoTime = lastFrameDemoTime + demoTime;
 		headerSz += 3;
 	}
 	else {
-		fread(&demoTime, sizeof(uint8_t), 1, replayFile);
-		fread(&frameSize, sizeof(uint8_t), 1, replayFile);
+		replayData->read(&demoTime, sizeof(uint8_t));
+		replayData->read(&frameSize, sizeof(uint8_t));
 		demoTime = lastFrameDemoTime + demoTime;
 		headerSz += 2;
+	}
+
+	if (validate) {
+		memcpy(&validate->header, &header, sizeof(DemoFrame));
+		validate->demoTime = demoTime;
 	}
 
 	frameProgress = 1.0f;
@@ -1386,7 +1680,7 @@ bool DemoPlayer::readDemoFrame() {
 		frameProgress = 1.0f - ((demoTime - t) / (float)(demoTime - lastFrameDemoTime));
 	}
 
-	if (demoTime > t) {
+	if (demoTime > t && !validate) {
 		//println("Wait %u > %u", header.demoTime, t);
 		interpolateEdicts();
 		return false;
@@ -1406,6 +1700,7 @@ bool DemoPlayer::readDemoFrame() {
 
 	if (frameSize == 0) {
 		g_stats.incTotals();
+		if (validate) validate->success = true;
 		return true; // nothing changed
 	}
 
@@ -1418,7 +1713,7 @@ bool DemoPlayer::readDemoFrame() {
 	*/
 
 	char* frameData = new char[frameSize];
-	if (!fread(frameData, frameSize, 1, replayFile)) {
+	if (!replayData->read(frameData, frameSize)) {
 		delete[] frameData;
 		UTIL_ClientPrintAll(HUD_PRINTTALK, "[SvenTV] Unexpected EOF\n");
 		closeReplayFile();
@@ -1439,28 +1734,28 @@ bool DemoPlayer::readDemoFrame() {
 		fileedicts[i].deltaBitsLast = 0;
 	}
 
-	if (header.hasEntityDeltas && (!readEntDeltas(reader))) {
+	if (header.hasEntityDeltas && (!readEntDeltas(reader, validate))) {
 		delete[] frameData;
 		return false;
 	}
 
-	if (header.hasPlayerDeltas && !readPlayerDeltas(reader)) {
+	if (header.hasPlayerDeltas && !readPlayerDeltas(reader, validate)) {
 		delete[] frameData;
 		return false;
 	}
-	if (header.hasNetworkMessages && !readNetworkMessages(reader)) {
+	if (header.hasNetworkMessages && !readNetworkMessages(reader, validate)) {
 		delete[] frameData;
 		return false;
 	}
-	if (header.hasEvents && !readEvents(reader)) {
+	if (header.hasEvents && !readEvents(reader, validate)) {
 		delete[] frameData;
 		return false;
 	}
-	if (header.hasCommands && !readClientCommands(reader)) {
+	if (header.hasCommands && !readClientCommands(reader, validate)) {
 		delete[] frameData;
 		return false;
 	}
-	if (!simulate(header)) {
+	if (!validate && !simulate(header)) {
 		delete[] frameData;
 		return false;
 	}
@@ -1471,6 +1766,8 @@ bool DemoPlayer::readDemoFrame() {
 
 	memcpy(&lastReplayFrame, &header, sizeof(DemoFrame));
 	delete[] frameData;
+
+	if (validate) validate->success = true;
 
 	return true;
 }
@@ -1678,7 +1975,7 @@ void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 }
 
 void DemoPlayer::playDemo() {
-	if (!replayFile) {
+	if (!replayData) {
 		return;
 	}
 

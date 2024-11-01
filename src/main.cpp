@@ -28,6 +28,8 @@ plugin_info_t Plugin_info = {
 vector<string> g_SoundCacheFiles; // maps index to sound path
 unordered_map<string, int> g_SoundCache; // maps sound path to index
 
+bool g_compressMessages = false;
+
 #define DEFAULT_HOOK_RETURN return HOOK_CONTINUE
 
 bool cgetline(FILE* file, string& output) {
@@ -46,7 +48,7 @@ bool cgetline(FILE* file, string& output) {
 #endif
 
 volatile bool g_plugin_exiting = false;
-const bool singleThreadMode = false;
+const bool singleThreadMode = true;
 
 SvenTV* g_sventv = NULL;
 DemoPlayer* g_demoPlayer = NULL;
@@ -61,6 +63,7 @@ uint32_t g_server_frame_count = 0;
 int g_copyTime = 0;
 volatile int g_thinkTime = 0;
 bool g_should_write_next_message = false;
+bool g_pause_message_logging = false;
 
 // maps indexes to model names, for all models that were used so far in this map
 map<int, string> g_indexToModel;
@@ -69,7 +72,7 @@ set<string> g_playerModels; // all player model names used during the game
 cvar_t* g_auto_demo_file;
 cvar_t* g_demo_file_path;
 
-const char* stateFilePath = "svencoop/addons/metamod/store/sventv.txt";
+const char* stateFilePath = "valve/plugins/server/hltv/state.txt";
 
 DemoStats g_stats;
 bool demoStatPlayers[33] = { false };
@@ -276,16 +279,28 @@ HOOK_RET_VOID StartFrameHook() {
 		g_sventv->enableDemoFile = true;
 	}
 
-	for (int i = 1; i <= gpGlobals->maxClients; i++) {
-		edict_t* ent = INDEXENT(i);
-		if (demoStatPlayers[i]) {
-			g_stats.showStats(ent);
+	static float lastStats = 0;
+
+	if (gpGlobals->time - lastStats >= 0.05f || lastStats > gpGlobals->time) {
+		lastStats = gpGlobals->time;
+
+		for (int i = 1; i <= gpGlobals->maxClients; i++) {
+			edict_t* ent = INDEXENT(i);
+			if (demoStatPlayers[i]) {
+				g_pause_message_logging = true;
+				g_stats.showStats(ent);
+				g_pause_message_logging = false;
+			}
 		}
 	}
 
 	g_demoPlayer->playDemo();
 
 	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
+		if (singleThreadMode) {
+			g_sventv->think_mainThread();
+		}
+
 		DEFAULT_HOOK_RETURN;
 	}
 
@@ -372,7 +387,7 @@ HOOK_RET_VOID ClientJoin(edict_t* ent)
 
 HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
 	//println("NET MESG: %d", msg_type);
-	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
+	if ((!g_sventv->enableDemoFile && !g_sventv->enableServer) || g_pause_message_logging) {
 		g_should_write_next_message = false;
 
 		DEFAULT_HOOK_RETURN;
@@ -416,6 +431,8 @@ HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edi
 
 HOOK_RET_VOID MessageEnd() {
 	if (g_should_write_next_message) {
+		NetMessageData& msg = g_netmessages[g_netmessage_count];
+
 		g_netmessage_count++;
 
 		if (g_netmessage_count >= MAX_NETMSG_FRAME) {
@@ -462,11 +479,20 @@ HOOK_RET_VOID WriteChar(int c) {
 
 HOOK_RET_VOID WriteCoord(float coord) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	if (msg.sz + sizeof(float) < MAX_NETMSG_DATA) {
+
+#ifdef HLCOOP_BUILD
+	if (msg.sz + sizeof(int16_t) < MAX_NETMSG_DATA) {
+		int16_t arg = coord * 8;
+		memcpy(msg.data + msg.sz, &arg, sizeof(int16_t));
+		msg.sz += sizeof(int16_t);
+	}
+#else
+	if (msg.sz + sizeof(int32_t) < MAX_NETMSG_DATA) {
 		int32_t arg = coord * 8;
 		memcpy(msg.data + msg.sz, &arg, sizeof(int32_t));
 		msg.sz += sizeof(int32_t);
 	}
+#endif
 	
 	DEFAULT_HOOK_RETURN;
 }
@@ -703,6 +729,10 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 	DEFAULT_HOOK_RETURN;
 }
 
+void demo_command() {
+	g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
+}
+
 #ifdef HLCOOP_BUILD
 HLCOOP_PLUGIN_HOOKS g_hooks;
 
@@ -734,12 +764,14 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnSetModelPost = SetModel_post;
 	g_hooks.pfnPrecacheModelPost = PrecacheModel_post;
 
+	RegisterPluginCommand(plugin, "demo", demo_command);
+
 	const char* stringPoolStart = gpGlobals->pStringBase;
 
 #ifdef HLCOOP_BUILD
 	// start writing demo file automatically when map starts, if 1
 	g_auto_demo_file = RegisterPluginCVar(plugin, "hltv.autodemofile", "0", 0, 0);
-	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.demofilepath", "HLTV/demos/", 0, 0);
+	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.demofilepath", "hltv/", 0, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 
