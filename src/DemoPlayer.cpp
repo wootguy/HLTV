@@ -189,7 +189,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 
 		precacheModels = splitString(string(modelData, demoHeader.modelLen), "\n");
 
-		for (int i = 0; i < precacheModels.size(); i++) {
+		for (int i = 0; i < (int)precacheModels.size(); i++) {
 			replayModelPath[modelIndexes[i]] = precacheModels[i];
 			//println("Replay model %d: %s", replayIdx, precacheModels[i].c_str());
 		}
@@ -214,7 +214,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 
 		precacheSounds = splitString(string(soundData, demoHeader.soundLen), "\n");
 
-		for (int i = 0; i < precacheSounds.size(); i++) {
+		for (int i = 0; i < (int)precacheSounds.size(); i++) {
 			replaySoundPath[soundIndexes[i]] = precacheSounds[i];
 		}
 
@@ -268,6 +268,8 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		g_engfuncs.pfnServerCommand(UTIL_VarArgs("changelevel %s\n", mapname.c_str()));
 		g_engfuncs.pfnServerExecute();
 	}
+
+	return true;
 }
 
 void DemoPlayer::prepareDemo() {
@@ -327,10 +329,10 @@ void DemoPlayer::precacheDemo() {
 		return;
 	}
 
-	for (int i = 0; i < precacheModels.size(); i++) {
+	for (int i = 0; i < (int)precacheModels.size(); i++) {
 		PRECACHE_MODEL(precacheModels[i].c_str());
 	}
-	for (int i = 0; i < precacheSounds.size(); i++) {
+	for (int i = 0; i < (int)precacheSounds.size(); i++) {
 		PRECACHE_SOUND_NULLENT(precacheSounds[i].c_str());
 	}
 }
@@ -362,7 +364,7 @@ void DemoPlayer::closeReplayFile() {
 		UTIL_StopGlobalMp3();
 	}
 
-	for (int i = 0; i < replayEnts.size(); i++) {
+	for (int i = 0; i < (int)replayEnts.size(); i++) {
 		edict_t* ent = replayEnts[i].h_ent.GetEdict();
 		if (!ent) {
 			continue;
@@ -597,7 +599,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 }
 
 bool DemoPlayer::createReplayEntities(int count) {
-	while (count >= replayEnts.size()) {
+	while (count >= (int)replayEnts.size()) {
 		unordered_map<string, string> keys;
 		keys["model"] = NOT_PRECACHED_MODEL;
 
@@ -609,7 +611,7 @@ bool DemoPlayer::createReplayEntities(int count) {
 
 		if (!ent) {
 			println("Entity overflow at %d\n", (int)replayEnts.size());
-			for (int i = 0; i < replayEnts.size(); i++) {
+			for (int i = 0; i < (int)replayEnts.size(); i++) {
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 			}
 			closeReplayFile();
@@ -697,7 +699,7 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 }
 
 edict_t* DemoPlayer::getReplayEntity(int idx) {
-	if (idx < replayEnts.size()) {
+	if (idx < (int)replayEnts.size()) {
 		return replayEnts[idx].h_ent.GetEdict();
 	}
 	return NULL;
@@ -708,7 +710,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 
 	for (int i = 1; i < MAX_EDICTS; i++) {
 		if (!fileedicts[i].edflags) {
-			if (i < replayEnts.size()) {
+			if (i < (int)replayEnts.size()) {
 				replayEnts[i].h_ent.GetEdict()->v.effects |= EF_NODRAW;
 			}
 			continue;
@@ -729,9 +731,6 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 		setupInterpolation(ent, i);
 
 		if (oldModelIdx != ent->v.modelindex) {
-			if (i == 529) {
-				ALERT(at_console, "checkem\n");
-			}
 			string newModel = getReplayModel(ent->v.modelindex);
 			bool isSprite = newModel.find(".spr") != string::npos;
 
@@ -778,7 +777,7 @@ string DemoPlayer::getReplayModel(uint16_t modelIdx) {
 
 void DemoPlayer::convReplayEntIdx(byte* dat, int offset, int dataSz) {
 	if (offset >= dataSz) {
-		ALERT(at_console, "Tried to write past end of message\n");
+		ALERT(at_console, "Tried to write past end of message\n", 0);
 		return;
 	}
 
@@ -797,7 +796,7 @@ void DemoPlayer::convReplayEntIdx(byte* dat, int offset, int dataSz) {
 
 void DemoPlayer::convReplayModelIdx(byte* dat, int offset, int dataSz) {
 	if (offset >= dataSz) {
-		ALERT(at_console, "Tried to write past end of message\n");
+		ALERT(at_console, "Tried to write past end of message\n", 0);
 		return;
 	}
 
@@ -833,7 +832,7 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
 		uint32_t deltas = fileplayerinfos[i].readDeltas(reader);
 		numPlayerDeltas++;
 
-		if (!validate && i+1 < replayEnts.size()) {
+		if (!validate && i+1 < (int)replayEnts.size()) {
 			edict_t* bot = replayEnts[i+1].h_ent.GetEdict();
 			if (!bot || (bot->v.flags & FL_FAKECLIENT) == 0) {
 				continue;
@@ -878,7 +877,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* val
 
 	byte* args = msg.data + 1;
 	uint16_t* args16 = (uint16_t*)args;
-	float* fargs = (float*)args;
+	//float* fargs = (float*)args;
 	int dataSz = msg.sz - 1;
 
 	if (type > TE_USERTRACER) {
@@ -887,11 +886,11 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* val
 	}
 
 	const int BYTEsz = 1;
-	const int CHARsz = 1;
+	//const int CHARsz = 1;
 	const int ANGLsz = 1;
 	const int EIDXsz = 2;
 	const int SHORTsz = 2;
-	const int LONGsz = 4;
+	//const int LONGsz = 4;
 
 #ifdef HLCOOP_BUILD
 	const int COORDsz = 2;
@@ -1551,7 +1550,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 						continue;
 					}
 
-					if (spec->m_hObserverTarget.GetEdict() == ent || !spec->IsObserver() && msg.eidx == 1) {
+					if (spec->m_hObserverTarget.GetEdict() == ent || (!spec->IsObserver() && msg.eidx == 1)) {
 						msg.send(msg.header.dest, spec->edict());
 					}
 				}
@@ -1575,11 +1574,6 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 	reader.read(&numEvents, 1);
 
 	if (validate) validate->evtCount = numEvents;
-
-	if (numEvents > MAX_EVENT_FRAME) {
-		println("Invalid net msg count %d", (int)numEvents);
-		return false;
-	}
 
 	for (int i = 0; i < numEvents; i++) {
 		DemoEventData ev;
@@ -1883,7 +1877,7 @@ void DemoPlayer::interpolateEdicts() {
 	float dt = TimeDifference(lastTime, now);
 	lastTime = now;
 
-	for (int i = 0; i < replayEnts.size(); i++) {
+	for (int i = 0; i < (int)replayEnts.size(); i++) {
 		if (!fileedicts[i].edflags) {
 			continue;
 		}
@@ -1970,7 +1964,7 @@ void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 	float& gaityaw = ent->v.fuser4;
 	float& yaw = ent->v.angles.y;
 
-	float dtScale = 1.0f / dt;
+	//float dtScale = 1.0f / dt;
 	const float PI = 3.1415f;
 
 	// gait calculations from the HLSDK
@@ -1995,7 +1989,6 @@ void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 	else
 	{
 		// moving. rotate legs towards movement direction
-		Vector doot = gaitspeed.Normalize();
 		gaityaw = (atan2(gaitspeed.y, gaitspeed.x) * 180 / PI);
 		if (gaityaw > 180)
 			gaityaw = 180;

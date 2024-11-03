@@ -34,8 +34,8 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 
 	MESSAGE_END();
 
-	const char* oriStr = header.hasOrigin ? UTIL_VarArgs("Vector(%f %f %f)", forigin[0], forigin[1], forigin[2]) : "NULL";
-	const char* entStr = targetEnt ? STRING(targetEnt->v.netname) : "NULL";
+	//const char* oriStr = header.hasOrigin ? UTIL_VarArgs("Vector(%f %f %f)", forigin[0], forigin[1], forigin[2]) : "NULL";
+	//const char* entStr = targetEnt ? STRING(targetEnt->v.netname) : "NULL";
 	//println("SEND(%s, %s, %s, %d);", msgDestStr(msg_dest), msgTypeStr(header.type), 
 	//	oriStr, targetEnt ? ENTINDEX(targetEnt) : 0);
 }

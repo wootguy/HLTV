@@ -201,8 +201,8 @@ struct FrameData {
 	CommandData* cmds;
 	DemoEventData* events;
 
-	int netmessage_count = 0;
-	int cmds_count = 0;
-	int event_count = 0;
+	uint32_t netmessage_count = 0;
+	uint32_t cmds_count = 0;
+	uint32_t event_count = 0;
 	uint32_t serverFrameCount = 0;
 };

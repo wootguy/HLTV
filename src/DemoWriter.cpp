@@ -72,7 +72,7 @@ void DemoWriter::initDemoFile() {
 	uint64_t now = getEpochMillis();
 
 	DemoHeader header;
-	strncpy(header.mapname, STRING(gpGlobals->mapname), 64);
+	strcpy_safe(header.mapname, STRING(gpGlobals->mapname), 64);
 	header.maxPlayers = gpGlobals->maxClients;
 	header.startTime = now;
 	header.endTime = 0; // will indicate server crash if stays 0
@@ -362,9 +362,8 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 
 mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 	mstream msgbuffer(netmessagesBuffer, netmessagesBufferSize);
-	for (int i = 0; i < frame.netmessage_count; i++) {
+	for (int i = 0; i < (int)frame.netmessage_count; i++) {
 		NetMessageData& dat = frame.netmessages[i];
-		uint16_t oldSz = dat.sz;
 
 		if (testData) {
 			if (!dat.header.hasOrigin) {
@@ -385,7 +384,7 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 		}
 
 		if (dat.header.type == SVC_BAD)
-			ALERT(at_console, "Wrote SVC_BAD!!\n");
+			ALERT(at_console, "Wrote SVC_BAD!!\n", 0);
 
 		msgbuffer.write(&dat.header, sizeof(DemoNetMessage));
 
@@ -415,7 +414,7 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 
 mstream DemoWriter::writeCmdDeltas(FrameData& frame) {
 	mstream cmdbuffer(cmdsBuffer, cmdsBufferSize);
-	for (int i = 0; i < frame.cmds_count; i++) {
+	for (int i = 0; i < (int)frame.cmds_count; i++) {
 		CommandData& dat = frame.cmds[i];
 		DemoCommand cmd;
 
@@ -433,7 +432,7 @@ mstream DemoWriter::writeCmdDeltas(FrameData& frame) {
 
 mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 	mstream evbuffer(eventsBuffer, eventsBufferSize);
-	for (int i = 0; i < frame.event_count; i++) {
+	for (int i = 0; i < (int)frame.event_count; i++) {
 		DemoEventData& dat = frame.events[i];
 		evbuffer.write(&dat.header, sizeof(DemoEvent));
 
@@ -472,7 +471,6 @@ mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 
 void initAmbientSounds() {
 	edict_t* ent = NULL;
-	edict_t* forEnt = ENT(0);
 
 	while (!FNullEnt(ent = FIND_ENTITY_BY_CLASSNAME(ent, "ambient_generic"))) {
 		CAmbientGeneric* ambient = (CAmbientGeneric*)GET_PRIVATE(ent);
@@ -699,7 +697,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		bool valid = testData->success;
 
 		if (memcmp(&testData->header, &header, sizeof(DemoFrame))) {
-			ALERT(at_console, "Read unexpected demo header!\n");
+			ALERT(at_console, "Read unexpected demo header!\n", 0);
 		}
 
 		ASSERT_FRAME("demo time delta", testData->demoTime, expectedDemoTime);
@@ -743,7 +741,6 @@ void DemoWriter::closeDemoFile() {
 	}
 	println("Close demo file");
 
-	uint64_t endTime = getEpochMillis();
 	fseek(demoFile, offsetof(DemoHeader, endTime), SEEK_SET);
 	fwrite(&lastDemoFrameTime, sizeof(uint64_t), 1, demoFile);
 

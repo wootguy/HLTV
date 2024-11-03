@@ -119,7 +119,7 @@ void SvenTV::think_mainThread() {
 				dplr.button = 0;
 			}
 
-			int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
+			//int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);
 
 			g_copyTime = getEpochMillis() - startMillis;
@@ -138,7 +138,7 @@ void SvenTV::handleDeltaAck(mstream& reader, NetClient& client) {
 	reader.read(&updateId, 2);
 
 	int deltaIdx = -1;
-	for (int i = 0; i < client.sentDeltas.size(); i++) {
+	for (int i = 0; i < (int)client.sentDeltas.size(); i++) {
 		if (client.sentDeltas[i].updateId == updateId) {
 			deltaIdx = i;
 			break;
@@ -157,8 +157,7 @@ void SvenTV::handleDeltaAck(mstream& reader, NetClient& client) {
 		return;
 	}
 
-	int packetIdx = 0;
-	for (int i = 0; i < update.packets.size(); i++) {
+	for (int i = 0; i < (int)update.packets.size(); i++) {
 		int bit = reader.readBit();
 		if (bit == -1) {
 			println("Failed to read ack, invalid number of bits sent");
@@ -226,7 +225,7 @@ void SvenTV::handleClientPackets() {
 				const char* mapName = STRING(gpGlobals->mapname);
 				int welcomDatSz = 1 + strlen(mapName);
 				static char welcomeDat[64];
-				welcomeDat[0] = SVC_WELCOME;
+				welcomeDat[0] = (char)SVC_WELCOME;
 				memcpy(welcomeDat + 1, mapName, welcomDatSz);
 
 				socket->send(Packet(packet.addr, welcomeDat, welcomDatSz));
@@ -261,7 +260,7 @@ void SvenTV::broadcastEntityStates() {
 
 	int clientCount = 0;
 
-	const int maxPacketSz = 508; // 508 = max size before fragmentation is possible
+	//const int maxPacketSz = 508; // 508 = max size before fragmentation is possible
 
 	mstream buffer(deltaPacketBuffer, deltaPacketBufferSz);
 
@@ -352,7 +351,7 @@ void SvenTV::broadcastEntityStates() {
 			}
 			else {
 				// delta written
-				int writeSz = (int)(buffer.tell() - startOffset);
+				//int writeSz = (int)(buffer.tell() - startOffset);
 				offset = 1;
 				totalEnts++;
 				if (debugMode) {
@@ -382,7 +381,7 @@ void SvenTV::broadcastEntityStates() {
 
 			memcpy(debugEdict, clients[k].baselines, MAX_EDICTS * sizeof(netedict));
 
-			for (int i = 0; i < deltaPackets.size(); i++) {
+			for (int i = 0; i < (int)deltaPackets.size(); i++) {
 				Packet& deltaPacket = deltaPackets[i];
 				debugEnt = clients[k].applyDeltaToBaseline(deltaPacket, debugMode);
 				if (debugEnt != -1) {
@@ -419,7 +418,7 @@ void SvenTV::broadcastEntityStates() {
 		
 		int totalSz = 0;
 		int numPackets = deltaPackets.size();
-		for (int i = 0; i < deltaPackets.size(); i++) {
+		for (int i = 0; i < (int)deltaPackets.size(); i++) {
 			Packet& deltaPacket = deltaPackets[i];
 			if (!debugMode)
 				socket->send(deltaPacket);		

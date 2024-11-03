@@ -161,7 +161,7 @@ void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
 	vector<string> parts = splitString(infobuffer, "\\");
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(pEntity) - 1];
 
-	for (int i = 1; i < parts.size() - 1; i += 2) {
+	for (int i = 1; i < (int)parts.size() - 1; i += 2) {
 		string key = parts[i];
 		string value = parts[i + 1];
 
@@ -384,8 +384,6 @@ HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edi
 
 HOOK_RET_VOID MessageEnd() {
 	if (g_should_write_next_message) {
-		NetMessageData& msg = g_netmessages[g_netmessage_count];
-
 		g_netmessage_count++;
 
 		if (g_netmessage_count >= MAX_NETMSG_FRAME) {
@@ -401,7 +399,7 @@ HOOK_RET_VOID WriteAngle(float angle) {
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	if (g_should_write_next_message && msg.sz + sizeof(byte) < MAX_NETMSG_DATA) {
 		byte dat = (int64)(fmod((double)angle, 360.0) * 256.0 / 360.0) & 0xFF;
-		memcpy(msg.data + msg.sz, &angle, sizeof(byte));
+		memcpy(msg.data + msg.sz, &dat, sizeof(byte));
 		msg.sz += sizeof(byte);
 	}
 	
@@ -587,7 +585,6 @@ HOOK_RET_VOID ClientCommand(edict_t* pEntity)
 
 	if (g_sventv->enableDemoFile || g_sventv->enableServer) {
 		string lowerArg0 = toLowerCase(CMD_ARGV(0));
-		bool isConsoleCmd = lowerArg0 != "say" && lowerArg0 != "say_team";
 		string cmd = CMD_ARGC() > 1 ? CMD_ARGS() : "";
 		cmd = CMD_ARGV(0) + string(" ") + cmd;
 
@@ -753,7 +750,6 @@ HOOK_RET_VOID EMIT_AMBIENT_SOUND_HOOK(edict_t* entity, const float* pos, const c
 }
 
 HOOK_RET_VOID GetWeaponData(edict_t* player, weapon_data_t* info) {	
-	entvars_t* pev = &player->v;
 	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(player);
 
 	if (!g_demoPlayer || !g_demoPlayer->isPlaying() || !pl)
@@ -811,8 +807,6 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	
 	RegisterPluginCommand(plugin, "demo", demo_command);
 	RegisterPluginCommand(plugin, "replay", replay_command);
-
-	const char* stringPoolStart = gpGlobals->pStringBase;
 
 #ifdef HLCOOP_BUILD
 	// start writing demo file automatically when map starts, if 1

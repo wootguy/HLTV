@@ -38,7 +38,7 @@ using namespace std;
 		uint8_t len; \
 		reader.read(&len, 1); \
 		if (len >= sizeof(field)) { \
-			println("Invalid " ###field " length %d", (int)len); \
+			println("Invalid " #field " length %d", (int)len); \
 			len = sizeof(field)-1; \
 		} \
 		reader.read(strBuffer, len); \

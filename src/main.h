@@ -16,7 +16,7 @@
 #define HOOK_RET_STR HOOK_RETURN_DATA
 #define HOOK_RET_VOID HOOK_RETURN_DATA
 
-#if defined(__GNUC__) || defined (_MSC_VER) && _MSC_VER >= 1400
+#if defined (_MSC_VER) && _MSC_VER >= 1400
 #define snprintf	_snprintf
 #define vsnprintf	_vsnprintf
 #define unlink		_unlink
@@ -24,9 +24,9 @@
 #define strdup		_strdup
 #define strcasecmp	_stricmp
 #define strncasecmp	_strnicmp
+#endif
 
 #define MAX_EDICTS (gpGlobals->maxEntities)
-#endif
 
 #else
 #include "mmlib.h"
