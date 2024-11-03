@@ -2,6 +2,8 @@
 #include "DemoWriter.h"
 #include "DemoPlayer.h"
 #include "CAmbientGeneric.h"
+#include "lzma.h"
+#include "SvenTV.h"
 
 using namespace std;
 
@@ -40,21 +42,67 @@ DemoWriter::~DemoWriter() {
 	delete[] netmessagesBuffer;
 	delete[] cmdsBuffer;
 	delete[] eventsBuffer;
+
+	if (compress_thread) {
+		ALERT(at_console, "Waiting for demo compression to finish...\n");
+		compress_thread->join();
+		delete compress_thread;
+	}
 }
 
 void DemoWriter::initDemoFile() {
-	time_t rawtime;
-	struct tm* timeinfo;
-	char buffer[80];
+	bool autoMode = g_auto_demo_file->value;
 
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
+	fpath = "";
+	std::string rootPath = g_demo_file_path->string;
 
-	strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H-%M-%S", timeinfo);
-	std::string fname(buffer);
-	//fname = fname + "_" + STRING(gpGlobals->mapname) + ".demo";
-	fname = string(STRING(gpGlobals->mapname)) + ".demo";
-	string fpath = g_demo_file_path->string + fname;
+	if (!folderExists(rootPath)) {
+		createFolder(rootPath);
+		if (!folderExists(rootPath)) {
+			ALERT(at_error, "Failed to create demo folder: %s\n", rootPath.c_str());
+			return;
+		}
+	}
+
+	if (autoMode) {
+		uint64_t bytesLeft = getFreeSpace(rootPath);
+		uint32_t megaBytesLeft = (uint32_t)(bytesLeft / (1024ULL * 1024ULL));
+
+		if (megaBytesLeft < g_min_storage_megabytes->value) {
+			ALERT(at_error, "Not enough disk space to begin recording (%u < %d)\n",
+				megaBytesLeft, (int)g_min_storage_megabytes->value);
+			g_can_autostart_demo = false;
+			return;
+		}
+
+		time_t rawtime;
+		struct tm* timeinfo;
+		char bufferday[80];
+
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
+		strftime(bufferday, sizeof(bufferday), "%Y-%m-%d", timeinfo);
+		
+		std::string dayPath = rootPath + std::string(bufferday) + "/";
+		if (!folderExists(dayPath)) {
+			createFolder(dayPath);
+			if (!folderExists(dayPath)) {
+				ALERT(at_error, "Failed to create demo folder: %s\n", dayPath.c_str());
+				return;
+			}
+		}
+
+		int suffix = 2;
+		fpath = dayPath + STRING(gpGlobals->mapname) + ".demo";
+
+		while (fileExists(fpath.c_str()) || fileExists((fpath + ".xz").c_str())) {
+			fpath = dayPath + STRING(gpGlobals->mapname) + "__" + to_string(suffix++) + ".demo";
+		}
+	}
+	else {
+		fpath = rootPath + string(STRING(gpGlobals->mapname)) + ".demo";
+	}
+
 	println("Open demo file: %s", fpath.c_str());
 
 	demoFile = fopen(fpath.c_str(), "wb+");
@@ -533,6 +581,15 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		return false;
 	}
 
+	if (ftell(demoFile)> g_max_demo_megabytes->value * 1024*1024) {
+		ALERT(at_error, "Max demo file size exceeded (%.2f MB)!\n", (float)(g_max_demo_megabytes->value*1024*1024));
+		g_can_autostart_demo = false;
+		if (g_sventv)
+			g_sventv->enableDemoFile = false;
+		closeDemoFile();
+		return false;
+	}
+
 	if (!shouldWriteDemoFrame()) {
 		return false;
 	}
@@ -735,6 +792,16 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	return true;
 }
 
+void DemoWriter::compressDemo(std::string inPath, std::string outPath) {
+	if (lzmaCompress(fpath, fpath + ".xz", 9)) {
+		remove(fpath.c_str());
+		ALERT(at_console, "Compressed %s\n", outPath.c_str());
+	}
+	else {
+		ALERT(at_error, "Failed to compress %s\n", inPath.c_str());
+	}
+}
+
 void DemoWriter::closeDemoFile() {
 	if (!demoFile) {
 		return;
@@ -743,9 +810,17 @@ void DemoWriter::closeDemoFile() {
 
 	fseek(demoFile, offsetof(DemoHeader, endTime), SEEK_SET);
 	fwrite(&lastDemoFrameTime, sizeof(uint64_t), 1, demoFile);
-
 	fclose(demoFile);
 	demoFile = NULL;
+
+	if (g_compress_demos->value) {
+		if (compress_thread) {
+			ALERT(at_console, "Waiting for previous compression to finish...\n");
+			compress_thread->join();
+			delete compress_thread;
+		}
+		compress_thread = new thread(&DemoWriter::compressDemo, this, fpath, fpath + ".xz");
+	}
 }
 
 bool DemoWriter::isFileOpen() {

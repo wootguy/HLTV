@@ -62,9 +62,16 @@ extern DemoPlayer* g_demoPlayer;
 
 extern cvar_t* g_auto_demo_file;
 extern cvar_t* g_demo_file_path;
+extern cvar_t* g_min_storage_megabytes;
+extern cvar_t* g_max_demo_megabytes;
+extern cvar_t* g_compress_demos;
 
 extern int g_copyTime;
 extern volatile int g_thinkTime;
+extern bool g_can_autostart_demo;
+
+class SvenTV;
+extern SvenTV* g_sventv;
 
 extern DemoStats g_stats;
 

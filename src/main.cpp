@@ -61,12 +61,17 @@ int g_copyTime = 0;
 volatile int g_thinkTime = 0;
 bool g_should_write_next_message = false;
 bool g_pause_message_logging = false;
+bool g_can_autostart_demo = true;
+
 
 // maps indexes to model names, for all models that were used so far in this map
 set<string> g_playerModels; // all player model names used during the game
 
 cvar_t* g_auto_demo_file;
+cvar_t* g_min_storage_megabytes; // minimum megabytes left on storage for demos to start recording
+cvar_t* g_max_demo_megabytes; // max size of a demo before aborting
 cvar_t* g_demo_file_path;
+cvar_t* g_compress_demos; // compress demos with lzma after writing
 
 DemoStats g_stats;
 bool demoStatPlayers[33] = { false };
@@ -140,6 +145,7 @@ HOOK_RET_VOID MapInitHook(edict_t * pEdictList, int edictCount, int maxClients)
 	g_demoPlayer->precacheDemo();
 	memset(demoStatPlayers, 0, sizeof(demoStatPlayers));
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
+	g_can_autostart_demo = true;
 	
 	DEFAULT_HOOK_RETURN;
 }
@@ -225,7 +231,7 @@ HOOK_RET_VOID StartFrameHook() {
 		DEFAULT_HOOK_RETURN;
 	}
 
-	if (!g_sventv->enableDemoFile && g_auto_demo_file->value > 0 && gpGlobals->time > 1.0f) {
+	if (!g_sventv->enableDemoFile && g_auto_demo_file->value > 0 && gpGlobals->time > 1.0f && g_can_autostart_demo) {
 		g_sventv->enableDemoFile = true;
 	}
 
@@ -536,6 +542,8 @@ bool doCommand(edict_t* plr) {
 	}
 	if (args.ArgC() > 0 && lowerArg == ".demo") {
 		g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
+		if (!g_sventv->enableDemoFile)
+			g_can_autostart_demo = false;
 		return true;
 	}
 	if (args.ArgC() > 0 && lowerArg == ".demostats") {
@@ -617,6 +625,10 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 	float* origin, float* angles, float fparam1, float fparam2,
 	int iparam1, int iparam2, int bparam1, int bparam2) {
 	
+	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
+		DEFAULT_HOOK_RETURN;
+	}
+
 	if (pInvoker && ENTINDEX(pInvoker) <= gpGlobals->maxClients && eventindex == EVT_GAUSS_CHARGE) {
 		GaussChargeEvt& lastEvent = lastGaussCharge[ENTINDEX(pInvoker)];
 		float dtime = gpGlobals->time - lastEvent.time;
@@ -684,6 +696,8 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 
 void demo_command() {
 	g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
+	if (!g_sventv->enableDemoFile)
+		g_can_autostart_demo = false;
 }
 
 void replay_command() {
@@ -810,8 +824,11 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 
 #ifdef HLCOOP_BUILD
 	// start writing demo file automatically when map starts, if 1
-	g_auto_demo_file = RegisterPluginCVar(plugin, "hltv.autodemofile", "0", 0, 0);
-	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.demofilepath", "hltv/", 0, 0);
+	g_auto_demo_file = RegisterPluginCVar(plugin, "hltv.auto_demo", "0", 0, 0);
+	g_min_storage_megabytes = RegisterPluginCVar(plugin, "hltv.min_storage_mb", "500", 500, 0);
+	g_max_demo_megabytes = RegisterPluginCVar(plugin, "hltv.max_demo_mb", "100", 100, 0);
+	g_compress_demos = RegisterPluginCVar(plugin, "hltv.compress", "1", 1, 0);
+	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.path", "hltv/", 0, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 

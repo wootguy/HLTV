@@ -7,6 +7,7 @@ struct DemoDataTest;
 class DemoWriter {
 public:
 	int showStats = 0;
+	std::string fpath;
 
 	DemoWriter();
 	~DemoWriter();
@@ -24,7 +25,10 @@ public:
 
 	bool validateEdicts(); // debug
 
+	void compressDemo(std::string inPath, std::string outPath);
+
 private:
+	std::thread* compress_thread = NULL;
 	void compressNetMessage(FrameData& frame, NetMessageData& msg);
 
 	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, DemoDataTest* testData);
