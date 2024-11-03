@@ -1209,7 +1209,7 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		convReplayEntIdx((uint8_t*)&ient, 0, 2);
 		uint16_t old_sound_num = bitbuffer.readBits((field_mask & SND_FL_LARGE_INDEX) ? 16 : 8); // sound index
 		uint16_t sound_num = old_sound_num;
-		if (!validate && !convReplaySoundIdx(sound_num)) {
+		if (!validate && !(field_mask & SND_SENTENCE) && !convReplaySoundIdx(sound_num)) {
 			return -1;
 		}
 		if (sound_num > 255) {
@@ -1232,6 +1232,8 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		bitbuffer.writeBitVec3Coord(origin);
 		if (field_mask & SND_FL_PITCH)
 			bitbuffer.writeBits(pitch, 8);
+		msg.sz = bitbuffer.tell() + 1;
+
 		return 1;
 	}
 	case SVC_SPAWNSTATICSOUND: {
@@ -1545,11 +1547,13 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 				 // send individual messages to anyone who is observing this player
 				for (int i = 1; i < gpGlobals->maxClients; i++) {
 					CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
-					if (!spec || (spec->pev->flags & FL_FAKECLIENT) || spec->m_hObserverTarget.GetEdict() != ent) {
+					if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
 						continue;
 					}
 
-					msg.send(msg.header.dest, spec->edict());
+					if (spec->m_hObserverTarget.GetEdict() == ent || !spec->IsObserver() && msg.eidx == 1) {
+						msg.send(msg.header.dest, spec->edict());
+					}
 				}
 			}
 			else {

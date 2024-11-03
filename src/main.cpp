@@ -493,8 +493,8 @@ HOOK_RET_VOID WriteString(const char* s) {
 	DEFAULT_HOOK_RETURN;
 }
 
-void begin_replay(std::string path, int offsetSeconds) {
-	g_demoPlayer->openDemo(NULL, path, offsetSeconds, true);
+void begin_replay(edict_t* ed, std::string path, int offsetSeconds) {
+	g_demoPlayer->openDemo(ed, path, offsetSeconds, true);
 }
 
 void replay_demo(edict_t* plr) {
@@ -511,7 +511,7 @@ void replay_demo(edict_t* plr) {
 
 	static ScheduledFunction sched;
 	g_Scheduler.RemoveTimer(sched);
-	sched = g_Scheduler.SetTimeout(begin_replay, 0.5f, path, offsetSeconds);
+	sched = g_Scheduler.SetTimeout(begin_replay, 0.5f, plr, path, offsetSeconds);
 	
 	g_sventv->enableDemoFile = false;
 }
