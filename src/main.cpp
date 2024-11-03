@@ -172,12 +172,10 @@ void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
 			plr.bottomColor = atoi(value.c_str());
 		}
 		else if (key == "model") {
-			strncpy(plr.model, value.c_str(), 22);
-			plr.model[22] = 0;
+			strcpy_safe(plr.model, value.c_str(), 23);
 		}
 		else if (key == "name") {
-			strncpy(plr.name, value.c_str(), 31);
-			plr.name[31] = 0;
+			strcpy_safe(plr.name, value.c_str(), 32);
 			g_playerModels.insert(value);
 		}
 	}
@@ -223,6 +221,10 @@ HOOK_RET_VOID StartFrameHook() {
 
 	g_server_frame_count++;
 
+	if (!g_sventv) {
+		DEFAULT_HOOK_RETURN;
+	}
+
 	if (!g_sventv->enableDemoFile && g_auto_demo_file->value > 0 && gpGlobals->time > 1.0f) {
 		g_sventv->enableDemoFile = true;
 	}
@@ -242,7 +244,8 @@ HOOK_RET_VOID StartFrameHook() {
 		}
 	}
 
-	g_demoPlayer->playDemo();
+	if (g_demoPlayer)
+		g_demoPlayer->playDemo();
 
 	if (!g_sventv->enableDemoFile && !g_sventv->enableServer) {
 		if (singleThreadMode) {
@@ -335,7 +338,7 @@ HOOK_RET_VOID ClientJoin(edict_t* ent)
 
 HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
 	//println("NET MESG: %d", msg_type);
-	if ((!g_sventv->enableDemoFile && !g_sventv->enableServer) || g_pause_message_logging) {
+	if (!g_sventv || (!g_sventv->enableDemoFile && !g_sventv->enableServer) || g_pause_message_logging) {
 		g_should_write_next_message = false;
 
 		DEFAULT_HOOK_RETURN;
@@ -749,6 +752,31 @@ HOOK_RET_VOID EMIT_AMBIENT_SOUND_HOOK(edict_t* entity, const float* pos, const c
 	DEFAULT_HOOK_RETURN;
 }
 
+HOOK_RET_VOID GetWeaponData(edict_t* player, weapon_data_t* info) {	
+	entvars_t* pev = &player->v;
+	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(player);
+
+	if (!g_demoPlayer || !g_demoPlayer->isPlaying() || !pl)
+		return HOOK_CONTINUE;
+
+	int ret = g_demoPlayer->GetWeaponData(player, info);
+
+	if (ret == -1) {
+		return HOOK_CONTINUE;
+	}
+	else {
+		return HOOK_HANDLED_OVERRIDE(ret);
+	}
+}
+
+HOOK_RET_VOID UpdateClientDataPost(const edict_t* ent, int sendweapons, clientdata_t* cd) {
+	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(ent);
+	
+	if (g_demoPlayer && g_demoPlayer->isPlaying() && pl)
+		g_demoPlayer->OverrideClientData(ent, sendweapons, cd);
+	return HOOK_CONTINUE;
+}
+
 #ifdef HLCOOP_BUILD
 HLCOOP_PLUGIN_HOOKS g_hooks;
 
@@ -778,7 +806,9 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnPlaybackEvent = PlaybackEvent;
 	g_hooks.pfnEmitSound = EMIT_SOUND_HOOK;
 	g_hooks.pfnEmitAmbientSound = EMIT_AMBIENT_SOUND_HOOK;
-
+	g_hooks.pfnGetWeaponData = GetWeaponData;
+	g_hooks.pfnUpdateClientDataPost = UpdateClientDataPost;
+	
 	RegisterPluginCommand(plugin, "demo", demo_command);
 	RegisterPluginCommand(plugin, "replay", replay_command);
 
@@ -819,8 +849,6 @@ extern "C" void DLLEXPORT PluginExit() {
 	delete[] g_netmessages;
 	delete[] g_cmds;
 	delete[] g_events;
-
-	println("Plugin exit finish");
 }
 #else
 

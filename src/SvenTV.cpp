@@ -42,12 +42,6 @@ SvenTV::SvenTV(bool singleThreadMode) {
 SvenTV::~SvenTV() {
 	threadShouldExit = true;
 
-	if (tv_thread) {
-		tv_thread->join();
-		delete tv_thread;
-		delete[] edicts;
-	}
-
 	delete demoWriter;
 
 	for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -57,9 +51,15 @@ SvenTV::~SvenTV() {
 	delete[] deltaPacketBuffer;
 	delete[] frame.netedicts;
 	delete[] debugEdict;
-	delete[] frame.playerinfos;
-	delete[] frame.netmessages;
-	delete[] frame.cmds;
+
+	if (!singleThreadMode) {
+		tv_thread->join();
+		delete tv_thread;
+		delete[] edicts;
+		delete[] frame.playerinfos;
+		delete[] frame.netmessages;
+		delete[] frame.cmds;
+	}
 }
 
 void SvenTV::think_mainThread() {
@@ -481,8 +481,9 @@ void SvenTV::think_tvThread() {
 			for (int i = 1; i <= gpGlobals->maxClients; i++) {
 				DemoPlayerEnt& dplr = frame.playerinfos[i - 1];
 				edict_t* ent = INDEXENT(i);
+				CBasePlayer* plr = UTIL_PlayerByIndex(i);
 
-				if (!IsValidPlayer(ent)) {
+				if (!IsValidPlayer(ent) || !plr) {
 					continue;
 				}
 
@@ -496,7 +497,41 @@ void SvenTV::think_tvThread() {
 				dplr.weaponmodel = g_engfuncs.pfnModelIndex(STRING(ent->v.weaponmodel));
 				dplr.weaponanim = ent->v.weaponanim;
 				dplr.view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
-				dplr.observer = ((uint8_t)ent->v.iuser2 << 6) | ((ent->v.iuser1 & 0x3) << 1) | (ent->v.deadflag != DEAD_NO);
+				dplr.observer = ((uint8_t)ent->v.iuser2 << 3) | (ent->v.iuser1 & 0x7);
+
+				CBasePlayerWeapon* wep = plr->m_pActiveItem ? plr->m_pActiveItem->GetWeaponPtr() : NULL;
+
+				if (wep) {
+					int ammoidx = wep->PrimaryAmmoIndex();
+					int ammoidx2 = wep->SecondaryAmmoIndex();
+
+					dplr.weaponId = wep->m_iId;
+					dplr.clip = wep->m_iClip;
+					dplr.clip2 = 0;
+					dplr.ammo = ammoidx != -1 ? plr->m_rgAmmo[ammoidx] : 0;
+					dplr.ammo2 = ammoidx2 != -1 ? plr->m_rgAmmo[ammoidx2] : 0;
+					dplr.chargeReady = wep->m_chargeReady;
+					dplr.inAttack = (int)wep->m_fInAttack;
+					dplr.inReload = (int)wep->m_fInReload;
+					dplr.inReloadSpecial = (int)wep->m_fInSpecialReload;
+					dplr.fireState = (int)wep->m_fireState;
+				}
+				else {
+					dplr.weaponId = 0;
+					dplr.clip = 0;
+					dplr.clip2 = 0;
+					dplr.ammo = 0;
+					dplr.ammo2 = 0;
+					dplr.chargeReady = 0;
+					dplr.inAttack = 0;
+					dplr.inReload = 0;
+					dplr.inReloadSpecial = 0;
+					dplr.fireState = 0;
+				}
+
+				if (ent->v.iuser1 == 0 && ent->v.deadflag != DEAD_NO) {
+					dplr.observer |= 7; // 7 isn't a spectator mode, so changing this to mean "dead"
+				}
 				
 				// not thread safe
 				char* info = g_engfuncs.pfnGetInfoKeyBuffer(ent);

@@ -119,12 +119,18 @@ public:
 
 	void stopReplay();
 
+	bool isPlaying();
+
 	// clears existing map entities for playback
 	void prepareDemo();
 
 	edict_t* getReplayEntity(int idx);
 
 	void validateFrame(DemoDataStream& reader, DemoDataTest* results);
+
+	int GetWeaponData(edict_t* player, weapon_data_t* info);
+
+	void OverrideClientData(const edict_t* ent, int sendweapons, clientdata_t* cd);
 
 private:
 	// vars for replaying a demo file

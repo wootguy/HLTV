@@ -14,10 +14,10 @@
 #define FL_DELTA_FLAGS			(1 << 1)
 #define FL_DELTA_BUTTON			(1 << 2)
 #define FL_DELTA_PING			(1 << 3)
-#define FL_DELTA_CLIP			(1 << 4)
-#define FL_DELTA_PUNCHANGLE_X	(1 << 5)
-#define FL_DELTA_PUNCHANGLE_Y	(1 << 6)
-#define FL_DELTA_PUNCHANGLE_Z	(1 << 7)
+#define FL_DELTA_PUNCHANGLE_X	(1 << 4)
+#define FL_DELTA_PUNCHANGLE_Y	(1 << 5)
+#define FL_DELTA_PUNCHANGLE_Z	(1 << 6)
+#define FL_DELTA_WEAPONDELTA	(1 << 7)
 
 #define FL_DELTA_NAME			(1 << 8)
 #define FL_DELTA_MODEL			(1 << 9)
@@ -30,12 +30,16 @@
 #define FL_DELTA_VIEWOFS		(1 << 16)
 #define FL_DELTA_FRAGS			(1 << 17)
 #define FL_DELTA_FOV			(1 << 18)
-#define FL_DELTA_CLIP2			(1 << 19)
-#define FL_DELTA_AMMO			(1 << 20)
-#define FL_DELTA_AMMO2			(1 << 21)
-#define FL_DELTA_OBSERVER		(1 << 22)
+#define FL_DELTA_OBSERVER		(1 << 19)
 
 #define PLR_DELTA_BYTES 3 // size of a "big" player delta
+
+#define PLR_WEP_ID			(1 << 0)
+#define PLR_WEP_CLIP		(1 << 1)
+#define PLR_WEP_CLIP2		(1 << 2)
+#define PLR_WEP_AMMO		(1 << 3)
+#define PLR_WEP_AMMO2		(1 << 4)
+#define PLR_WEP_STATE		(1 << 5)
 
 // extra info for player entities (combined with netedict data)
 // TODO: weapon bits?
@@ -58,14 +62,33 @@ struct DemoPlayerEnt {
 	int16_t		view_ofs;	// eye position (Z) (12.4 fixed point)
 	uint8_t		fov;
 	uint8_t		weaponanim;
-	uint8_t		observer; // observer mode (upper 2bits), observer target (middle 5bits), and deadflag (LSB)
+	uint8_t		observer; // observer target (upper 5bits, 7 = not spectating + dead), observer mode (lower 3bits)
 
-	// weapon info
+	// bits indicating which weapon data was changed (PLR_WEP_*)
+	uint8_t weaponDeltaFlags;
+
 	uint16_t	clip;
 	uint16_t	clip2;
 	uint16_t	ammo;
 	uint16_t	ammo2;
+	uint8_t		weaponId;
+
+	// misc weapon state
+	uint8_t chargeReady : 2;
+	uint8_t inAttack : 2;
+	uint8_t inReload : 1;
+	uint8_t inReloadSpecial : 1;
+	uint8_t fireState : 1;
 
 	int writeDeltas(mstream& writer, const DemoPlayerEnt& old);
 	uint32_t readDeltas(mstream& reader);
 };
+
+/*
+item->m_flTimeWeaponIdle = -0.001f;
+item->m_flNextPrimaryAttack = -0.001f;
+item->m_flNextSecondaryAttack = -0.001f;
+item->fuser1 = -0.001f;
+item->fuser2 = gun->m_flStartThrow;
+item->fuser3 = gun->m_flReleaseThrow;
+*/

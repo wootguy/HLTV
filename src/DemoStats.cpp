@@ -257,6 +257,7 @@ void DemoStats::showStats(edict_t* edt) {
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_X);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Y);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Z);
+		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_WEAPONDELTA);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_VIEWMODEL);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_WEAPONMODEL);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_WEAPONANIM);
@@ -265,10 +266,6 @@ void DemoStats::showStats(edict_t* edt) {
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_VIEWOFS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FRAGS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FOV);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_CLIP);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_CLIP2);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_AMMO);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_AMMO2);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_OBSERVER);
 
 		uint32_t sum = 0;

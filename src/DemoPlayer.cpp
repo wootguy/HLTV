@@ -1,6 +1,7 @@
 #include "main.h"
 #include "DemoPlayer.h"
 #include "SvenTV.h"
+#include "pm_shared.h"
 
 const char* model_entity = "env_sprite";
 
@@ -342,6 +343,10 @@ void DemoPlayer::stopReplay() {
 	replayEnts.clear();
 }
 
+bool DemoPlayer::isPlaying() {
+	return replayData;
+}
+
 void DemoPlayer::closeReplayFile() {
 	if (isValidating) {
 		return;
@@ -587,6 +592,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		ent->v.flags |= FL_MONSTER;
 	}
 
+	ent->v.iuser4 = i; // hack to store original ent index
 	return ent;
 }
 
@@ -678,9 +684,6 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 					else {
 						println("Invalid studio model: %s", STRING(ent->v.model));
 					}
-				}
-				else {
-					println("Not normal anim");
 				}
 			}
 
@@ -1187,6 +1190,8 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 	case SVC_TEMPENTITY:
 		g_stats.msgSz[256 + msg.data[0]] += msg.sz;
 		return processTempEntityMessage(msg, validate) ? 1 : -1;
+	case SVC_WEAPONANIM:
+		return 1;
 	case SVC_SOUND: {
 		mstream bitbuffer((char*)msg.data, msg.sz);
 		uint16_t field_mask = bitbuffer.readBits(9);
@@ -1492,13 +1497,6 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 			continue; // target is not a player (bots disabled probably)
 		}
 
-		edict_t* ent = msg.header.hasEdict && !validate ? replayEnts[msg.eidx].h_ent.GetEdict() : NULL;
-		if (msg.eidx == netmsgPlrIdx) {
-			// redirect to game player
-			msg.eidx = 1;
-			ent = INDEXENT(1);
-		}
-
 		decompressNetMessage(msg);
 
 		if (validate) {
@@ -1541,7 +1539,22 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 		}
 
 		if (!validate) {
-			msg.send(msg.header.dest, ent);
+			edict_t* ent = msg.header.hasEdict ? replayEnts[msg.eidx].h_ent.GetEdict() : NULL;
+
+			if (CBaseEntity::Instance(ent)->IsPlayer()) {
+				 // send individual messages to anyone who is observing this player
+				for (int i = 1; i < gpGlobals->maxClients; i++) {
+					CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
+					if (!spec || (spec->pev->flags & FL_FAKECLIENT) || spec->m_hObserverTarget.GetEdict() != ent) {
+						continue;
+					}
+
+					msg.send(msg.header.dest, spec->edict());
+				}
+			}
+			else {
+				msg.send(msg.header.dest, ent);
+			}
 		}
 	}
 
@@ -2043,4 +2056,51 @@ void DemoPlayer::playDemo() {
 	}
 
 	while (readDemoFrame());
+}
+
+int DemoPlayer::GetWeaponData(edict_t* player, weapon_data_t* info) {
+	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(player);
+
+	if (pl->pev->iuser1 != OBS_IN_EYE) {
+		// not first-person spectating a replay bot, so give them their own weapon data
+		return -1;
+	}
+
+	memset(info, 0, 32 * sizeof(weapon_data_t));
+
+	int originalEntIdx = pl->m_hObserverTarget.GetEdict()->v.iuser4;
+	DemoPlayerEnt& pinfo = fileplayerinfos[originalEntIdx-1];
+
+	// set up weapon state for spectators
+	weapon_data_t* item = &info[pinfo.weaponId];
+
+	item->m_iId = pinfo.weaponId;
+	item->m_iClip = pinfo.clip;
+
+	item->m_flTimeWeaponIdle = 10;
+	item->m_flNextPrimaryAttack = 10;
+	item->m_flNextSecondaryAttack = 10;
+	item->m_fInReload = pinfo.inReload;
+	item->m_fInSpecialReload = pinfo.inReloadSpecial;
+	item->fuser1 = 10; // V_max( gun->pev->fuser1, -0.001f );
+	item->fuser2 = 10; // gun->m_flStartThrow;
+	item->fuser3 = 10; // gun->m_flReleaseThrow;
+	item->iuser1 = pinfo.chargeReady;
+	item->iuser2 = pinfo.inAttack;
+	item->iuser3 = pinfo.fireState;
+
+	return 1;
+}
+
+void DemoPlayer::OverrideClientData(const edict_t* ent, int sendweapons, clientdata_t* cd) {
+
+	if (ent->v.iuser1 != OBS_IN_EYE) {
+		// not first-person spectating a replay bot, so give them their own weapon data
+		return;
+	}
+
+	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(ent);
+	int originalEntIdx = pl->m_hObserverTarget.GetEdict()->v.iuser4;
+
+	cd->m_iId = fileplayerinfos[originalEntIdx - 1].weaponId;
 }
