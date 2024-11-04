@@ -65,6 +65,7 @@ extern cvar_t* g_demo_file_path;
 extern cvar_t* g_min_storage_megabytes;
 extern cvar_t* g_max_demo_megabytes;
 extern cvar_t* g_compress_demos;
+extern cvar_t* g_validate_output;
 
 extern int g_copyTime;
 extern volatile int g_thinkTime;

@@ -616,7 +616,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	uint16_t numEntDeltas = 0;
 	uint32_t plrDeltaBits = 0;
 
-	bool validateOutput = true;
+	bool validateOutput = g_validate_output->value;
 
 	DemoDataTest* testData = NULL;
 	DemoPlayer* testPlayer = NULL;

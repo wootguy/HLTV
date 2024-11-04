@@ -71,6 +71,7 @@ cvar_t* g_auto_demo_file;
 cvar_t* g_min_storage_megabytes; // minimum megabytes left on storage for demos to start recording
 cvar_t* g_max_demo_megabytes; // max size of a demo before aborting
 cvar_t* g_demo_file_path;
+cvar_t* g_validate_output;
 cvar_t* g_compress_demos; // compress demos with lzma after writing
 
 DemoStats g_stats;
@@ -829,6 +830,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_max_demo_megabytes = RegisterPluginCVar(plugin, "hltv.max_demo_mb", "100", 100, 0);
 	g_compress_demos = RegisterPluginCVar(plugin, "hltv.compress", "1", 1, 0);
 	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.path", "hltv/", 0, 0);
+	g_validate_output = RegisterPluginCVar(plugin, "hltv.validate", "0", 0, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 
