@@ -547,7 +547,7 @@ bool doCommand(edict_t* plr) {
 		return true;
 	}
 	if (args.ArgC() > 0 && lowerArg == ".demostats") {
-		demoStatPlayers[ENTINDEX(plr)] = true;
+		demoStatPlayers[ENTINDEX(plr)] = !demoStatPlayers[ENTINDEX(plr)];
 		return true;
 	}
 	/*

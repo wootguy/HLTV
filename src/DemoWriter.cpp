@@ -60,6 +60,7 @@ void DemoWriter::initDemoFile() {
 		createFolder(rootPath);
 		if (!folderExists(rootPath)) {
 			ALERT(at_error, "Failed to create demo folder: %s\n", rootPath.c_str());
+			g_can_autostart_demo = false;
 			return;
 		}
 	}
@@ -88,6 +89,7 @@ void DemoWriter::initDemoFile() {
 			createFolder(dayPath);
 			if (!folderExists(dayPath)) {
 				ALERT(at_error, "Failed to create demo folder: %s\n", dayPath.c_str());
+				g_can_autostart_demo = false;
 				return;
 			}
 		}
@@ -103,7 +105,7 @@ void DemoWriter::initDemoFile() {
 		fpath = rootPath + string(STRING(gpGlobals->mapname)) + ".demo";
 	}
 
-	println("Open demo file: %s", fpath.c_str());
+	g_engfuncs.pfnServerPrint(UTIL_VarArgs("Open demo file: %s\n", fpath.c_str()));
 
 	demoFile = fopen(fpath.c_str(), "wb+");
 
@@ -795,7 +797,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 void DemoWriter::compressDemo(std::string inPath, std::string outPath) {
 	if (lzmaCompress(fpath, fpath + ".xz", 9)) {
 		remove(fpath.c_str());
-		ALERT(at_console, "Compressed %s\n", outPath.c_str());
+		g_engfuncs.pfnServerPrint(UTIL_VarArgs("Compressed demo file: %s\n", outPath.c_str()));
 	}
 	else {
 		ALERT(at_error, "Failed to compress %s\n", inPath.c_str());
@@ -806,14 +808,15 @@ void DemoWriter::closeDemoFile() {
 	if (!demoFile) {
 		return;
 	}
-	println("Close demo file");
 
 	fseek(demoFile, offsetof(DemoHeader, endTime), SEEK_SET);
 	fwrite(&lastDemoFrameTime, sizeof(uint64_t), 1, demoFile);
 	fclose(demoFile);
 	demoFile = NULL;
 
-	if (g_compress_demos->value) {
+	g_engfuncs.pfnServerPrint(UTIL_VarArgs("Closed demo file: %s\n", fpath.c_str()));
+
+	if (g_auto_demo_file->value && g_compress_demos->value && fileExists(fpath.c_str())) {
 		if (compress_thread) {
 			ALERT(at_console, "Waiting for previous compression to finish...\n");
 			compress_thread->join();
