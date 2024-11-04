@@ -143,7 +143,7 @@ HOOK_RET_VOID MapInitHook(edict_t * pEdictList, int edictCount, int maxClients)
 		g_sventv = new SvenTV(singleThreadMode);
 		g_demoPlayer = new DemoPlayer();
 	}
-	g_demoPlayer->precacheDemo();
+	g_demoPlayer->precacheLastDemo();
 	memset(demoStatPlayers, 0, sizeof(demoStatPlayers));
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 	g_can_autostart_demo = true;

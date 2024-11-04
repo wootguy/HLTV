@@ -140,12 +140,12 @@ void DemoWriter::initDemoFile() {
 	uint16_t soundCount = 0;
 	uint16_t* modelIndexes = new uint16_t[max_indexes];
 	uint16_t* soundIndexes = new uint16_t[max_indexes];
-	for (pair<string, string> item : g_precachedModels) {
-		if (item.second.empty()) {
+	for (const string& item : g_precachedModels) {
+		if (item.empty()) {
 			continue;
 		}
-		modelData += item.second + "\n";
-		modelIndexes[modelCount++] = MODEL_INDEX(item.second.c_str());
+		modelData += item + "\n";
+		modelIndexes[modelCount++] = MODEL_INDEX(item.c_str());
 	}
 
 	string soundData;

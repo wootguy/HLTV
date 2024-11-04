@@ -140,6 +140,8 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	stopReplay();
 	unknownSpam.clear();
 	errorSpam.clear();
+	precacheModels.clear();
+	precacheSounds.clear();
 
 	replayData = new DemoDataStream(fopen(path.c_str(), "rb"));
 
@@ -175,6 +177,9 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		return false;
 	}
 
+	int notPrecachedModels = 0;
+	int notPrecachedSounds = 0;
+
 	if (demoHeader.modelLen) {
 		uint16_t* modelIndexes = new uint16_t[demoHeader.modelCount];
 		char* modelData = new char[demoHeader.modelLen];
@@ -192,9 +197,14 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 
 		precacheModels = splitString(string(modelData, demoHeader.modelLen), "\n");
 
-		for (int i = 0; i < (int)precacheModels.size(); i++) {
-			replayModelPath[modelIndexes[i]] = precacheModels[i];
-			//ALERT(at_console, "Replay model %d: %s", replayIdx, precacheModels[i].c_str());
+		for (int i = 0; i < (int)demoHeader.modelCount; i++) {
+			std::string model = toLowerCase(precacheModels[i]);
+			replayModelPath[modelIndexes[i]] = model;
+
+			if (precacheModels[i][0] != '*' && !g_precachedModels.count(model)) {
+				notPrecachedModels++;
+				ALERT(at_console, "Not precached: %s\n", model.c_str());
+			}
 		}
 
 		delete[] modelData;
@@ -217,8 +227,14 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 
 		precacheSounds = splitString(string(soundData, demoHeader.soundLen), "\n");
 
-		for (int i = 0; i < (int)precacheSounds.size(); i++) {
-			replaySoundPath[soundIndexes[i]] = precacheSounds[i];
+		for (int i = 0; i < (int)demoHeader.soundCount; i++) {
+			std::string sound = toLowerCase(precacheSounds[i]);
+			replaySoundPath[soundIndexes[i]] = sound;
+
+			if (!g_precachedSounds.count(sound)) {
+				notPrecachedSounds++;
+				ALERT(at_console, "Not precached: %s\n", sound.c_str());
+			}
 		}
 
 		delete[] soundData;
@@ -253,12 +269,19 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 			show_message(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
 		}
 	}
+
+	std::string modelPrecacheStr = notPrecachedModels ? UTIL_VarArgs(" (%d not precached)", notPrecachedModels) : "";
+	std::string soundPrecacheStr = notPrecachedSounds ? UTIL_VarArgs(" (%d not precached)", notPrecachedSounds) : "";
+
 	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
 	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
-	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d\n", precacheModels.size()));
-	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d\n", precacheSounds.size()));
+	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d%s\n", precacheModels.size(), modelPrecacheStr.c_str()));
+	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d%s\n", precacheSounds.size(), soundPrecacheStr.c_str()));
 
 	UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[HLTV] Opened: %s\n", path.c_str()));
+	
+	if (notPrecachedModels + notPrecachedSounds)
+		UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[HLTV] %d files need precaching. Restart the map to precache them\n", notPrecachedModels + notPrecachedSounds));
 
 	g_stats.totalWriteSz = sizeof(DemoHeader) + demoHeader.modelLen + demoHeader.soundLen;
 
@@ -330,13 +353,10 @@ void DemoPlayer::prepareDemo() {
 	nextFrameTime = 0;
 }
 
-void DemoPlayer::precacheDemo() {
-	if (!replayData) {
-		return;
-	}
-
+void DemoPlayer::precacheLastDemo() {
 	for (int i = 0; i < (int)precacheModels.size(); i++) {
-		PRECACHE_MODEL(precacheModels[i].c_str());
+		if (precacheModels[i][0] != '*')
+			PRECACHE_MODEL(precacheModels[i].c_str());
 	}
 	for (int i = 0; i < (int)precacheSounds.size(); i++) {
 		PRECACHE_SOUND_NULLENT(precacheSounds[i].c_str());
@@ -345,8 +365,6 @@ void DemoPlayer::precacheDemo() {
 
 void DemoPlayer::stopReplay() {
 	closeReplayFile();
-	precacheModels.clear();
-	precacheSounds.clear();
 	replayModelPath.clear();
 	replayEnts.clear();
 }
@@ -758,10 +776,9 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 		ent = convertEdictType(ent, i);
 		
 		int oldModelIdx = ent->v.modelindex;
+		int oldRenderfx = ent->v.renderfx;
 
 		fileedicts[i].apply(ent);
-
-		setupInterpolation(ent, i);
 
 		if (oldModelIdx != ent->v.modelindex) {
 			string newModel = getReplayModel(ent->v.modelindex);
@@ -773,6 +790,12 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 			else if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
 				SET_MODEL(ent, newModel.c_str());
 			}
+		}
+
+		setupInterpolation(ent, i);
+
+		if (ent->v.renderfx == kRenderFxDeadPlayer) {
+			ent->v.renderamt = ENTINDEX(getReplayEntity(ent->v.renderamt));
 		}
 
 		if (ent->v.modelindex == errorSprIdx) {
@@ -1554,7 +1577,7 @@ void DemoPlayer::validateFrame(DemoDataStream& reader, DemoDataTest* results) {
 	isValidating = false;
 }
 
-bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
+bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bool seeking) {
 	uint32_t startOffset = reader.tell();
 
 	uint16_t numMessages;
@@ -1590,6 +1613,10 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 			return false; // data corrupted, abort before SVC_BAD
 		}
 		reader.read(msg.data, msg.sz);
+
+		if (seeking) {
+			continue;
+		}
 
 		if ((msg.eidx >= replayEnts.size() && !validate) || (validate && msg.eidx > MAX_EDICTS)) {
 			ALERT(at_console, "Invalid msg ent %d for %s\n", (int)msg.eidx, msgTypeStr(msg.header.type));
@@ -1670,7 +1697,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 	return true;
 }
 
-bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
+bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate, bool seeking) {
 	uint32_t startOffset = reader.tell();
 
 	uint8_t numEvents;
@@ -1718,6 +1745,10 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 			reader.read(&ev.iparam2, 2);
 		}
 
+		if (seeking) {
+			continue;
+		}
+
 		uint16_t eidx = ev.header.entindex;
 		if (validate) {
 			if (eidx > MAX_EDICTS) {
@@ -1753,7 +1784,7 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 	return true;
 }
 
-bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate) {
+bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate, bool seeking) {
 	uint32_t startOffset = reader.tell();
 
 	uint8_t numCommands;
@@ -1774,6 +1805,10 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate) {
 
 		reader.read(commandChars, cmd.len);
 		commandChars[cmd.len] = '\0';
+
+		if (seeking) {
+			continue;
+		}
 
 		if (cmd.idx > demoHeader.maxPlayers) {
 			ALERT(at_console, "Invalid command player %d / %d\n", (int)cmd.idx, (int)demoHeader.maxPlayers);
@@ -1913,6 +1948,17 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		fileedicts[i].deltaBitsLast = 0;
 	}
 
+	double fileTime = demoTime / 1000.0;
+	double viewTime = t / 1000.0;
+	bool seeking = fileTime + (1.0f / demoFileFps) * 10 < viewTime;
+	if (seeking) {
+		static float lastSeekPrint = 0;
+		if (gpGlobals->time - lastSeekPrint > 0.1f) {
+			ALERT(at_console, "Seeking %.2f < %.2f!\n", (float)fileTime, (float)viewTime);
+			lastSeekPrint = gpGlobals->time;
+		}
+	}
+
 	if (header.hasEntityDeltas && (!readEntDeltas(reader, validate))) {
 		delete[] frameData;
 		return false;
@@ -1922,19 +1968,19 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		delete[] frameData;
 		return false;
 	}
-	if (header.hasNetworkMessages && !readNetworkMessages(reader, validate)) {
+	if (header.hasNetworkMessages && !readNetworkMessages(reader, validate, seeking)) {
 		delete[] frameData;
 		return false;
 	}
-	if (header.hasEvents && !readEvents(reader, validate)) {
+	if (header.hasEvents && !readEvents(reader, validate, seeking)) {
 		delete[] frameData;
 		return false;
 	}
-	if (header.hasCommands && !readClientCommands(reader, validate)) {
+	if (header.hasCommands && !readClientCommands(reader, validate, seeking)) {
 		delete[] frameData;
 		return false;
 	}
-	if (!validate && !simulate(header)) {
+	if (!seeking && !validate && !simulate(header)) {
 		delete[] frameData;
 		return false;
 	}
@@ -2163,7 +2209,7 @@ void DemoPlayer::playDemo() {
 int DemoPlayer::GetWeaponData(edict_t* player, weapon_data_t* info) {
 	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(player);
 
-	if (pl->pev->iuser1 != OBS_IN_EYE) {
+	if (pl->pev->iuser1 != OBS_IN_EYE || !pl->m_hObserverTarget) {
 		// not first-person spectating a replay bot, so give them their own weapon data
 		return -1;
 	}
@@ -2196,12 +2242,13 @@ int DemoPlayer::GetWeaponData(edict_t* player, weapon_data_t* info) {
 
 void DemoPlayer::OverrideClientData(const edict_t* ent, int sendweapons, clientdata_t* cd) {
 
-	if (ent->v.iuser1 != OBS_IN_EYE) {
+	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(ent);
+
+	if (ent->v.iuser1 != OBS_IN_EYE || !pl->m_hObserverTarget) {
 		// not first-person spectating a replay bot, so give them their own weapon data
 		return;
 	}
 
-	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(ent);
 	int originalEntIdx = pl->m_hObserverTarget.GetEdict()->v.iuser4;
 
 	cd->m_iId = fileplayerinfos[originalEntIdx - 1].weaponId;

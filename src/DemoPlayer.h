@@ -114,8 +114,8 @@ public:
 	// call this every frame to replay the demo
 	void playDemo();
 
-	// call in MapInit after loading a demo file
-	void precacheDemo();
+	// call in MapInit after loading a demo file and restarting the map
+	void precacheLastDemo();
 
 	void stopReplay();
 
@@ -166,9 +166,9 @@ private:
 	bool simulate(DemoFrame& header); // create entities and replay the demo through them
 	bool readEntDeltas(mstream& reader, DemoDataTest* validate = NULL);
 	bool readPlayerDeltas(mstream& reader, DemoDataTest* validate = NULL);
-	bool readNetworkMessages(mstream& reader, DemoDataTest* validate=NULL); // only validate if given a validate arg
-	bool readEvents(mstream& reader, DemoDataTest* validate = NULL);
-	bool readClientCommands(mstream& reader, DemoDataTest* validate = NULL);
+	bool readNetworkMessages(mstream& reader, DemoDataTest* validate=NULL, bool seeking=false); // only validate if given a validate arg
+	bool readEvents(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
+	bool readClientCommands(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
 	
 	// converts a simulated entity into a class best suited for the demo entity
 	// i = index into replayEntities
