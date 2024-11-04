@@ -44,7 +44,7 @@ DemoWriter::~DemoWriter() {
 	delete[] eventsBuffer;
 
 	if (compress_thread) {
-		ALERT(at_console, "Waiting for demo compression to finish...\n");
+		ALERT(at_console, "Waiting for demo compression to finish...\n", 0);
 		compress_thread->join();
 		delete compress_thread;
 	}
@@ -632,8 +632,8 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
 	mstream plrbuffer = writePlrDeltas(frame, plrDeltaBits);
 	mstream msgbuffer = writeMsgDeltas(frame, testData);
-	mstream cmdbuffer = writeCmdDeltas(frame);	
-	mstream evtbuffer = writeEvtDeltas(frame);	
+	mstream cmdbuffer = writeCmdDeltas(frame);
+	mstream evtbuffer = writeEvtDeltas(frame);
 
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
 	memcpy(fileplayerinfos, frame.playerinfos, 32 * sizeof(DemoPlayerEnt));
@@ -649,7 +649,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	
 	g_stats.calcFrameSize();
 
-	uint8_t frameCountDelta = clamp(frame.serverFrameCount - lastServerFrameCount, 0, 255);
+	uint8_t frameCountDelta = V_min(frame.serverFrameCount - lastServerFrameCount, 255);
 	lastServerFrameCount = frame.serverFrameCount;
 
 	DemoFrame header;
@@ -795,8 +795,8 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 }
 
 void DemoWriter::compressDemo(std::string inPath, std::string outPath) {
-	if (lzmaCompress(fpath, fpath + ".xz", 9)) {
-		remove(fpath.c_str());
+	if (lzmaCompress(inPath, outPath, 9)) {
+		remove(inPath.c_str());
 		g_engfuncs.pfnServerPrint(UTIL_VarArgs("Compressed demo file: %s\n", outPath.c_str()));
 	}
 	else {
@@ -818,7 +818,7 @@ void DemoWriter::closeDemoFile() {
 
 	if (g_auto_demo_file->value && g_compress_demos->value && fileExists(fpath.c_str())) {
 		if (compress_thread) {
-			ALERT(at_console, "Waiting for previous compression to finish...\n");
+			ALERT(at_console, "Waiting for previous compression to finish...\n", 0);
 			compress_thread->join();
 			delete compress_thread;
 		}

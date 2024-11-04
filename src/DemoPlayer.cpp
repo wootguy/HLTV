@@ -3,7 +3,8 @@
 #include "SvenTV.h"
 #include "pm_shared.h"
 
-const char* model_entity = "env_sprite";
+//const char* model_entity = "env_sprite";
+const char* model_entity = "cycler";
 
 set<uint16_t> unknownSpam; // don't show repeat errors
 
@@ -318,6 +319,9 @@ void DemoPlayer::prepareDemo() {
 	MESSAGE_END();
 	UTIL_StopGlobalMp3();
 
+	// don't show leave/join messages for bots in the hlcoop plugin
+	CVAR_SET_FLOAT("mp_leavejoin_msg", 1);
+
 	replayStartTime = getEpochMillis() - (uint64_t)(offsetSeconds * 1000);
 	replayFrame = 0;
 	nextFrameOffset = replayData ? replayData->tell() : 0;
@@ -362,6 +366,9 @@ void DemoPlayer::closeReplayFile() {
 		WRITE_STRING("stopsound\n");
 		MESSAGE_END();
 		UTIL_StopGlobalMp3();
+
+		// allow leave/join messages for bots in the hlcoop plugin
+		CVAR_SET_FLOAT("mp_leavejoin_msg", 2);
 	}
 
 	for (int i = 0; i < (int)replayEnts.size(); i++) {
@@ -1281,7 +1288,52 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		return 0;
 	}
 #endif
+	case SVC_UPDATEUSERINFO: {
+		uint16_t entIdx = *args + 1;
+		convReplayEntIdx((byte*)&entIdx, 0, 2);
+		*args = entIdx - 1;
+		return 1;
+	}
 	default:
+		if (msg.header.type == gmsgSayText) {
+			uint16_t entIdx = *args;
+			convReplayEntIdx((byte*)&entIdx, 0, 2);
+			*args = entIdx;
+			return 1;
+		}
+		if (msg.header.type == gmsgScoreInfo) {
+			uint16_t entIdx = *args;
+			convReplayEntIdx((byte*)&entIdx, 0, 2);
+			*args = entIdx;
+			return 1;
+		}
+		if (msg.header.type == gmsgTeamInfo) {
+			uint16_t entIdx = *args;
+			convReplayEntIdx((byte*)&entIdx, 0, 2);
+			*args = entIdx;
+			return 1;
+		}
+		if (msg.header.type == gmsgDeathMsg) {
+			uint16_t entIdx = *args;
+			convReplayEntIdx((byte*)&entIdx, 0, 2);
+			*args = entIdx;
+
+			uint16_t entIdx2 = args[1];
+			convReplayEntIdx((byte*)&entIdx2, 0, 2);
+			args[1] = entIdx2;
+			return 1;
+		}
+		if (msg.header.type == gmsgStatusText) {
+			return 0; // TODO: this is showing ***** name on screen at all times
+		}
+		if (msg.header.type == gmsgStatusValue) {
+			uint8_t idx = *args;
+			if (idx == 1) {
+				// 1 idx is always the player index
+				convReplayEntIdx(args, 1, msg.sz);
+			}
+			return 0; // same as above
+		}
 		//println("Unhandled netmsg %d", (int)msg.header.type);
 		return 0;
 	}
