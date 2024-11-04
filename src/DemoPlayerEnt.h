@@ -31,6 +31,7 @@
 #define FL_DELTA_FRAGS			(1 << 17)
 #define FL_DELTA_FOV			(1 << 18)
 #define FL_DELTA_OBSERVER		(1 << 19)
+#define FL_DELTA_VIEWENT		(1 << 20)
 
 #define PLR_DELTA_BYTES 3 // size of a "big" player delta
 
@@ -65,6 +66,7 @@ struct DemoPlayerEnt {
 	uint8_t		fov;
 	uint8_t		weaponanim;
 	uint8_t		observer; // observer target (upper 5bits, 7 = not spectating + dead), observer mode (lower 3bits)
+	uint16_t	viewEnt; // entity this players view is set to. 0 = self (e.g. cameras)
 
 	// bits indicating which weapon data was changed (PLR_WEP_*)
 	uint8_t weaponDeltaFlags;

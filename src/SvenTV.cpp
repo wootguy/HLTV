@@ -114,21 +114,23 @@ void SvenTV::think_mainThread() {
 			g_command_count = 0;
 			g_event_count = 0;
 
-			for (int i = 1; i <= gpGlobals->maxClients; i++) {
-				DemoPlayerEnt& dplr = g_demoplayers[i - 1];
-				dplr.button = 0;
-			}
-
 			//int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);
 
 			g_copyTime = getEpochMillis() - startMillis;
 			//ALERT(at_console, "Copy %.1fKB in %lums\n", copySz / 1024.0f, copyTime);
-		}
-	}
 
-	if (singleThreadMode) {
-		think_tvThread();
+			if (singleThreadMode) {
+				think_tvThread();
+			}
+
+			for (int i = 1; i <= gpGlobals->maxClients; i++) {
+				DemoPlayerEnt& dplr = g_demoplayers[i - 1];
+				dplr.button = 0;
+			}
+		} else if (singleThreadMode) {
+			think_tvThread();
+		}
 	}
 }
 
@@ -500,6 +502,7 @@ void SvenTV::think_tvThread() {
 				dplr.weaponanim = ent->v.weaponanim;
 				dplr.view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
 				dplr.observer = ((uint8_t)ent->v.iuser2 << 3) | (ent->v.iuser1 & 0x7);
+				dplr.viewEnt = plr->m_hViewEntity ? ENTINDEX(plr->m_hViewEntity.GetEdict()) : 0;
 
 				if (weaponmodel[0] == '\0') {
 					dplr.weaponmodel = PLR_NO_WEAPON_MODEL;

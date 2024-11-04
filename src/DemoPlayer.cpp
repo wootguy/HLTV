@@ -412,6 +412,7 @@ void DemoPlayer::closeReplayFile() {
 			continue;
 		}
 
+		SET_VIEW(ent, ent);
 		
 		if (oldPlayerNames->size()) {
 			// remove (1) prefix if it was added during the demo
@@ -943,6 +944,36 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
 			bot->v.armorvalue = info.armorvalue;
 			bot->v.view_ofs.z = info.view_ofs / 16.0f;
 			bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
+
+			edict_t* specViewEnt = bot;
+			if (info.viewEnt) {
+				edict_t* camera = getReplayEntity(info.viewEnt);
+				if (camera) {
+					SET_VIEW(bot, camera);
+					specViewEnt = camera;
+				}
+				else {
+					ALERT(at_console, "Bad view entity %d\n", info.viewEnt);
+				}
+			}
+			else {
+				SET_VIEW(bot, bot);
+			}
+
+			// update spectator views
+			for (int i = 1; i < gpGlobals->maxClients; i++) {
+				CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
+				if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
+					continue;
+				}
+
+				if (spec->m_hObserverTarget.GetEdict() == bot && spec->pev->iuser1 == OBS_IN_EYE) {
+					SET_VIEW(spec->edict(), specViewEnt);
+				}
+				else {
+					SET_VIEW(spec->edict(), spec->edict());
+				}
+			}
 		}
 	}
 

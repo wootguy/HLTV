@@ -267,6 +267,7 @@ void DemoStats::showStats(edict_t* edt) {
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FRAGS);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FOV);
 		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_OBSERVER);
+		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_VIEWENT);
 
 		uint32_t sum = 0;
 		for (int i = 0; i < (int)deltaStats.size(); i++) {

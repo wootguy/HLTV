@@ -139,6 +139,7 @@ int DemoPlayerEnt::writeDeltas(mstream& writer, const DemoPlayerEnt& old) {
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAGS, frags, 2);
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_FOV, fov, 1);
 		WRITE_DELTA(writer, deltaBits, FL_DELTA_OBSERVER, observer, 1);
+		WRITE_DELTA(writer, deltaBits, FL_DELTA_VIEWENT, viewEnt, 2);
 	}
 
 	if (writer.eom()) {
@@ -245,6 +246,7 @@ uint32_t DemoPlayerEnt::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAGS, frags, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_FOV, fov, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_OBSERVER, observer, 1);
+	READ_DELTA(reader, deltaBits, FL_DELTA_VIEWENT, viewEnt, 2);
 
 	return deltaBits;
 }
