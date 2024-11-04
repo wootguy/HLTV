@@ -344,7 +344,7 @@ HOOK_RET_VOID ClientJoin(edict_t* ent)
 }
 
 HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edict_t* ed) {
-	//println("NET MESG: %d", msg_type);
+	//ALERT(at_console, "NET MESG: %d\n", msg_type);
 	if (!g_sventv || (!g_sventv->enableDemoFile && !g_sventv->enableServer) || g_pause_message_logging) {
 		g_should_write_next_message = false;
 
@@ -395,7 +395,7 @@ HOOK_RET_VOID MessageEnd() {
 
 		if (g_netmessage_count >= MAX_NETMSG_FRAME) {
 			g_netmessage_count--; // overwrite last message
-			println("Network message capture overflow!");
+			ALERT(at_console, "Network message capture overflow!\n");
 		}
 	}
 	
@@ -604,7 +604,7 @@ HOOK_RET_VOID ClientCommand(edict_t* pEntity)
 
 		g_command_count++;
 		if (g_command_count >= MAX_CMD_FRAME) {
-			println("Command capture overflow!");
+			ALERT(at_console, "Command capture overflow!\n");
 			g_command_count--; // overwrite last command
 		}
 	}	
@@ -643,7 +643,7 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 		}
 	}
 	/*
-	println("RECORD EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d",
+	ALERT(at_console, "RECORD EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d\n",
 		flags, pInvoker ? ENTINDEX(pInvoker) : 0, (int)eventindex, delay,
 		origin[0], origin[1], origin[2], angles[0], angles[1], angles[2],
 		fparam1, fparam2, iparam1, iparam2, bparam1, bparam2);
@@ -688,7 +688,7 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 
 	g_event_count++;
 	if (g_event_count >= MAX_EVENT_FRAME) {
-		println("Event capture overflow!");
+		ALERT(at_console, "Event capture overflow!\n");
 		g_event_count--; // overwrite last event
 	}
 
@@ -944,7 +944,7 @@ void PluginExit() {
 	delete[] g_cmds;
 	delete[] g_events;
 
-	println("Plugin exit finish");
+	ALERT(at_console, "Plugin exit finish\n");
 }
 
 #endif

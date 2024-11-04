@@ -50,7 +50,7 @@ int NetClient::applyDeltaToBaseline(Packet& packet, bool debugMode) {
 	reader.read(&fragmentId, 2);
 
 	if (debugMode)
-		println("Apply delta %d frag %d", updateId, fragmentId);
+		ALERT(at_console, "Apply delta %d frag %d\n", updateId, fragmentId);
 
 	int loop = -1;
 	int lastSuccessEdict = 0;
@@ -70,8 +70,8 @@ int NetClient::applyDeltaToBaseline(Packet& packet, bool debugMode) {
 		}
 
 		if (fullIndex >= MAX_EDICTS) {
-			println("ERROR: Invalid delta packet wants to update edict %d at %d", (int)fullIndex, loop);
-			println("TODO: rollback changes made so far, because now client and server are desynced");
+			ALERT(at_console, "ERROR: Invalid delta packet wants to update edict %d at %d\n", (int)fullIndex, loop);
+			ALERT(at_console, "TODO: rollback changes made so far, because now client and server are desynced\n");
 			return lastSuccessEdict;
 		}
 
@@ -79,16 +79,16 @@ int NetClient::applyDeltaToBaseline(Packet& packet, bool debugMode) {
 
 		netedict& ed = baselines[fullIndex];
 		if (!ed.readDeltas(reader)) {
-			//println("Skip free %d", fullIndex);
+			//ALERT(at_console, "Skip free %d\n", fullIndex);
 			continue;
 		}
 
 		if (debugMode)
-			println("Read index %d (%d bytes)", (int)fullIndex, (int)(reader.tell() - startPos));
+			ALERT(at_console, "Read index %d (%d bytes)\n", (int)fullIndex, (int)(reader.tell() - startPos));
 
 		if (reader.eom()) {
-			println("ERROR: Invalid delta hit unexpected eom at %d", loop);
-			println("TODO: rollback changes made so far, because now client and server are desynced");
+			ALERT(at_console, "ERROR: Invalid delta hit unexpected eom at %d\n", loop);
+			ALERT(at_console, "TODO: rollback changes made so far, because now client and server are desynced\n");
 			return lastSuccessEdict;
 		}
 

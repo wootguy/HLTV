@@ -31,115 +31,115 @@ void netedict::reset() {
 
 bool netedict::matches(netedict& other) {
 	if (edflags != other.edflags) {
-		println("Mismatch isValid");
+		ALERT(at_console, "Mismatch isValid\n");
 		return false;
 	}
 	if (!FIXED_EQUALS(origin[0], other.origin[0], 24)) {
-		println("Mismatch origin[0]");
+		ALERT(at_console, "Mismatch origin[0]\n");
 		return false;
 	}
 	if (!FIXED_EQUALS(origin[1], other.origin[1], 24)) {
-		println("Mismatch origin[1]");
+		ALERT(at_console, "Mismatch origin[1]\n");
 		return false;
 	}
 	if (!FIXED_EQUALS(origin[2], other.origin[2], 24)) {
-		println("Mismatch origin[2]");
+		ALERT(at_console, "Mismatch origin[2]\n");
 		return false;
 	}
 	if (!FIXED_EQUALS(angles[0], other.angles[0], 24)) {
-		println("Mismatch angles[0]");
+		ALERT(at_console, "Mismatch angles[0]\n");
 		return false;
 	}
 	if (!FIXED_EQUALS(angles[1], other.angles[1], 24)) {
-		println("Mismatch angles[1]");
+		ALERT(at_console, "Mismatch angles[1]\n");
 		return false;
 	}
 	if (!FIXED_EQUALS(angles[2], other.angles[2], 24)) {
-		println("Mismatch angles[2]");
+		ALERT(at_console, "Mismatch angles[2]\n");
 		return false;
 	}
 	if (modelindex != other.modelindex) {
-		println("Mismatch modelindex");
+		ALERT(at_console, "Mismatch modelindex\n");
 		return false;
 	}
 	if (skin != other.skin) {
-		println("Mismatch skin");
+		ALERT(at_console, "Mismatch skin\n");
 		return false;
 	}
 	if (body != other.body) {
-		println("Mismatch body");
+		ALERT(at_console, "Mismatch body\n");
 		return false;
 	}
 	if (effects != other.effects) {
-		println("Mismatch effects");
+		ALERT(at_console, "Mismatch effects\n");
 		return false;
 	}
 	if (sequence != other.sequence) {
-		println("Mismatch sequence");
+		ALERT(at_console, "Mismatch sequence\n");
 		return false;
 	}
 	if (gaitblend != other.gaitblend) {
-		println("Mismatch gaitblend");
+		ALERT(at_console, "Mismatch gaitblend\n");
 		return false;
 	}
 	if (frame != other.frame) {
-		println("Mismatch frame");
+		ALERT(at_console, "Mismatch frame\n");
 		return false;
 	}
 	if (framerate != other.framerate) {
-		println("Mismatch framerate");
+		ALERT(at_console, "Mismatch framerate\n");
 		return false;
 	}
 	if (controller_lo != other.controller_lo) {
-		println("Mismatch controller_lo");
+		ALERT(at_console, "Mismatch controller_lo\n");
 		return false;
 	}
 	if (controller_hi != other.controller_hi) {
-		println("Mismatch controller_hi");
+		ALERT(at_console, "Mismatch controller_hi\n");
 		return false;
 	}
 	if (scale != other.scale) {
-		println("Mismatch scale");
+		ALERT(at_console, "Mismatch scale\n");
 		return false;
 	}
 	if (renderamt != other.renderamt) {
-		println("Mismatch renderamt");
+		ALERT(at_console, "Mismatch renderamt\n");
 		return false;
 	}
 	if (rendercolor[0] != other.rendercolor[0]) {
-		println("Mismatch rendercolor[0]");
+		ALERT(at_console, "Mismatch rendercolor[0]\n");
 		return false;
 	}
 	if (rendercolor[1] != other.rendercolor[1]) {
-		println("Mismatch rendercolor[1]");
+		ALERT(at_console, "Mismatch rendercolor[1]\n");
 		return false;
 	}
 	if (rendercolor[2] != other.rendercolor[2]) {
-		println("Mismatch rendercolor[2]");
+		ALERT(at_console, "Mismatch rendercolor[2]\n");
 		return false;
 	}
 	if (rendermodefx != other.rendermodefx) {
-		println("Mismatch rendermodefx");
+		ALERT(at_console, "Mismatch rendermodefx\n");
 		return false;
 	}
 	if (aiment != other.aiment) {
-		println("Mismatch aiment");
+		ALERT(at_console, "Mismatch aiment\n");
 		return false;
 	}
 	if (health != other.health) {
-		println("Mismatch health");
+		ALERT(at_console, "Mismatch health\n");
 		return false;
 	}
 	if (colormap != other.colormap) {
-		println("Mismatch colormap");
+		ALERT(at_console, "Mismatch colormap\n");
 		return false;
 	}
 	if (health != other.health) {
-		println("Mismatch health");
+		ALERT(at_console, "Mismatch health\n");
 		return false;
 	}
 	if (classify != other.classify) {
-		println("Mismatch classify");
+		ALERT(at_console, "Mismatch classify\n");
 		return false;
 	}
 	return true;
@@ -318,7 +318,7 @@ void netedict::apply(edict_t* ed) {
 				vars.origin = copyent->v.origin; // must be set even if not used
 			}
 			else {
-				println("Invalid beam start entity %d", startIdx);
+				ALERT(at_console, "Invalid beam start entity %d", startIdx);
 			}
 		}
 		else {
@@ -332,7 +332,7 @@ void netedict::apply(edict_t* ed) {
 				vars.skin = (controller_lo & 0xf000) | ENTINDEX(copyent);
 			}
 			else {
-				println("Invalid beam end entity %d", endIdx);
+				ALERT(at_console, "Invalid beam end entity %d", endIdx);
 			}
 		}
 		else {
@@ -345,7 +345,7 @@ void netedict::apply(edict_t* ed) {
 		if (aiment) {
 			edict_t* copyent = g_demoPlayer->getReplayEntity(aiment);
 			if (!copyent) {
-				println("Invalid aiment %d", aiment);
+				ALERT(at_console, "Invalid aiment %d", aiment);
 				vars.movetype = MOVETYPE_NONE;
 				return;
 			}

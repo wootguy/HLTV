@@ -202,7 +202,7 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, Dem
 		int ret = now.writeDeltas(entbuffer, fileedicts[i]);
 
 		if (ret == EDELTA_OVERFLOW) {
-			println("ERROR: Demo file entity delta buffer overflowed. Use a bigger buffer! The demo file is now broken");
+			ALERT(at_console, "ERROR: Demo file entity delta buffer overflowed. Use a bigger buffer! The demo file is now broken\n");
 			break;
 		}
 		else if (ret == EDELTA_NONE) {
@@ -212,7 +212,7 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, Dem
 		}
 		else {
 			// delta written
-			//println("Write edict %d offset %d bytes %d", i, (int)offset, (int)(entbuffer.tell() - startOffset));
+			//ALERT(at_console, "Write edict %d offset %d bytes %d\n", i, (int)offset, (int)(entbuffer.tell() - startOffset));
 			indexWriteSz += offset > 127 ? 2 : 1;
 			offset = 1;
 			numEntDeltas++;
@@ -236,7 +236,7 @@ mstream DemoWriter::writePlrDeltas(FrameData& frame, uint32_t& plrDeltaBits) {
 		int ret = frame.playerinfos[i].writeDeltas(plrbuffer, fileplayerinfos[i]);
 
 		if (ret == EDELTA_OVERFLOW) {
-			println("ERROR: Demo file player delta buffer overflowed. Use a bigger buffer! The demo file is now broken");
+			ALERT(at_console, "ERROR: Demo file player delta buffer overflowed. Use a bigger buffer! The demo file is now broken\n");
 			break;
 		}
 		else if (ret == EDELTA_NONE) {
@@ -458,7 +458,7 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 		msgbuffer.write(dat.data, dat.sz);
 	}
 	if (msgbuffer.eom()) {
-		println("ERROR: Demo file network message buffer overflowed (%d > %d). Use a bigger buffer!", frame.netmessage_count, MAX_NETMSG_FRAME);
+		ALERT(at_console, "ERROR: Demo file network message buffer overflowed (%d > %d). Use a bigger buffer!\n", frame.netmessage_count, MAX_NETMSG_FRAME);
 	}
 
 	return msgbuffer;
@@ -476,7 +476,7 @@ mstream DemoWriter::writeCmdDeltas(FrameData& frame) {
 		cmdbuffer.write(dat.data, dat.len);
 	}
 	if (cmdbuffer.eom()) {
-		println("ERROR: Demo file command buffer overflowed. Use a bigger buffer!");
+		ALERT(at_console, "ERROR: Demo file command buffer overflowed. Use a bigger buffer!\n");
 	}
 
 	return cmdbuffer;
@@ -512,7 +512,7 @@ mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 		}
 	}
 	if (evbuffer.eom()) {
-		println("ERROR: Demo file event buffer overflowed (%d > %d). Use a bigger buffer!", frame.event_count, MAX_EVENT_FRAME);
+		ALERT(at_console, "ERROR: Demo file event buffer overflowed (%d > %d). Use a bigger buffer!\n", frame.event_count, MAX_EVENT_FRAME);
 	}
 
 	return evbuffer;
@@ -781,7 +781,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		ASSERT_FRAME("frame bytes", g_stats.currentWriteSz, expectedFrameSz);
 
 		if (!valid) {
-			println("WROTE BAD FRAME %d!\n", oldStats.frameCount);
+			ALERT(at_console, "WROTE BAD FRAME %d!\n\n", oldStats.frameCount);
 			memset(&g_stats, 0, sizeof(DemoStats));
 			testStream.seek(frameStartOffset);
 			testPlayer->validateFrame(testStream, testData); // now debug it!
@@ -835,7 +835,7 @@ bool DemoWriter::isFileOpen() {
 bool DemoWriter::validateEdicts() {
 	for (int i = 0; i < MAX_EDICTS; i++) {
 		if (fileedicts[i].edflags && !(fileedicts[i].edflags & EDFLAG_BEAM) && fileedicts[i].aiment > 8192) {
-			println("Invalid edict %d has %d", i, (int)fileedicts[i].aiment);
+			ALERT(at_console, "Invalid edict %d has %d\n", i, (int)fileedicts[i].aiment);
 			return false;
 		}
 	}

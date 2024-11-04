@@ -36,13 +36,13 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 
 	//const char* oriStr = header.hasOrigin ? UTIL_VarArgs("Vector(%f %f %f)", forigin[0], forigin[1], forigin[2]) : "NULL";
 	//const char* entStr = targetEnt ? STRING(targetEnt->v.netname) : "NULL";
-	//println("SEND(%s, %s, %s, %d);", msgDestStr(msg_dest), msgTypeStr(header.type), 
+	//ALERT(at_console, "SEND(%s, %s, %s, %d);", msgDestStr(msg_dest), msgTypeStr(header.type), 
 	//	oriStr, targetEnt ? ENTINDEX(targetEnt) : 0);
 }
 
 void NetMessageData::compressCoords(int offset, int count, bool keepFrac) {
 	if (count > 12) {
-		println("Can't compress 13+ coords!");
+		ALERT(at_console, "Can't compress 13+ coords!\n");
 		return;
 	}
 	int32_t* oldorigin = (int32_t*)(data + offset);
@@ -64,7 +64,7 @@ void NetMessageData::compressCoords(int offset, int count, bool keepFrac) {
 
 void NetMessageData::decompressCoords(int offset, int count, bool keepFrac) {
 	if (count > 12) {
-		println("Can't decompress 13+ coords!");
+		ALERT(at_console, "Can't decompress 13+ coords!\n");
 		return;
 	}
 	int16_t* oldorigin = (int16_t*)(data + offset);

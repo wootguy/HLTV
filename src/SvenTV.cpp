@@ -123,7 +123,7 @@ void SvenTV::think_mainThread() {
 			edictCopyState.setValue(EDICT_COPY_FINISHED);
 
 			g_copyTime = getEpochMillis() - startMillis;
-			//println("Copy %.1fKB in %lums", copySz / 1024.0f, copyTime);
+			//ALERT(at_console, "Copy %.1fKB in %lums\n", copySz / 1024.0f, copyTime);
 		}
 	}
 
@@ -146,21 +146,21 @@ void SvenTV::handleDeltaAck(mstream& reader, NetClient& client) {
 	}
 
 	if (deltaIdx == -1) {
-		println("Got ack for too old update %d", (int)updateId);
+		ALERT(at_console, "Got ack for too old update %d\n", (int)updateId);
 		return;
 	}
 
 	DeltaUpdate& update = client.sentDeltas[deltaIdx];
 
 	if (update.packets.empty()) {
-		println("Ignoring duplicate ack");
+		ALERT(at_console, "Ignoring duplicate ack\n");
 		return;
 	}
 
 	for (int i = 0; i < (int)update.packets.size(); i++) {
 		int bit = reader.readBit();
 		if (bit == -1) {
-			println("Failed to read ack, invalid number of bits sent");
+			ALERT(at_console, "Failed to read ack, invalid number of bits sent\n");
 			return;
 		}
 
@@ -174,7 +174,7 @@ void SvenTV::handleDeltaAck(mstream& reader, NetClient& client) {
 	client.sentDeltas.erase(client.sentDeltas.begin(), client.sentDeltas.begin() + deltaIdx);
 	
 	//update.packets.clear();
-	//println("OKIE DID ACK %d", updateId);
+	//ALERT(at_console, "OKIE DID ACK %d\n", updateId);
 }
 
 void SvenTV::handleClientPackets() {
@@ -185,7 +185,7 @@ void SvenTV::handleClientPackets() {
 		}
 
 		if (packet.sz == 0) {
-			println("Ignore 0 size packet");
+			ALERT(at_console, "Ignore 0 size packet\n");
 			continue;
 		}
 
@@ -203,10 +203,10 @@ void SvenTV::handleClientPackets() {
 
 		if (packetType == CLC_CONNECT) {
 			if (clientIdx != -1) {
-				println("Ignore connect packet for existing client");
+				ALERT(at_console, "Ignore connect packet for existing client\n");
 				continue;
 			}
-			println("New client connected from %s", packet.addr.getString().c_str());
+			ALERT(at_console, "New client connected from %s\n", packet.addr.getString().c_str());
 
 			bool foundFree = false;
 			for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -235,7 +235,7 @@ void SvenTV::handleClientPackets() {
 		}
 
 		if (clientIdx == -1) {
-			println("Ignore packet from unknown client");
+			ALERT(at_console, "Ignore packet from unknown client\n");
 			continue;
 		}
 
@@ -243,7 +243,7 @@ void SvenTV::handleClientPackets() {
 		client.lastPacketTime = getEpochMillis();
 
 		if (packetType == CLC_DELTA_RESET) {
-			println("Client reset delta state to null");
+			ALERT(at_console, "Client reset delta state to null\n");
 			client.baselineId = 0;
 			client.sentDeltas.clear();
 			memset(client.baselines, 0, MAX_EDICTS * sizeof(netedict));
@@ -298,7 +298,7 @@ void SvenTV::broadcastEntityStates() {
 		buffer.write((void*)&clients[k].baselineId, 2);
 		buffer.write((void*)&fragmentId, 2);
 		if (debugMode) {
-			println("Write delta %d frag %d", (int)updateId, (int)fragmentId);
+			ALERT(at_console, "Write delta %d frag %d\n", (int)updateId, (int)fragmentId);
 		}
 		fragmentId++;
 
@@ -333,7 +333,7 @@ void SvenTV::broadcastEntityStates() {
 				buffer.write((void*)&clients[k].baselineId, 2);
 				buffer.write((void*)&fragmentId, 2);
 				if (debugMode) {
-					println("Write delta %d frag %d", (int)updateId, (int)fragmentId);
+					ALERT(at_console, "Write delta %d frag %d\n", (int)updateId, (int)fragmentId);
 				}
 				fragmentId++;
 				offset = 0; // always write full index for first entity delta
@@ -356,13 +356,13 @@ void SvenTV::broadcastEntityStates() {
 				totalEnts++;
 				if (debugMode) {
 					uint32_t bits = *((uint32_t*)(buffer.getBuffer() + datOffset));
-					println("Wrote ent idx %d (%d bytes) offset %d, bits %lu", (int)i, (int)(buffer.tell() - datOffset), (int)initialOffset, bits);
+					ALERT(at_console, "Wrote ent idx %d (%d bytes) offset %d, bits %lu\n", (int)i, (int)(buffer.tell() - datOffset), (int)initialOffset, bits);
 				}
 				if (fragmentId - 1 == debugFrag && debugFrag != -1) {
 					totalEnts--; totalEnts++; // set breakpoint here
 				}
-				//println("Write %d bytes for edict %d (%d total)", writeSz, i, totalBytes);
-				//println("Write %d bytes for edict %s (%d total)", writeSz, STRING(edicts[i].v.classname), totalBytes);
+				//ALERT(at_console, "Write %d bytes for edict %d (%d total)\n", writeSz, i, totalBytes);
+				//ALERT(at_console, "Write %d bytes for edict %s (%d total)\n", writeSz, STRING(edicts[i].v.classname), totalBytes);
 			}
 		}
 
@@ -399,7 +399,7 @@ void SvenTV::broadcastEntityStates() {
 
 			if (redoWrite) {
 				memcpy(clients[k].baselines, debugEdict, MAX_EDICTS * sizeof(netedict));
-				println("OK DO IT AGAIN");
+				ALERT(at_console, "OK DO IT AGAIN\n");
 				k--;
 				continue;
 			}
@@ -407,7 +407,7 @@ void SvenTV::broadcastEntityStates() {
 			/*
 			for (int i = 0; i < MAX_EDICTS; i++) {
 				if (!clients[k].baselines[i].matches(netedicts[i])) {
-					println("ZOMG BAD");
+					ALERT(at_console, "ZOMG BAD\n");
 				}
 			}
 			*/
@@ -435,17 +435,17 @@ void SvenTV::broadcastEntityStates() {
 		datapoint.time = getEpochMillis();
 		clients[k].sentBytesHistory.push_back(datapoint);
 		float kbsec = clients[k].getBytesSentPerSecond() / 1024.0f;
-		println("Send %s: %4d B, %d packets, update %d, baseline %d, %.1f KB/s", 
+		ALERT(at_console, "Send %s: %4d B, %d packets, update %d, baseline %d, %.1f KB/s\n", 
 			clients[k].addr.getString().c_str(), totalSz, numPackets, (int)updateId, clients[k].baselineId, kbsec);
 
 		if (clients[k].sentDeltas.size() > 100) {
 			if (!debugMode)
-				println("Client %d not acking!", k);
+				ALERT(at_console, "Client %d not acking!\n", k);
 			clients[k].sentDeltas.erase(clients[k].sentDeltas.begin());
 		}
 
 		if (TimeDifference(clients[k].lastPacketTime, now) > timeoutSeconds && !debugMode) {
-			println("Disconnecting unresponsive client");
+			ALERT(at_console, "Disconnecting unresponsive client\n");
 			clients[k].isFree = true;
 			clients[k].sentDeltas.clear();
 			clients[k].sentBytesHistory.clear();
@@ -454,7 +454,7 @@ void SvenTV::broadcastEntityStates() {
 		clientCount++;
 	}
 
-	//println("Send %d ents to %d clients (%d bytes each)", totalEnts, clientCount, sizeof(netedict));
+	//ALERT(at_console, "Send %d ents to %d clients (%d bytes each)\n", totalEnts, clientCount, sizeof(netedict));
 }
 
 void SvenTV::think_tvThread() {
@@ -606,7 +606,7 @@ void SvenTV::think_tvThread() {
 bool SvenTV::validateEdicts() {
 	for (int i = 0; i < MAX_EDICTS; i++) {
 		if (frame.netedicts[i].edflags && frame.netedicts[i].aiment > 8192) {
-			println("Invalid edict %d has %d", i, (int)frame.netedicts[i].aiment);
+			ALERT(at_console, "Invalid edict %d has %d\n", i, (int)frame.netedicts[i].aiment);
 			return false;
 		}
 	}

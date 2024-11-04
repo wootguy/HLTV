@@ -7,6 +7,7 @@
 const char* model_entity = "cycler";
 
 set<uint16_t> unknownSpam; // don't show repeat errors
+set<std::string> errorSpam; // don't show repeat errors
 
 void DemoDataStream::seek(uint64_t to) {
 	if (fileStream) {
@@ -138,6 +139,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	this->offsetSeconds = offsetSeconds;
 	stopReplay();
 	unknownSpam.clear();
+	errorSpam.clear();
 
 	replayData = new DemoDataStream(fopen(path.c_str(), "rb"));
 
@@ -192,7 +194,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 
 		for (int i = 0; i < (int)precacheModels.size(); i++) {
 			replayModelPath[modelIndexes[i]] = precacheModels[i];
-			//println("Replay model %d: %s", replayIdx, precacheModels[i].c_str());
+			//ALERT(at_console, "Replay model %d: %s", replayIdx, precacheModels[i].c_str());
 		}
 
 		delete[] modelData;
@@ -223,7 +225,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		delete[] soundIndexes;
 	}
 	if (demoHeader.modelLen == 0) {
-		println("WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.");
+		ALERT(at_console, "WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.\n");
 	}
 
 	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
@@ -409,7 +411,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 
 	if (validate) validate->numEntDeltas = numEntDeltas;
 
-	//println("Reading %d deltas", (int)numEntDeltas);
+	//ALERT(at_console, "Reading %d deltas", (int)numEntDeltas);
 
 	int loop = -1;
 	uint16_t fullIndex = 0;
@@ -433,7 +435,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 		}
 
 		if (fullIndex >= MAX_EDICTS) {
-			println("ERROR: Invalid delta wants to update edict %d at %d\n", (int)fullIndex, loop);
+			ALERT(at_console, "ERROR: Invalid delta wants to update edict %d at %d\n", (int)fullIndex, loop);
 			closeReplayFile();
 			return false;
 		}
@@ -445,7 +447,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 
 		netedict* ed = &fileedicts[fullIndex];
 		if (!ed->readDeltas(reader)) {
-			//println("Skip free %d", fullIndex);
+			//ALERT(at_console, "Skip free %d\n", fullIndex);
 			continue;
 		}
 
@@ -481,10 +483,10 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 			
 		}
 
-		//println("Read index %d (%d bytes)", (int)fullIndex, (int)(reader.tell() - startPos));
+		//ALERT(at_console, "Read index %d (%d bytes)", (int)fullIndex, (int)(reader.tell() - startPos));
 
 		if (reader.eom()) {
-			println("ERROR: Invalid delta hit unexpected eom at %d\n", loop);
+			ALERT(at_console, "ERROR: Invalid delta hit unexpected eom at %d\n", loop);
 			closeReplayFile();
 			return false;
 		}
@@ -499,7 +501,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 bool DemoPlayer::validateEdicts() {
 	for (int i = 0; i < MAX_EDICTS; i++) {
 		if (fileedicts[i].edflags && !(fileedicts[i].edflags & EDFLAG_BEAM) && fileedicts[i].aiment > 8192) {
-			println("Invalid edict %d has %d", i, (int)fileedicts[i].aiment);
+			ALERT(at_console, "Invalid edict %d has %d\n", i, (int)fileedicts[i].aiment);
 			return false;
 		}
 	}
@@ -586,7 +588,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			replayEnts[i].h_ent = ent = bot;
 		}
 		else {
-			println("Failed to create bot");
+			ALERT(at_console, "Failed to create bot\n");
 		}
 	}
 	else if ((fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
@@ -641,7 +643,7 @@ bool DemoPlayer::createReplayEntities(int count) {
 		ent->pev->flags |= FL_MONSTER;
 
 		if (!ent) {
-			println("Entity overflow at %d\n", (int)replayEnts.size());
+			ALERT(at_console, "Entity overflow at %d\n", (int)replayEnts.size());
 			for (int i = 0; i < (int)replayEnts.size(); i++) {
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 			}
@@ -715,7 +717,7 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 						interp.sequenceLoops = ((GetSequenceFlags(pmodel, anim->pev) & STUDIO_LOOPING) != 0);
 					}
 					else {
-						println("Invalid studio model: %s", STRING(ent->v.model));
+						ALERT(at_console, "Invalid studio model: %s\n", STRING(ent->v.model));
 					}
 				}
 			}
@@ -766,7 +768,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 			bool isSprite = newModel.find(".spr") != string::npos;
 
 			if ((fileedicts[i].edflags & EDFLAG_BEAM) && !isSprite) {
-				println("Invalid model set on beam: %s", newModel.c_str());
+				ALERT(at_console, "Invalid model set on beam: %s\n", newModel.c_str());
 			}
 			else if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
 				SET_MODEL(ent, newModel.c_str());
@@ -781,7 +783,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 		/*
 		if (g_engfuncs.pfnModelIndex("sprites/lgtning.spr") == ent->v.modelindex || g_engfuncs.pfnModelIndex("sprites/error.spr") == ent->v.modelindex) {
 			SET_MODEL(ent, "sprites/error.spr");
-			println("OK LIGHTNING: %f %d", ent->v.scale, ent->v.movetype);
+			ALERT(at_console, "OK LIGHTNING: %f %d\n", ent->v.scale, ent->v.movetype);
 		}
 		*/
 	}
@@ -802,13 +804,18 @@ string DemoPlayer::getReplayModel(uint16_t modelIdx) {
 			return replayModel;
 		}
 		else {
-			ALERT(at_console, "Replay model not precached: %s\n", replayModel.c_str());
+			std::string error = UTIL_VarArgs("Replay model not precached: %s\n", replayModel.c_str());
+			if (!errorSpam.count(error)) {
+				ALERT(at_console, error.c_str(), 0);
+				errorSpam.insert(error);
+			}
+			
 			return NOT_PRECACHED_MODEL;
 		}
 	}
 	else {
 		if (!unknownSpam.count(modelIdx)) {
-			println("Unknown model idx %d", modelIdx);
+			ALERT(at_console, "Unknown model idx %d\n", modelIdx);
 			unknownSpam.insert(modelIdx);
 		}
 
@@ -824,7 +831,7 @@ void DemoPlayer::convReplayEntIdx(byte* dat, int offset, int dataSz) {
 
 	uint16_t* eidx = (uint16_t*)(dat + offset);
 	if (*eidx >= replayEnts.size()) {
-		//println("Invalid replay ent idx %d", (int)eidx);
+		//ALERT(at_console, "Invalid replay ent idx %d\n", (int)eidx);
 		*eidx = 0;
 		return;
 	}
@@ -847,7 +854,7 @@ void DemoPlayer::convReplayModelIdx(byte* dat, int offset, int dataSz) {
 
 bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 	if (replaySoundPath.find(soundIdx) == replaySoundPath.end()) {
-		println("Invalid replay sound index %d", soundIdx);
+		ALERT(at_console, "Invalid replay sound index %d\n", soundIdx);
 		soundIdx = 0;
 		return false;
 	}
@@ -858,7 +865,11 @@ bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 		return true;
 	}
 	else {
-		ALERT(at_console, "Replay sound not precached: %s\n", replaySound.c_str());
+		std::string error = UTIL_VarArgs("Replay sound not precached: %s\n", replaySound.c_str());
+		if (!errorSpam.count(error)) {
+			ALERT(at_console, error.c_str(), 0);
+			errorSpam.insert(error);
+		}
 	}
 }
 
@@ -912,7 +923,7 @@ bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
 		}
 	}
 
-	//println("Got %d player deltas", numPlayerDeltas);
+	//ALERT(at_console, "Got %d player deltas\n", numPlayerDeltas);
 
 	g_stats.plrDeltaCurrentSz = reader.tell() - startOffset;
 
@@ -928,7 +939,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* val
 	int dataSz = msg.sz - 1;
 
 	if (type > TE_USERTRACER) {
-		println("Invalid temp ent type %d", (int)type);
+		ALERT(at_console, "Invalid temp ent type %d\n", (int)type);
 		return false;
 	}
 
@@ -1101,7 +1112,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* val
 #endif
 	}
 	if (type != TE_TEXTMESSAGE && msg.sz != expectedSz) {
-		println("Bad size for %s (%d): %d != %d", te_names[type], (int)type, (int)msg.sz, expectedSz);
+		ALERT(at_console, "Bad size for %s (%d): %d != %d\n", te_names[type], (int)type, (int)msg.sz, expectedSz);
 		return false;
 	}
 
@@ -1221,7 +1232,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* val
 		break;
 	}
 
-	//println("Play temp ent %d", (int)type);
+	//ALERT(at_console, "Play temp ent %d\n", (int)type);
 
 	return true;
 }
@@ -1374,7 +1385,7 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 			}
 			return 0; // same as above
 		}
-		//println("Unhandled netmsg %d", (int)msg.header.type);
+		//ALERT(at_console, "Unhandled netmsg %d\n", (int)msg.header.type);
 		return 0;
 	}
 }
@@ -1511,7 +1522,7 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 				flags |= SND_ORIGIN;
 			}
 			else {
-				println("Invalid ent index decompressing startsound %d / %d", (int)entidx, (int)replayEnts.size());
+				ALERT(at_console, "Invalid ent index decompressing startsound %d / %d\n", (int)entidx, (int)replayEnts.size());
 			}
 			return;
 		}
@@ -1552,7 +1563,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 	if (validate) validate->msgCount = numMessages;
 
 	if (numMessages > MAX_NETMSG_FRAME) {
-		println("Invalid net msg count %d", (int)numMessages);
+		ALERT(at_console, "Invalid net msg count %d\n", (int)numMessages);
 		return false;
 	}
 
@@ -1575,13 +1586,13 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate) {
 			msg.eidx = 0;
 		}
 		if (msg.sz > MAX_NETMSG_DATA) {
-			println("Invalid net msg size %d", (int)msg.sz);
+			ALERT(at_console, "Invalid net msg size %d\n", (int)msg.sz);
 			return false; // data corrupted, abort before SVC_BAD
 		}
 		reader.read(msg.data, msg.sz);
 
 		if ((msg.eidx >= replayEnts.size() && !validate) || (validate && msg.eidx > MAX_EDICTS)) {
-			println("Invalid msg ent %d for %s", (int)msg.eidx, msgTypeStr(msg.header.type));
+			ALERT(at_console, "Invalid msg ent %d for %s\n", (int)msg.eidx, msgTypeStr(msg.header.type));
 			if (validate) return false;
 			continue;
 		}
@@ -1710,20 +1721,20 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate) {
 		uint16_t eidx = ev.header.entindex;
 		if (validate) {
 			if (eidx > MAX_EDICTS) {
-				println("Invalid event edict %d", (int)ev.header.entindex);
+				ALERT(at_console, "Invalid event edict %d\n", (int)ev.header.entindex);
 				return false;
 			}
 		}
 		else { // play the event
 			convReplayEntIdx((byte*)&eidx, 0, 2);
 			if ((!useBots && eidx >= replayEnts.size()) || (useBots && eidx > gpGlobals->maxClients)) {
-				println("Invalid event edict %d", (int)ev.header.entindex);
+				ALERT(at_console, "Invalid event edict %d\n", (int)ev.header.entindex);
 				continue;
 			}
 			edict_t* ent = INDEXENT(eidx);
 
 			/*
-			println("PLAY EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d",
+			ALERT(at_console, "PLAY EVT: %d %d %d %f (%.1f %.1f %.1f) (%.1f %.1f %.1f) %f %f %d %d %d %d\n",
 				(int)ev.header.flags, eidx, (int)ev.header.eventindex, 0.0f,
 				origin[0], origin[1], origin[2], angles[0], angles[1], angles[2],
 				fparam1, fparam2, (int)ev.iparam1, (int)ev.iparam2,
@@ -1757,7 +1768,7 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate) {
 		reader.read(&cmd, sizeof(DemoCommand));
 
 		if (cmd.len > MAX_CMD_LENGTH) {
-			println("Invalid cmd len %d", (int)cmd.len);
+			ALERT(at_console, "Invalid cmd len %d\n", (int)cmd.len);
 			return false;
 		}
 
@@ -1765,13 +1776,13 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate) {
 		commandChars[cmd.len] = '\0';
 
 		if (cmd.idx > demoHeader.maxPlayers) {
-			println("Invalid command player %d / %d", (int)cmd.idx, (int)demoHeader.maxPlayers);
+			ALERT(at_console, "Invalid command player %d / %d\n", (int)cmd.idx, (int)demoHeader.maxPlayers);
 			if (validate) return false;
 			continue;
 		}
 		if (cmd.idx == 0) {
 			if (!validate)
-				println("[SvenTV][Cmd][Server] %s", commandChars);
+				ALERT(at_console, "[SvenTV][Cmd][Server] %s\n", commandChars);
 			continue;
 		}
 
@@ -1791,7 +1802,7 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate) {
 		}
 
 		if (!validate) {
-			println("[Cmd][%s][%s] %s", legacySteamId, plr.name, commandChars);
+			ALERT(at_console, "[Cmd][%s][%s] %s\n", legacySteamId, plr.name, commandChars);
 		}
 	}
 
@@ -1849,7 +1860,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	}
 
 	if (demoTime > t && !validate) {
-		//println("Wait %u > %u", header.demoTime, t);
+		//ALERT(at_console, "Wait %u > %u\n", header.demoTime, t);
 		interpolateEdicts();
 		return false;
 	}
@@ -1872,11 +1883,11 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		return true; // nothing changed
 	}
 
-	//println("Frame %d (%.1f kb), Time: %.1f", replayFrame, header.frameSize / 1024.0f, (float)TimeDifference(0, header.demoTime));
+	//ALERT(at_console, "Frame %d (%.1f kb), Time: %.1f", replayFrame, header.frameSize / 1024.0f, (float)TimeDifference(0, header.demoTime));
 
 	/*
 	if (replayFrame == 242) {
-		println("debug");
+		ALERT(at_console, "debug\n");
 	}
 	*/
 
@@ -1988,7 +1999,7 @@ void DemoPlayer::interpolateEdicts() {
 			float inc = animTime * interp.framerateEnt * interp.framerateSmd;
 
 			ent->v.frame = interp.frameEnd + inc;
-			//println("ANIM TIME %.2f %.2f %.2f", (gpGlobals->time - interp.lastMovementTime) * replaySpeed, t, interp.estimatedUpdateDelay);
+			//ALERT(at_console, "ANIM TIME %.2f %.2f %.2f\n", (gpGlobals->time - interp.lastMovementTime) * replaySpeed, t, interp.estimatedUpdateDelay);
 
 			if (interp.sequenceLoops)
 				ent->v.frame = normalizeRangef(ent->v.frame, 0, 255);
