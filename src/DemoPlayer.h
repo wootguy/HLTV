@@ -213,5 +213,7 @@ private:
 
 	bool validateEdicts(); // debug
 
+	void writePings();
+
 	friend class DemoWriter;
 };

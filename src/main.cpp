@@ -705,10 +705,10 @@ void replay_command() {
 	replay_demo(NULL);
 }
 
-HOOK_RET_VOID EMIT_SOUND_HOOK(edict_t* entity, int channel, const char* sample, float fvolume, float attenuation, int fFlags, int pitch) {
-	Vector origin = (entity->v.maxs + entity->v.mins) * 0.5f + entity->v.origin;
-	float* ori = origin;
-	mstream* stream = BuildStartSoundMessage(entity, channel, sample, fvolume, attenuation, fFlags, pitch, ori);
+HOOK_RET_VOID EMIT_SOUND_HOOK(edict_t* entity, int channel, const char* sample, float fvolume,
+	float attenuation, int fFlags, int pitch, const float* origin, uint32_t recipients, bool reliable) {
+
+	mstream* stream = BuildStartSoundMessage(entity, channel, sample, fvolume, attenuation, fFlags, pitch, origin);
 
 	if (!stream) {
 		DEFAULT_HOOK_RETURN;
@@ -718,8 +718,26 @@ HOOK_RET_VOID EMIT_SOUND_HOOK(edict_t* entity, int channel, const char* sample, 
 	char* buffer = stream->getBuffer();
 	bool sendPAS = channel != CHAN_STATIC && !(fFlags & SND_STOP);
 
+	if (fFlags & SND_FL_PREDICTED) {
+		// sound is predicted by the client that emitted it, but the demo player doesn't run any
+		// movement prediction code for the dummy player entities, so let the emitter hear it too
+		uint32_t targets = PLRBIT(entity);
+
+		MessageBegin(MSG_ONE, SVC_SOUND, NULL, entity);
+		for (int i = 0; i < sz; i++) {
+			WriteByte(buffer[i]);
+		}
+		MessageEnd();
+
+		DEFAULT_HOOK_RETURN;
+	}
+
+	if (fFlags & SND_FL_MOD) {
+		DEFAULT_HOOK_RETURN; // will catch this as a normal network message
+	}
+
 	// can't hook engine messages, so pretend the game sent this
-	MessageBegin(sendPAS ? MSG_PAS : MSG_BROADCAST, SVC_SOUND, sendPAS ? ori : NULL, NULL);
+	MessageBegin(sendPAS ? MSG_PAS : MSG_BROADCAST, SVC_SOUND, sendPAS ? origin : NULL, NULL);
 	//MessageBegin(MSG_BROADCAST, SVC_SOUND, NULL, NULL); // save space in the demo
 	for (int i = 0; i < sz; i++) {
 		WriteByte(buffer[i]);

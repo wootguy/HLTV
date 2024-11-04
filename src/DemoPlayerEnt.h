@@ -41,6 +41,8 @@
 #define PLR_WEP_AMMO2		(1 << 4)
 #define PLR_WEP_STATE		(1 << 5)
 
+#define PLR_NO_WEAPON_MODEL 65535 // special value indicating the player weapon model is null
+
 // extra info for player entities (combined with netedict data)
 // TODO: weapon bits?
 struct DemoPlayerEnt {

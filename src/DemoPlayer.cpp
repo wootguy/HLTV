@@ -506,6 +506,30 @@ bool DemoPlayer::validateEdicts() {
 	return true;
 }
 
+void DemoPlayer::writePings() {
+	MESSAGE_BEGIN(MSG_BROADCAST, SVC_PINGS);
+	static char pingBuffer[101]; // (25 bits per player * 32) + 1 = 101 bytes
+	mstream pingStream(pingBuffer, 101);
+	memset(pingBuffer, 0, 101);
+
+	for (int i = 1; i < gpGlobals->maxClients; i++) {
+		CBasePlayer* plr = UTIL_PlayerByIndex(i);
+		if (!plr || !plr->IsBot()) {
+			continue;
+		}
+
+		int originalEntIdx = plr->pev->iuser4;
+		pingStream.writeBits(1, 1);
+		pingStream.writeBits(i - 1, 5);
+		pingStream.writeBits(fileplayerinfos[originalEntIdx-1].ping, 12);
+		pingStream.writeBits(0, 7); // packet loss
+	}
+	pingStream.writeBits(0, 1);
+
+	WRITE_BYTES((uint8_t*)pingStream.getBuffer(), pingStream.tell() + 1);
+	MESSAGE_END();
+}
+
 edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	bool playerSlotFree = true; // todo
 	bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER);
@@ -768,9 +792,19 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 }
 
 string DemoPlayer::getReplayModel(uint16_t modelIdx) {
-	if (replayModelPath.count(modelIdx)) {
+	if (modelIdx == PLR_NO_WEAPON_MODEL) {
+		return "";
+	}
+	else if (replayModelPath.count(modelIdx)) {
 		// Demo file model path
-		return replayModelPath[modelIdx];
+		std::string replayModel = replayModelPath[modelIdx];
+		if (g_precachedModels.find(replayModel) != g_precachedModels.end()) {
+			return replayModel;
+		}
+		else {
+			ALERT(at_console, "Replay model not precached: %s\n", replayModel.c_str());
+			return NOT_PRECACHED_MODEL;
+		}
 	}
 	else {
 		if (!unknownSpam.count(modelIdx)) {
@@ -818,8 +852,14 @@ bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 		return false;
 	}
 
-	soundIdx = SOUND_INDEX(replaySoundPath[soundIdx].c_str());
-	return true;
+	std::string replaySound = replaySoundPath[soundIdx];
+	if (g_precachedSounds.find(replaySound) != g_precachedSounds.end()) {
+		soundIdx = SOUND_INDEX(replaySoundPath[soundIdx].c_str());
+		return true;
+	}
+	else {
+		ALERT(at_console, "Replay sound not precached: %s\n", replaySound.c_str());
+	}
 }
 
 bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
@@ -1766,6 +1806,8 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 
 	if (!validate)
 		replayData->seek(nextFrameOffset);
+
+	writePings(); // spam this to override the engine messages
 
 	if (validate) validate->success = false;
 

@@ -43,6 +43,8 @@ DemoWriter::~DemoWriter() {
 	delete[] cmdsBuffer;
 	delete[] eventsBuffer;
 
+	closeDemoFile();
+
 	if (compress_thread) {
 		ALERT(at_console, "Waiting for demo compression to finish...\n", 0);
 		compress_thread->join();

@@ -486,17 +486,27 @@ void SvenTV::think_tvThread() {
 					continue;
 				}
 
+				const char* viewmodel = STRING(ent->v.viewmodel);
+				const char* weaponmodel = STRING(ent->v.weaponmodel);
+
 				dplr.armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
 				dplr.fov = clamp(ent->v.fov + 0.5f, 0, 255);
 				dplr.frags = clamp(ent->v.frags, 0, UINT16_MAX);
 				dplr.punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
 				dplr.punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
 				dplr.punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
-				dplr.viewmodel = g_engfuncs.pfnModelIndex(STRING(ent->v.viewmodel));
-				dplr.weaponmodel = g_engfuncs.pfnModelIndex(STRING(ent->v.weaponmodel));
+				dplr.viewmodel = MODEL_INDEX(g_precachedModels.find(viewmodel) != g_precachedModels.end() ? viewmodel : NOT_PRECACHED_MODEL);
+				dplr.weaponmodel = MODEL_INDEX(g_precachedModels.find(weaponmodel) != g_precachedModels.end() ? weaponmodel : NOT_PRECACHED_MODEL);
 				dplr.weaponanim = ent->v.weaponanim;
 				dplr.view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
 				dplr.observer = ((uint8_t)ent->v.iuser2 << 3) | (ent->v.iuser1 & 0x7);
+
+				if (weaponmodel[0] == '\0') {
+					dplr.weaponmodel = PLR_NO_WEAPON_MODEL;
+				}
+				if (viewmodel[0] == '\0') {
+					dplr.viewmodel = PLR_NO_WEAPON_MODEL;
+				}
 
 				CBasePlayerWeapon* wep = plr->m_pActiveItem ? plr->m_pActiveItem->GetWeaponPtr() : NULL;
 

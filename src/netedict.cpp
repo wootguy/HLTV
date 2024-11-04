@@ -354,7 +354,17 @@ void netedict::apply(edict_t* ed) {
 				// aiment causing hard-to-troubleshoot crashes, so just set origin
 
 				if (!(edflags & (EDFLAG_MONSTER|EDFLAG_PLAYER)) && vars.skin && vars.body) {
-					GET_ATTACHMENT(copyent, vars.body-1, vars.origin, vars.angles);
+
+					if (!strstr(STRING(copyent->v.model), ".spr")) {
+						studiohdr_t* pstudiohdr = (studiohdr_t*)GET_MODEL_PTR(copyent);
+						if (pstudiohdr && pstudiohdr->numattachments > vars.body - 1) {
+							GET_ATTACHMENT(copyent, vars.body - 1, vars.origin, vars.angles);
+						}
+						else {
+							ALERT(at_console, "Failed to get attachment %d on model %s\n", vars.body - 1, STRING(copyent->v.model));
+						}
+					}
+
 					vars.skin = 0;
 					vars.body = 0;
 				}
