@@ -63,6 +63,7 @@ void DemoWriter::initDemoFile() {
 		if (!folderExists(rootPath)) {
 			ALERT(at_error, "Failed to create demo folder: %s\n", rootPath.c_str());
 			g_can_autostart_demo = false;
+			g_sventv->enableDemoFile = false;
 			return;
 		}
 	}
@@ -75,6 +76,7 @@ void DemoWriter::initDemoFile() {
 			ALERT(at_error, "Not enough disk space to begin recording (%u < %d)\n",
 				megaBytesLeft, (int)g_min_storage_megabytes->value);
 			g_can_autostart_demo = false;
+			g_sventv->enableDemoFile = false;
 			return;
 		}
 
@@ -92,6 +94,7 @@ void DemoWriter::initDemoFile() {
 			if (!folderExists(dayPath)) {
 				ALERT(at_error, "Failed to create demo folder: %s\n", dayPath.c_str());
 				g_can_autostart_demo = false;
+				g_sventv->enableDemoFile = false;
 				return;
 			}
 		}
@@ -113,6 +116,8 @@ void DemoWriter::initDemoFile() {
 
 	if (!demoFile) {
 		ALERT(at_error, "Failed to open demo file: %s\n", fpath.c_str());
+		g_can_autostart_demo = false;
+		g_sventv->enableDemoFile = false;
 		return;
 	}
 
