@@ -240,7 +240,7 @@ void DemoStats::showStats(edict_t* edt) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}
 
-		params.x = 0.5f;
+		params.x = 0.8f;
 		params.y = 0;
 		params.channel = 4;
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
@@ -327,6 +327,45 @@ void DemoStats::showStats(edict_t* edt) {
 		params.x = 0;
 		params.y = 1;
 		params.channel = 3;
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+	}
+	{
+		vector<DeltaStat> deltaStats;
+		for (int i = 0; i < 256; i++) {
+			DeltaStat stat;
+			stat.field = "Event_" + to_string(i);
+			stat.bytes = g_stats.evtSize[i];
+			if (i == SVC_TEMPENTITY)
+				continue; // broken down into specific types later
+			if (stat.bytes > 0)
+				deltaStats.push_back(stat);
+		}
+
+		uint32_t sum = 0;
+		for (int i = 0; i < (int)deltaStats.size(); i++) {
+			sum += deltaStats[i].bytes;
+		}
+
+		DeltaStat headerStat;
+		headerStat.field = "headers";
+		headerStat.bytes = g_stats.eventTotalSz - sum;
+		deltaStats.push_back(headerStat);
+
+		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
+
+		string sumStr = formatSize(sum);
+		txt = UTIL_VarArgs("event data (%d, %s):\n", g_stats.eventCount, sumStr.c_str());
+		for (int i = 0; i < (int)deltaStats.size() && i < 10; i++) {
+			//txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
+			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
+		}
+
+		params.x = 0.8;
+		params.y = -1;
+		params.channel = -1;
+		params.holdTime = 0.05f;
+		params.fadeinTime = 0.025f;
+		params.fadeoutTime = 0.025f;
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 }

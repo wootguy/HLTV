@@ -36,6 +36,7 @@ struct DemoStats {
 	uint32_t eventTotalSz;
 	uint32_t eventCurrentSz;
 	uint32_t eventCount; // number of events sent
+	uint32_t evtSize[256];
 
 	uint32_t cmdTotalSz;
 	uint32_t cmdCurrentSz;

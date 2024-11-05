@@ -132,9 +132,14 @@ public:
 
 	void OverrideClientData(const edict_t* ent, int sendweapons, clientdata_t* cd);
 
+	void seek(int offsetSeconds, bool relative);
+
+	void setPlaybackSpeed(float speed);
+
 private:
 	// vars for replaying a demo file
 	DemoDataStream* replayData = NULL;
+	uint32_t firstFrameOffset = 0;
 	bool isValidating = false; // if true, demo data is being validated, so don't mess with the input data
 	vector<string> precacheModels;
 	vector<string> precacheSounds;

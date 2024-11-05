@@ -551,6 +551,19 @@ bool doCommand(edict_t* plr) {
 		demoStatPlayers[ENTINDEX(plr)] = !demoStatPlayers[ENTINDEX(plr)];
 		return true;
 	}
+	if (args.ArgC() > 0 && lowerArg == ".seek") {
+		std::string offset = args.ArgV(1);
+		int seekPos = atoi(offset.c_str());
+		bool relative = offset[0] == '-' || offset[0] == '+';
+		g_demoPlayer->seek(seekPos, relative);
+		return true;
+	}
+	if (args.ArgC() > 0 && lowerArg == ".speed") {
+		float speed = atof(args.ArgV(1).c_str());
+		g_demoPlayer->setPlaybackSpeed(speed);
+		UTIL_ClientPrintAll(print_center, UTIL_VarArgs("Playback speed: %.2fx\n", speed));
+		return true;
+	}
 	/*
 	if (args.ArgC() > 0 && lowerArg == ".bot") {
 		edict_t* bot = g_engfuncs.pfnCreateFakeClient("botguy");

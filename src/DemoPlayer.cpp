@@ -135,6 +135,19 @@ void show_message(edict_t* plr, int mode, const char* msg) {
 		g_engfuncs.pfnServerPrint(msg);
 }
 
+std::string formatTime(int seconds, bool forceHours=false) {
+	int hours = seconds / (60 * 60);
+	int minutes = (seconds - (hours * 60 * 60)) / 60;
+	int s = seconds % 60;
+
+	if (hours > 0) {
+		return UTIL_VarArgs("%02d:%02d:%02d", hours, minutes, s);
+	}
+	else {
+		return UTIL_VarArgs("%02d:%02d", minutes, s);
+	}
+}
+
 bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache) {
 	this->offsetSeconds = offsetSeconds;
 	stopReplay();
@@ -250,7 +263,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		struct tm* timeinfo;
 		char buffer[80];
 
-		time(&rawtime);
+		rawtime = demoHeader.startTime / 1000ULL;
 		timeinfo = localtime(&rawtime);
 
 		strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
@@ -258,12 +271,10 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	}
 	{
 		int duration = demoHeader.endTime ? TimeDifference(demoHeader.startTime, demoHeader.endTime) : 0;
-		int hours = duration / (60 * 60);
-		int minutes = (duration - (hours * 60 * 60)) / 60;
-		int seconds = duration % 60;
 
 		if (duration) {
-			show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %02d:%02d:%02d\n", hours, minutes, seconds));
+			std::string timeStr = formatTime(duration);
+			show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %s\n", timeStr.c_str()));
 		}
 		else {
 			show_message(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
@@ -284,6 +295,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[HLTV] %d files need precaching. Restart the map to precache them\n", notPrecachedModels + notPrecachedSounds));
 
 	g_stats.totalWriteSz = sizeof(DemoHeader) + demoHeader.modelLen + demoHeader.soundLen;
+	firstFrameOffset = replayData->tell();
 
 	if (skipPrecache) {
 		prepareDemo();
@@ -556,6 +568,8 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER);
 	bool entIsPlayer = ent->v.flags & FL_CLIENT;
 	bool playerInfoLoaded = (i-1) < MAX_PLAYERS && fileplayerinfos[i - 1].flags;
+	bool isBeam = fileedicts[i].edflags & EDFLAG_BEAM;
+	bool entIsBeam = ent->v.flags & FL_CUSTOMENTITY;
 
 	if (useBots && playerSlotFree && isPlayer && !entIsPlayer && playerInfoLoaded) {
 		DemoPlayerEnt& info = fileplayerinfos[i - 1];
@@ -610,9 +624,8 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			ALERT(at_console, "Failed to create bot\n");
 		}
 	}
-	else if ((fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT))) {
-		unordered_map<string, string> keys;
-		CBaseEntity* newEnt = CBaseEntity::Create("beam", g_vecZero, g_vecZero, NULL, keys);
+	else if (isBeam && !entIsBeam) {
+		CBaseEntity* newEnt = CBaseEntity::Create("beam", g_vecZero, g_vecZero, NULL);
 
 		if (ent->v.flags & FL_CLIENT) {
 			KickPlayer(ent);
@@ -626,7 +639,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		ent->v.effects |= EF_NODRAW;
 		SET_MODEL(ent, NOT_PRECACHED_MODEL);
 	}
-	else if (!(fileedicts[i].edflags & EDFLAG_BEAM) && (ent->v.flags & (FL_MONSTER | FL_CLIENT)) == 0) {
+	else if (!isBeam && entIsBeam) {
 		unordered_map<string, string> keys;
 		keys["model"] = NOT_PRECACHED_MODEL;
 
@@ -781,16 +794,17 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 
 		fileedicts[i].apply(ent);
 
-		if (oldModelIdx != ent->v.modelindex) {
-			string newModel = getReplayModel(ent->v.modelindex);
-			bool isSprite = newModel.find(".spr") != string::npos;
+		string newModel = getReplayModel(ent->v.modelindex);
 
-			if ((fileedicts[i].edflags & EDFLAG_BEAM) && !isSprite) {
-				ALERT(at_console, "Invalid model set on beam: %s\n", newModel.c_str());
-			}
-			else if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
+		if (oldModelIdx != ent->v.modelindex) {
+			if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
 				SET_MODEL(ent, newModel.c_str());
 			}
+		}
+
+		if ((fileedicts[i].edflags & EDFLAG_BEAM) && newModel.find(".spr") == string::npos) {
+			ALERT(at_console, "Invalid model set on beam: %s\n", newModel.c_str());
+			ent->v.effects |= EF_NODRAW; // prevent client crash
 		}
 
 		setupInterpolation(ent, i);
@@ -1740,6 +1754,9 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate, bool seekin
 		DemoEventData ev;
 		memset(&ev, 0, sizeof(DemoEventData));
 		reader.read(&ev.header, sizeof(DemoEvent));
+
+		uint32_t startOffset = reader.tell();
+
 		float origin[3];
 		float angles[3];
 		float fparam1 = 0;
@@ -1775,6 +1792,8 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate, bool seekin
 		if (ev.header.hasIparam2) {
 			reader.read(&ev.iparam2, 2);
 		}
+
+		g_stats.evtSize[ev.header.eventindex] += reader.tell() - startOffset;
 
 		if (seeking) {
 			continue;
@@ -1926,7 +1945,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	}
 
 	if (demoTime > t && !validate) {
-		//ALERT(at_console, "Wait %u > %u\n", header.demoTime, t);
+		//ALERT(at_console, "Wait %u > %u\n", demoTime, t);
 		interpolateEdicts();
 		return false;
 	}
@@ -2235,6 +2254,119 @@ void DemoPlayer::playDemo() {
 	}
 
 	while (readDemoFrame());
+
+	static float lastStatusMsg = 0;
+
+	if (gpGlobals->time - lastStatusMsg < 0.2f) {
+		return;
+	}
+
+	lastStatusMsg = gpGlobals->time;
+
+	hudtextparms_t parms;
+	memset(&parms, 0, sizeof(hudtextparms_t));
+
+	parms.holdTime = 0.2f;
+	parms.fadeoutTime = 0.05f;
+	parms.fadeinTime = 0.05f;
+	parms.x = -1;
+	parms.y = 0;
+	parms.r1 = 255;
+	parms.g1 = 255;
+	parms.b1 = 255;
+	parms.channel = -1;
+
+	uint32_t t = (getEpochMillis() - replayStartTime) * replaySpeed;
+
+	time_t rawtime;
+	struct tm* timeinfo;
+	char buffer[80];
+	rawtime = (demoHeader.startTime + t) / 1000ULL;
+	timeinfo = localtime(&rawtime);
+	strftime(buffer, sizeof(buffer), "%b %d, %Y  %I:%M %p", timeinfo);
+
+	std::string durString = formatTime(TimeDifference(demoHeader.startTime, demoHeader.endTime));
+	std::string timeStr = formatTime(t / 1000ULL);
+
+	std::string speed = replaySpeed != 1.0f ? UTIL_VarArgs(" (%.1fx)", replaySpeed) : "";
+	std::string dayStr = buffer;
+	std::string str = dayStr + "\n" + timeStr + " / " + durString + speed;
+
+	UTIL_HudMessageAll(parms, str.c_str(), MSG_BROADCAST);
+}
+
+void DemoPlayer::seek(int offsetSeconds, bool relative) {
+	if (!replayData) {
+		ALERT(at_console, "Can't seek. No demo open\n");
+		return;
+	}
+	
+	ALERT(at_console, "Seeking to %d\n", offsetSeconds);
+
+	std::string replayDurStr = formatTime(TimeDifference(demoHeader.startTime, demoHeader.endTime));
+
+	uint64_t oldStartTime = replayStartTime;
+	if (relative) {
+		if (offsetSeconds > 0) {
+			replayStartTime = replayStartTime - ((uint64_t)offsetSeconds * 1000ULL);
+			std::string seekStr = formatTime(TimeDifference(replayStartTime, getEpochMillis()));
+			UTIL_ClientPrintAll(print_center, UTIL_VarArgs("Fast-forward %d seconds\n%s / %s",
+				offsetSeconds, seekStr.c_str(), replayDurStr.c_str()));
+			
+		}
+		else {
+			replayStartTime = replayStartTime + ((uint64_t)(-offsetSeconds) * 1000ULL);
+			std::string seekStr = formatTime(TimeDifference(replayStartTime, getEpochMillis()));
+			UTIL_ClientPrintAll(print_center, UTIL_VarArgs("Rewind %d seconds\n%s / %s", -offsetSeconds,
+				seekStr.c_str(), replayDurStr.c_str()));
+		}
+	}
+	else {
+		std::string seekStr = formatTime(offsetSeconds);
+		
+		UTIL_ClientPrintAll(print_center, UTIL_VarArgs("Seek to\n%s / %s",
+			seekStr.c_str(), replayDurStr.c_str()));
+		replayStartTime = getEpochMillis() - (uint64_t)offsetSeconds * 1000ULL;
+	}
+
+	if (replayStartTime > oldStartTime) {
+		replayData->seek(firstFrameOffset); // start from the beginning then fast-forward
+		lastFrameDemoTime = 0;
+		replayFrame = 0;
+		nextFrameOffset = replayData ? replayData->tell() : 0;
+		nextFrameTime = 0;
+
+		memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
+		memset(fileplayerinfos, 0, sizeof(DemoPlayerEnt) * 32);
+		/*
+		for (int i = 0; i < (int)replayEnts.size(); i++) {
+			edict_t* ent = replayEnts[i].h_ent.GetEdict();
+			if (!ent) {
+				continue;
+			}
+
+			if (ent->v.flags & FL_FAKECLIENT) {
+				KickPlayer(ent);
+			}
+			else {
+				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+			}
+		}
+		replayEnts.clear();
+		*/
+	}
+}
+
+void DemoPlayer::setPlaybackSpeed(float speed) {
+	uint64_t offsetMillis = getEpochMillis() - replayStartTime;
+
+	double delta = replaySpeed / speed;
+	offsetMillis *= delta;
+
+	replayStartTime = getEpochMillis() - offsetMillis;
+
+	replaySpeed = speed;
+	nextFrameTime = 0;
 }
 
 int DemoPlayer::GetWeaponData(edict_t* player, weapon_data_t* info) {
