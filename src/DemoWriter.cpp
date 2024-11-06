@@ -532,6 +532,12 @@ void initAmbientSounds() {
 	while (!FNullEnt(ent = FIND_ENTITY_BY_CLASSNAME(ent, "ambient_generic"))) {
 		CAmbientGeneric* ambient = (CAmbientGeneric*)GET_PRIVATE(ent);
 		if (ambient && ambient->m_isWav && ambient->m_fActive && ambient->m_fLooping) {
+			std::string ambientSound = toLowerCase(STRING(ambient->pev->message));
+			if (!g_precachedSounds.count(ambientSound)) {
+				ALERT(at_console, "Ambient using sound which isn't precached: %s\n", ambientSound.c_str());
+				continue;
+			}
+
 			MessageBegin(MSG_BROADCAST, SVC_SPAWNSTATICSOUND, NULL, NULL);
 			WriteCoord(ambient->pev->origin[0]);
 			WriteCoord(ambient->pev->origin[1]);
@@ -551,6 +557,12 @@ void initAmbientSounds() {
 	while (!FNullEnt(ent = FIND_ENTITY_BY_CLASSNAME(ent, "ambient_music"))) {
 		CAmbientGeneric* ambient = (CAmbientGeneric*)GET_PRIVATE(ent);
 		if (ambient) {
+			std::string ambientSound = toLowerCase(STRING(ambient->pev->message));
+			if (!g_precachedSounds.count(ambientSound)) {
+				ALERT(at_console, "Ambient using sound which isn't precached: %s\n", ambientSound.c_str());
+				continue;
+			}
+
 			MessageBegin(MSG_BROADCAST, SVC_SPAWNSTATICSOUND, NULL, NULL);
 			WriteCoord(ambient->pev->origin[0]);
 			WriteCoord(ambient->pev->origin[1]);
