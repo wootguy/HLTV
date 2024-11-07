@@ -2089,18 +2089,22 @@ void DemoPlayer::interpolateEdicts() {
 
 		edict_t* ent = replayEnts[i].h_ent.GetEdict();
 		InterpInfo& interp = replayEnts[i].interp;
+		bool isSprite = strstr(STRING(ent->v.model), ".spr");
 
-		if (fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) {
+		if ((fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) || isSprite) {
 			float animTime = (gpGlobals->time - interp.animTime) * replaySpeed;
-			float inc = animTime * interp.framerateEnt * interp.framerateSmd;
+			float inc = animTime * interp.framerateEnt * (isSprite ? 1.0f : interp.framerateSmd);
 
 			ent->v.frame = interp.frameEnd + inc;
+
 			//ALERT(at_console, "ANIM TIME %.2f %.2f %.2f\n", (gpGlobals->time - interp.lastMovementTime) * replaySpeed, t, interp.estimatedUpdateDelay);
 
-			if (interp.sequenceLoops)
-				ent->v.frame = normalizeRangef(ent->v.frame, 0, 255);
+			int maxFrame = isSprite ? MODEL_FRAMES(ent->v.modelindex)-1 : 255;
+
+			if (isSprite || interp.sequenceLoops)
+				ent->v.frame = normalizeRangef(ent->v.frame, 0, maxFrame);
 			else
-				ent->v.frame = clampf(ent->v.frame, 0, 255);
+				ent->v.frame = clampf(ent->v.frame, 0, maxFrame);
 
 			interp.interpFrame = ent->v.frame;
 		}

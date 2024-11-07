@@ -192,7 +192,7 @@ void netedict::load(const edict_t& ed) {
 	}
 	
 	uint8_t oldFrame = frame;
-	if (animationReset || isBspModel) {
+	if (animationReset || isBspModel || framerate == 0) {
 		// clients can no longer predict the current frame
 		frame = vars.frame;
 	}
