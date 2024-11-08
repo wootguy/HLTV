@@ -63,6 +63,10 @@ bool g_should_write_next_message = false;
 bool g_pause_message_logging = false;
 bool g_can_autostart_demo = true;
 
+char g_stringpool[STRING_POOL_SIZE]; // pool for storing misc strings used by the current map
+uint16_t g_stringpool_idx = 1; // points to the end of the string data, 0 index is for NULL strings
+unordered_map<string_t, uint16_t> g_stringtToClassIdx; // maps a string_t to an offset in g_stringpool
+
 
 // maps indexes to model names, for all models that were used so far in this map
 set<string> g_playerModels; // all player model names used during the game
@@ -73,6 +77,7 @@ cvar_t* g_max_demo_megabytes; // max size of a demo before aborting
 cvar_t* g_demo_file_path;
 cvar_t* g_validate_output;
 cvar_t* g_compress_demos; // compress demos with lzma after writing
+cvar_t* g_write_debug_info; // write debugging info to the demo files (monster state, health, etc.)
 
 DemoStats g_stats;
 bool demoStatPlayers[33] = { false };
@@ -112,6 +117,28 @@ const char* te_names[TE_NAMES] = {
 	"TE_MULTIGUNSHOT", "TE_USERTRACER"
 };
 
+uint16_t getPoolOffsetForString(string_t classname) {
+	auto item = g_stringtToClassIdx.find(classname);
+
+	if (item != g_stringtToClassIdx.end()) {
+		return item->second;
+	}
+
+	int len = strlen(STRING(classname));
+	if (len + g_stringpool_idx + 1 >= STRING_POOL_SIZE) {
+		ALERT(at_console, "Overflowed string pool!\n");
+		return 0;
+	}
+
+	uint16_t ret = g_stringpool_idx;
+	g_stringtToClassIdx[classname] = g_stringpool_idx;
+
+	strncpy(g_stringpool + g_stringpool_idx, STRING(classname), len+1);
+	g_stringpool_idx += len + 1;
+
+	return ret;
+}
+
 HOOK_RET_VOID ClientLeaveHook(edict_t* ent) {
 	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
 	plr.flags = 0;
@@ -148,6 +175,10 @@ HOOK_RET_VOID MapInitHook(edict_t * pEdictList, int edictCount, int maxClients)
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 	g_can_autostart_demo = true;
 	
+	memset(g_stringpool, 0, STRING_POOL_SIZE);
+	g_stringpool_idx = 1; // 0 index is for NULL strings
+	g_stringtToClassIdx.clear();
+
 	DEFAULT_HOOK_RETURN;
 }
 
@@ -218,6 +249,27 @@ uint64_t getSteamId64(edict_t* ent) {
 		uint64_t y = atoi(parts[2].c_str());
 		return ((y * 2LLU) - x) + 76561197960265728LLU;
 	}
+}
+
+void printEdSlots() {
+	int edFree = 0;
+	int edUsed = 0;
+	int edPend = 0;
+	edict_t* edicts = ENT(0);
+	for (int i = 0; i < gpGlobals->maxEntities; i++) {
+		if (edicts[i].free) {
+			if (gpGlobals->time - edicts[i].freetime > 0.5) {
+				edFree++;
+			}
+			else {
+				edPend++;
+			}
+		}
+		else {
+			edUsed++;
+		}
+	}
+	ALERT(at_console, "Edicts: %04d Used, %04d Pending, %04d Free\n", edUsed, edPend, edFree);
 }
 
 HOOK_RET_VOID StartFrameHook() {
@@ -862,6 +914,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_compress_demos = RegisterPluginCVar(plugin, "hltv.compress", "1", 1, 0);
 	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.path", "hltv/", 0, 0);
 	g_validate_output = RegisterPluginCVar(plugin, "hltv.validate", "0", 0, 0);
+	g_write_debug_info = RegisterPluginCVar(plugin, "hltv.debug_info", "1", 0, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 

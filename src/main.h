@@ -41,6 +41,10 @@
 
 #define ABSOLUTE_MAX_EDICTS 8192 // the max edicts a server can ever have with -num_edicts
 
+#define STRING_POOL_SIZE 4096
+extern char g_stringpool[STRING_POOL_SIZE]; // pool for storing strings used by the current map (classnames)
+extern uint16_t g_stringpool_idx; // 0 index is for NULL strings
+
 #include <map>
 #include <set>
 #include <string>
@@ -51,6 +55,8 @@ class DemoPlayer;
 using namespace std;
 
 extern bool g_compressMessages; // for debugging
+
+uint16_t getPoolOffsetForString(string_t classname);
 
 void MapInit(edict_t* pEdictList, int edictCount, int maxClients);
 void StartFrame();
@@ -66,6 +72,7 @@ extern cvar_t* g_min_storage_megabytes;
 extern cvar_t* g_max_demo_megabytes;
 extern cvar_t* g_compress_demos;
 extern cvar_t* g_validate_output;
+extern cvar_t* g_write_debug_info;
 
 extern int g_copyTime;
 extern volatile int g_thinkTime;
@@ -80,6 +87,8 @@ extern DemoStats g_stats;
 extern const char* te_names[TE_NAMES];
 
 int bitoffset(uint32_t flag);
+
+void printEdSlots();
 
 typedef struct usercmd_s
 {

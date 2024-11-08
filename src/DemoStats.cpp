@@ -169,9 +169,18 @@ void DemoStats::showStats(edict_t* edt) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERCOLOR_1);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERCOLOR_2);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_AIMENT);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_HEALTH);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_COLORMAP);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CLASSIFY);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_EDFLAGS);
+		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_INTERNALS);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_CLASSNAME);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_MONSTERSTATE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_SCHEDULE);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_TASK);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_COND_LO);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_COND_HI);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_MEMORIES);
+		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_HEALTH);
 
 		DeltaStat indexStat;
 		indexStat.field = "indexes";
@@ -229,7 +238,6 @@ void DemoStats::showStats(edict_t* edt) {
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_1);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_2);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_AIMENT);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_HEALTH);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_COLORMAP);
 		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CLASSIFY);
 
@@ -368,6 +376,55 @@ void DemoStats::showStats(edict_t* edt) {
 		params.fadeoutTime = 0.025f;
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
+
+	{
+		txt = "String pool: " + to_string(g_stringpool_idx) + " / " + to_string(STRING_POOL_SIZE) + "\n";
+		params.x = 0.5;
+		params.y = 0;
+		params.channel = -1;
+		params.holdTime = 0.05f;
+		params.fadeinTime = 0.025f;
+		params.fadeoutTime = 0.025f;
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+	}
+	/*
+	{
+		static const char* cond_names[] = {
+			... TODO: update for latest ordering
+		};
+
+		vector<DeltaStat> deltaStats;
+		for (int i = 0; i < 32; i++) {
+			int bit = 1 << i;
+			if (bit == bits_COND_TASK_FAILED || bit == bits_COND_LIGHT_DAMAGE || bit == bits_COND_ENEMY_OCCLUDED 
+				|| bit == bits_COND_SEE_ENEMY || bit == bits_COND_SEE_CLIENT || bit == bits_COND_SEE_DISLIKE
+				|| bit == bits_COND_SEE_HATE || bit == bits_COND_ENEMY_TOOFAR || bit == bits_COND_ENEMY_FACING_ME)
+				continue;
+
+			DeltaStat stat;
+			stat.field = cond_names[i];
+			stat.bytes = g_stats.entCondSz[i];
+			if (stat.bytes > 0)
+				deltaStats.push_back(stat);
+		}
+
+		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
+
+		txt = "cond count:\n";
+		for (int i = 0; i < (int)deltaStats.size() && i < 10; i++) {
+			//txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
+			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
+		}
+
+		params.x = 0.5;
+		params.y = 0;
+		params.channel = -1;
+		params.holdTime = 0.05f;
+		params.fadeinTime = 0.025f;
+		params.fadeoutTime = 0.025f;
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+	}
+	*/
 }
 
 int bitoffset(uint32_t flag) {

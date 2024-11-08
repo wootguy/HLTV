@@ -45,6 +45,8 @@ private:
 	uint32_t lastServerFrameCount = 0;
 	uint64_t demoStartTime = 0;
 	uint64_t lastDemoFrameTime = 0;
+	uint32_t stringPoolOffset = 0; // location of the string pool in the file
+	uint32_t lastStringPoolIdx = 0; // for detecting if the string pool needs updating in the file
 
 	DemoPlayerEnt* fileplayerinfos = NULL;
 	char* filePlayerInfoBuffer = NULL;

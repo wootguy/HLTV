@@ -190,6 +190,17 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		return false;
 	}
 
+	if (stringPool) {
+		delete[] stringPool;
+	}
+	stringPool = new char[demoHeader.stringPoolSize];
+	if (!replayData->read(stringPool, demoHeader.stringPoolSize)) {
+		show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete string pool data\n");
+		closeReplayFile();
+		return false;
+	}
+
+
 	int notPrecachedModels = 0;
 	int notPrecachedSounds = 0;
 
@@ -392,7 +403,9 @@ void DemoPlayer::closeReplayFile() {
 	if (replayData) {
 		replayData->close();
 		delete replayData;
+		delete[] stringPool;
 		replayData = NULL;
+		stringPool = NULL;
 
 		MESSAGE_BEGIN(MSG_ALL, SVC_STUFFTEXT);
 		WRITE_STRING("stopsound\n");
@@ -566,10 +579,14 @@ void DemoPlayer::writePings() {
 edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	bool playerSlotFree = true; // todo
 	bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER);
-	bool entIsPlayer = ent->v.flags & FL_CLIENT;
+	bool entIsPlayer = ent && ent->v.flags & FL_CLIENT;
 	bool playerInfoLoaded = (i-1) < MAX_PLAYERS && fileplayerinfos[i - 1].flags;
 	bool isBeam = fileedicts[i].edflags & EDFLAG_BEAM;
-	bool entIsBeam = ent->v.flags & FL_CUSTOMENTITY;
+	bool entIsBeam = ent && ent->v.flags & FL_CUSTOMENTITY;
+
+	if (!fileedicts[i].edflags & EDFLAG_VALID) {
+		return NULL;
+	}
 
 	if (useBots && playerSlotFree && isPlayer && !entIsPlayer && playerInfoLoaded) {
 		DemoPlayerEnt& info = fileplayerinfos[i - 1];
@@ -595,7 +612,8 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 
 		if (bot) {
 			int eidx = ENTINDEX(bot);
-			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+			if (ent)
+				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
 			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
 			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", info.name);
@@ -627,44 +645,52 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	else if (isBeam && !entIsBeam) {
 		CBaseEntity* newEnt = CBaseEntity::Create("beam", g_vecZero, g_vecZero, NULL);
 
-		if (ent->v.flags & FL_CLIENT) {
-			KickPlayer(ent);
-		}
-		else {
-			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+		if (ent) {
+			if (ent->v.flags & FL_CLIENT) {
+				KickPlayer(ent);
+			}
+			else {
+				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+			}
 		}
 
 		replayEnts[i].h_ent = ent = newEnt->edict();
 		ent->v.flags |= FL_CUSTOMENTITY;
-		ent->v.effects |= EF_NODRAW;
+		//ent->v.effects |= EF_NODRAW;
 		SET_MODEL(ent, NOT_PRECACHED_MODEL);
 	}
-	else if (!isBeam && entIsBeam) {
+	else if (!isBeam && (entIsBeam || !ent)) {
 		unordered_map<string, string> keys;
 		keys["model"] = NOT_PRECACHED_MODEL;
 
 		CBaseEntity* newEnt = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, NULL, keys);
 
-		if (ent->v.flags & FL_CLIENT) {
-			KickPlayer(ent);
-		}
-		else {
-			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+		if (ent) {
+			if (ent->v.flags & FL_CLIENT) {
+				KickPlayer(ent);
+			}
+			else {
+				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+			}
 		}
 
 		replayEnts[i].h_ent = ent = newEnt->edict();
 		ent->v.solid = SOLID_NOT;
-		ent->v.effects |= EF_NODRAW;
+		//ent->v.effects |= EF_NODRAW;
 		ent->v.movetype = MOVETYPE_NONE;
 		ent->v.flags |= FL_MONSTER;
 	}
 
-	ent->v.iuser4 = i; // hack to store original ent index
+	ent->v.effects &= ~EF_NODRAW;
+
+	if (ent)
+		ent->v.iuser4 = i; // hack to store original ent index
 	return ent;
 }
 
 bool DemoPlayer::createReplayEntities(int count) {
 	while (count >= (int)replayEnts.size()) {
+		/*
 		unordered_map<string, string> keys;
 		keys["model"] = NOT_PRECACHED_MODEL;
 
@@ -682,10 +708,11 @@ bool DemoPlayer::createReplayEntities(int count) {
 			closeReplayFile();
 			return false;
 		}
+		*/
 
 		ReplayEntity rent;
 		memset(&rent, 0, sizeof(ReplayEntity));
-		rent.h_ent = ent;
+		//rent.h_ent = ent;
 
 		replayEnts.push_back(rent);
 	}
@@ -776,7 +803,8 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 	for (int i = 1; i < MAX_EDICTS; i++) {
 		if (!fileedicts[i].edflags) {
 			if (i < (int)replayEnts.size()) {
-				replayEnts[i].h_ent.GetEdict()->v.effects |= EF_NODRAW;
+				//replayEnts[i].h_ent.GetEdict()->v.effects |= EF_NODRAW;
+				UTIL_Remove(replayEnts[i].h_ent.GetEntity());
 			}
 			continue;
 		}
@@ -788,11 +816,14 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 
 		edict_t* ent = replayEnts[i].h_ent.GetEdict();
 		ent = convertEdictType(ent, i);
+		if (!ent) {
+			continue;
+		}
 		
 		int oldModelIdx = ent->v.modelindex;
 		int oldRenderfx = ent->v.renderfx;
 
-		fileedicts[i].apply(ent);
+		fileedicts[i].apply(ent, stringPool);
 
 		string newModel = getReplayModel(ent->v.modelindex);
 
@@ -2000,7 +2031,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 
 	double fileTime = demoTime / 1000.0;
 	double viewTime = t / 1000.0;
-	bool seeking = fileTime + (1.0f / demoFileFps) * 10 < viewTime;
+	bool seeking = !validate && (fileTime + (1.0f / demoFileFps) * 10 < viewTime);
 	if (seeking) {
 		static float lastSeekPrint = 0;
 		if (gpGlobals->time - lastSeekPrint > 0.1f) {

@@ -163,11 +163,15 @@ void DemoWriter::initDemoFile() {
 	header.soundCount = soundCount;
 	header.modelLen = modelData.size();
 	header.soundLen = soundData.size();
+	header.stringPoolSize = STRING_POOL_SIZE;
 
 	memset(&g_stats, 0, sizeof(DemoStats));
 	g_stats.totalWriteSz = sizeof(DemoHeader) + header.modelLen + header.soundLen;
 
 	fwrite(&header, sizeof(DemoHeader), 1, demoFile);
+
+	stringPoolOffset = ftell(demoFile);
+	fwrite(g_stringpool, STRING_POOL_SIZE, 1, demoFile); // empty for now
 
 	if (modelData.size()) {
 		fwrite(modelIndexes, modelCount*sizeof(uint16_t), 1, demoFile);
@@ -749,6 +753,13 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (header.hasCommands) {
 		fwrite(&frame.cmds_count, sizeof(uint8_t), 1, demoFile);
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
+	}
+
+	if (lastStringPoolIdx != g_stringpool_idx) {
+		uint32_t currentOffset = ftell(demoFile);
+		fseek(demoFile, stringPoolOffset, SEEK_SET);
+		fwrite(g_stringpool, g_stringpool_idx, 1, demoFile);
+		fseek(demoFile, currentOffset, SEEK_SET);
 	}
 
 	if (validateOutput) {

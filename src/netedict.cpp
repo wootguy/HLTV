@@ -21,6 +21,19 @@ using namespace std;
 		writer.write((void*)&field, sz); \
 	}
 
+#define READ_INTERNAL_DELTA(reader, deltaBits, deltaFlag, field, sz) \
+	if (deltaBits & deltaFlag) { \
+		g_stats.entInternalDeltaSz[bitoffset(deltaFlag)] += sz; \
+		reader.read((void*)&field, sz); \
+	}
+
+#define WRITE_INTERNAL_DELTA(writer, deltaBits, deltaFlag, field, sz) \
+	if (old.field != field) { \
+		deltaBits |= deltaFlag; \
+		g_stats.entInternalDeltaSz[bitoffset(deltaFlag)] += sz; \
+		writer.write((void*)&field, sz); \
+	}
+
 netedict::netedict() {
 	reset();
 }
@@ -142,6 +155,34 @@ bool netedict::matches(netedict& other) {
 		ALERT(at_console, "Mismatch classify\n");
 		return false;
 	}
+	if (classname != other.classname) {
+		ALERT(at_console, "Mismatch classname\n");
+		return false;
+	}
+	if (schedule != other.schedule) {
+		ALERT(at_console, "Mismatch schedule\n");
+		return false;
+	}
+	if (monsterstate != other.monsterstate) {
+		ALERT(at_console, "Mismatch monsterstate\n");
+		return false;
+	}
+	if (task != other.task) {
+		ALERT(at_console, "Mismatch task\n");
+		return false;
+	}
+	if (conditions_lo != other.conditions_lo) {
+		ALERT(at_console, "Mismatch conditions_lo\n");
+		return false;
+	}
+	if (conditions_hi != other.conditions_hi) {
+		ALERT(at_console, "Mismatch conditions_hi\n");
+		return false;
+	}
+	if (memories != other.memories) {
+		ALERT(at_console, "Mismatch memories\n");
+		return false;
+	}
 	return true;
 }
 
@@ -173,8 +214,6 @@ void netedict::load(const edict_t& ed) {
 	rendercolor[2] = vars.rendercolor[2];
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
 	colormap = vars.colormap;
-	health = vars.health > 0 ? V_min(vars.health, UINT32_MAX) : 0;
-
 
 	CBaseEntity* ent = CBaseEntity::Instance(&ed); 
 	CBaseAnimating* anim = ent ? ent->MyAnimatingPointer() : NULL; // TODO: not thread safe
@@ -249,8 +288,20 @@ void netedict::load(const edict_t& ed) {
 		edflags |= EDFLAG_NOTARGET;
 	}
 
-	if (ed.v.flags & (FL_CLIENT | FL_MONSTER)) {
-		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE((&ed)); // TODO: not thread safe
+	if (g_write_debug_info->value && (ed.v.flags & (FL_CLIENT | FL_MONSTER))) {
+		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE(&ed); // TODO: not thread safe
+		health = vars.health > 0 ? V_min(vars.health, UINT32_MAX) : 0;
+		
+		if (g_write_debug_info->value && bent->IsNormalMonster()) {
+			CBaseMonster* mon = bent->MyMonsterPointer();
+
+			monsterstate = mon->m_MonsterState;
+			schedule = mon->GetScheduleTableIdx();
+			task = mon->m_iScheduleIndex;
+			conditions_lo = mon->m_afConditions & 0xffff;
+			conditions_hi = mon->m_afConditions >> 16;
+			memories = mon->m_afMemory;
+		}
 
 #ifdef HLCOOP_BUILD
 		uint8_t classifyBits = bent && bent->m_Classify ? bent->m_Classify : 0;
@@ -260,9 +311,14 @@ void netedict::load(const edict_t& ed) {
 		
 		classify = classifyBits;
 	}
+
+	if (classname_stringt != vars.classname) {
+		classname_stringt = vars.classname;
+		classname = getPoolOffsetForString(vars.classname);
+	}
 }
 
-void netedict::apply(edict_t* ed) {
+void netedict::apply(edict_t* ed, char* stringpool) {
 	entvars_t& vars = ed->v;
 
 	if (!edflags) {
@@ -391,9 +447,37 @@ void netedict::apply(edict_t* ed) {
 		vars.angles = Vector((float)angles[0] * angleConvert, (float)angles[1] * angleConvert, (float)angles[2] * angleConvert);
 	}
 
+	UTIL_SetOrigin(&vars, vars.origin);
+
 	// calculate instantaneous velocity for gait calculations
 	if (edflags & EDFLAG_PLAYER)
 		vars.velocity = (vars.origin - oldorigin);
+
+	vars.noise = MAKE_STRING(stringpool + classname);
+
+	if (baseent->IsMonster() && classname) {
+		CBaseMonster* mon = baseent->MyMonsterPointer();
+		
+		edict_t* temp = CREATE_NAMED_ENTITY(MAKE_STRING(stringpool + classname));
+		CBaseEntity* ent = CBaseEntity::Instance(temp);
+		if (ent && ent->IsNormalMonster()) {
+			CBaseMonster* tempmon = ent->MyMonsterPointer();
+			mon->m_pSchedule = tempmon->ScheduleFromTableIdx(schedule);
+			if (!mon->m_pSchedule) {
+				ALERT(at_console, "Schedule %d does not exist for %s (%d schedules total)\n", (int)schedule, stringpool + classname, tempmon->GetScheduleTableSize());
+			}
+			mon->m_iScheduleIndex = mon->m_iScheduleIndex;
+			mon->pev->iuser3 = 1337; // HACK: this entity is a normal monster, not just a cycler
+			mon->pev->nextthink = 0;
+			
+		}
+		REMOVE_ENTITY(temp);
+		temp->freetime = 0; // allow the slot to be used right away
+
+		mon->m_MonsterState = (MONSTERSTATE)monsterstate;
+		mon->m_afConditions = ((uint32_t)conditions_hi << 16) | (uint32_t)conditions_lo;
+		mon->m_afMemory = memories;
+	}
 }
 
 bool netedict::readDeltas(mstream& reader) {
@@ -482,7 +566,7 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
-	READ_DELTA(reader, deltaBits, FL_DELTA_HEALTH, health, 4);
+	
 	READ_DELTA(reader, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
 	READ_DELTA(reader, deltaBits, FL_DELTA_EFFECTS, effects, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_RENDERCOLOR_0, rendercolor[0], 1);
@@ -497,6 +581,22 @@ bool netedict::readDeltas(mstream& reader) {
 	READ_DELTA(reader, deltaBits, FL_DELTA_CONTROLLER_HI, controller_hi, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_AIMENT, aiment, 2);
 	READ_DELTA(reader, deltaBits, FL_DELTA_CLASSIFY, classify, 1);
+
+	if (deltaBits & FL_DELTA_INTERNALS) {
+		uint8_t internalDeltaBits = 0;
+		g_stats.entDeltaSz[bitoffset(FL_DELTA_INTERNALS)] += 1;
+		reader.read((void*)&internalDeltaBits, 1);
+
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_CLASSNAME, classname, 2);
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_MONSTERSTATE, monsterstate, 1);
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_SCHEDULE, schedule, 1);
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_TASK, task, 1);
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_COND_LO, conditions_lo, 2);
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_COND_HI, conditions_hi, 2);
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_MEMORIES, memories, 2);
+		READ_INTERNAL_DELTA(reader, internalDeltaBits, FL_DELTA_INTERNAL_HEALTH, health, 4);
+	}
+	
 
 	return true;
 }
@@ -592,7 +692,6 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_SEQUENCE, sequence, 1);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_GAITBLEND, gaitblend, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_RENDERAMT, renderamt, 1);
-	WRITE_DELTA(writer, deltaBits, FL_DELTA_HEALTH, health, 4);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_FRAMERATE, framerate, 1);
 
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_EFFECTS, effects, 2);
@@ -608,6 +707,40 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CONTROLLER_HI, controller_hi, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_AIMENT, aiment, 2);
 	WRITE_DELTA(writer, deltaBits, FL_DELTA_CLASSIFY, classify, 1);
+
+	uint8_t internalDeltaBits = 0;
+	if (old.classname != classname) internalDeltaBits |= FL_DELTA_INTERNAL_CLASSNAME;
+	if (old.monsterstate != monsterstate) internalDeltaBits |= FL_DELTA_INTERNAL_MONSTERSTATE;
+	if (old.schedule != schedule) internalDeltaBits |= FL_DELTA_INTERNAL_SCHEDULE;
+	if (old.task != task) internalDeltaBits |= FL_DELTA_INTERNAL_TASK;
+	if (old.conditions_lo != conditions_lo) internalDeltaBits |= FL_DELTA_INTERNAL_COND_LO;
+	if (old.conditions_hi != conditions_hi) internalDeltaBits |= FL_DELTA_INTERNAL_COND_HI;
+	if (old.memories != memories) internalDeltaBits |= FL_DELTA_INTERNAL_MEMORIES;
+	if (old.health != health) internalDeltaBits |= FL_DELTA_INTERNAL_HEALTH;
+	if (internalDeltaBits) {
+		deltaBits |= FL_DELTA_INTERNALS;
+		g_stats.entDeltaSz[bitoffset(FL_DELTA_INTERNALS)] += 1;
+		writer.write((void*)&internalDeltaBits, 1);
+
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_CLASSNAME, classname, 2);
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_MONSTERSTATE, monsterstate, 1);
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_SCHEDULE, schedule, 1);
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_TASK, task, 1);
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_COND_LO, conditions_lo, 2);
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_COND_HI, conditions_hi, 2);
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_MEMORIES, memories, 2);
+		WRITE_INTERNAL_DELTA(writer, internalDeltaBits, FL_DELTA_INTERNAL_HEALTH, health, 4);
+	}
+
+	if (old.conditions_lo != conditions_lo || conditions_hi != conditions_hi) {
+		uint32_t cond = (uint32_t)conditions_lo | ((uint32_t)conditions_hi << 16);
+		uint32_t oldCond = (uint32_t)old.conditions_lo | ((uint32_t)old.conditions_hi << 16);
+		for (int i = 0; i < 32; i++) {
+			int bit = 1 << i;
+			if ((cond & bit) != (oldCond & bit))
+				g_stats.entCondSz[i]++;
+		}
+	}
 
 	deltaBitsLast = 0;
 

@@ -153,6 +153,7 @@ private:
 	map<int, string> replaySoundPath; // maps a sound index in a demo file to a path
 	DemoHeader demoHeader;
 	DemoFrame lastReplayFrame;
+	char* stringPool = NULL;
 
 	DemoPlayerEnt* fileplayerinfos = NULL; // last infos read from file
 	netedict* fileedicts = NULL; // last edicts read from file

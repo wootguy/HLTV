@@ -33,7 +33,7 @@
 #define FL_DELTA_SEQUENCE		(1 << 11)
 #define FL_DELTA_GAITBLEND		(1 << 12)	// gait sequence + lower blending byte
 #define FL_DELTA_RENDERAMT		(1 << 13)
-#define FL_DELTA_HEALTH			(1 << 14)
+#define FL_DELTA_INTERNALS		(1 << 14)
 #define FL_DELTA_FRAMERATE		(1 << 15)
 
 #define FL_DELTA_EFFECTS		(1 << 16)
@@ -53,6 +53,15 @@
 
 #define ENT_DELTA_BYTES 4 // size of a "big" ent delta
 
+#define FL_DELTA_INTERNAL_CLASSNAME		(1 << 0)
+#define FL_DELTA_INTERNAL_MONSTERSTATE	(1 << 1)
+#define FL_DELTA_INTERNAL_SCHEDULE		(1 << 2)
+#define FL_DELTA_INTERNAL_TASK			(1 << 3)
+#define FL_DELTA_INTERNAL_COND_LO		(1 << 4) // lower 16 condition bits
+#define FL_DELTA_INTERNAL_COND_HI		(1 << 5) // upper 16 condition bits
+#define FL_DELTA_INTERNAL_MEMORIES		(1 << 6)
+#define FL_DELTA_INTERNAL_HEALTH		(1 << 7)
+
 #define EDFLAG_VALID 1		// if no other flag is set, then it's a generic model entity (BSP/mdl/spr)
 #define EDFLAG_MONSTER 2	// should display health/name
 #define EDFLAG_PLAYER 4		// special model loading and rendering
@@ -64,7 +73,6 @@
 struct netedict {
 	uint8_t		edflags;		// EDFLAG_*  (0 == invalid/deleted edict)
 	int32_t		origin[3];		// 21.3 fixed point (beams), or 19.5 fixed point (everything else)
-	uint32_t	health;
 	uint32_t	angles[3];		// 21.3 fixed point (beams), or 0-360 scaled to uint16_t (everything else)
 	uint16_t	modelindex;
 
@@ -90,14 +98,25 @@ struct netedict {
 	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
 	uint8_t		classify;	// class_ovverride
 
+	// internal entity state (for debugging)
+	uint16_t	classname;		// classname table index
+	uint8_t		monsterstate;
+	uint8_t		schedule;		// index in monster schedule table
+	uint8_t		task;			// index in the schedule task list
+	uint16_t	conditions_lo;	// bits_COND_*
+	uint16_t	conditions_hi;	// bits_COND_*
+	uint16_t	memories;		// bits_MEMORY_*
+	uint32_t	health;
+
 	// internal vars (not networked/written)
 	uint32_t	deltaBitsLast; // last delta bits read/written
 	float lastAnimationReset; // last time animation was reset
 	bool forceNextFrame; // force sending the next frame value, even if unchanged (for animation resets)
+	string_t	classname_stringt; // quickly test if the classname has changed
 
 	netedict();
 	void load(const edict_t& ed);
-	void apply(edict_t* ed);
+	void apply(edict_t* ed, char* stringpool);
 	bool matches(netedict& other);
 
 	// returns false if entity was deleted (no deltas)
