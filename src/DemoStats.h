@@ -18,12 +18,7 @@ struct DemoStats {
 	uint32_t entDeltaCurrentSz;
 	uint32_t entIndexTotalSz; // total index bytes written
 	uint32_t entUpdateCount; // number of entity updates written
-	uint32_t entBigUpdates; // number of "big" entity updates
-	uint32_t entMedUpdates; // number of "medium" sized entity updates
-	uint32_t entDeltaSz[64]; // total size of deltas for each delta type (bit offset = idx)
-	uint32_t entInternalDeltaSz[32];
-	uint32_t entCondSz[32];
-	uint32_t entDeltaBigReason[64]; // number of times a "big" entity update was triggered (idx = flag bit)
+	uint32_t entDeltaCatSz[64]; // total size of deltas for each delta category
 
 	uint32_t plrDeltaTotalSz;
 	uint32_t plrDeltaCurrentSz;

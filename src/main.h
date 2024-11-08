@@ -16,6 +16,8 @@
 #define HOOK_RET_STR HOOK_RETURN_DATA
 #define HOOK_RET_VOID HOOK_RETURN_DATA
 
+#define MODEL_BITS 9 // 512 max models
+
 #if defined (_MSC_VER) && _MSC_VER >= 1400
 #define snprintf	_snprintf
 #define vsnprintf	_vsnprintf
@@ -27,6 +29,7 @@
 #endif
 
 #define MAX_EDICTS (gpGlobals->maxEntities)
+#define ENTINDEX_BITS 13 // max 8192 hopefully
 
 #else
 #include "mmlib.h"
@@ -37,6 +40,8 @@
 #define HOOK_RET_VOID void
 
 #define MAX_EDICTS 8192 // sven co-op
+#define MODEL_BITS 12
+#define ENTINDEX_BITS 13 // max 8192
 #endif
 
 #define ABSOLUTE_MAX_EDICTS 8192 // the max edicts a server can ever have with -num_edicts

@@ -11,63 +11,26 @@
 
 // flags for indicating which edict fields were updated
 
-// if set, deltaBits = 2+ bytes, and origin values are 19.5 fixed point and replace the previous origin
-// otherwise, deltaBits = 1byte, and origin values are 11.5 fixed point and added to the previous origin
-#define FL_BIGENTDELTA			(1 << 0)
+#define FL_DELTA_ORIGIN_CHANGED (1 << 0)
+#define FL_DELTA_ANGLES_CHANGED (1 << 1)
+#define FL_DELTA_FLAGS_CHANGED	(1 << 2)
+#define FL_DELTA_ANIM_CHANGED	(1 << 4)
 
-// FL_DELTA_BIGORIGIN  + FL_BIGGERENTDELTA = 4 byte origin values.
-// FL_DELTA_BIGORIGIN or FL_BIGGERENTDELTA = 2 byte origin deltas.
-// 0 = 1 byte origin deltas
-#define FL_DELTA_BIGORIGIN		(1 << 1)
+enum DeltaStatCategories {
+	FL_DELTA_CAT_EDFLAG,
+	FL_DELTA_CAT_ORIGIN,
+	FL_DELTA_CAT_ANGLES,
+	FL_DELTA_CAT_ANIM,
+	FL_DELTA_CAT_RENDER,
+	FL_DELTA_CAT_MISC,
+	FL_DELTA_CAT_INTERNAL,
+};
 
-#define FL_DELTA_ORIGIN_X		(1 << 2)
-#define FL_DELTA_ORIGIN_Y		(1 << 3)
-#define FL_DELTA_ORIGIN_Z		(1 << 4)
-#define FL_DELTA_ANGLES_X		(1 << 5)
-#define FL_DELTA_ANGLES_Y		(1 << 6)
-#define FL_DELTA_ANGLES_Z		(1 << 7)	// high priority for apache
-
-#define FL_BIGGERENTDELTA		(1 << 8)	// if set, deltaBits = 4 bytes
-#define FL_DELTA_FRAME			(1 << 9)
-#define FL_DELTA_CONTROLLER_LO	(1 << 10)	// high priority for turrets + apache
-#define FL_DELTA_SEQUENCE		(1 << 11)
-#define FL_DELTA_GAITBLEND		(1 << 12)	// gait sequence + lower blending byte
-#define FL_DELTA_RENDERAMT		(1 << 13)
-#define FL_DELTA_INTERNALS		(1 << 14)
-#define FL_DELTA_FRAMERATE		(1 << 15)
-
-#define FL_DELTA_EFFECTS		(1 << 16)
-#define FL_DELTA_RENDERCOLOR_0	(1 << 17)
-#define FL_DELTA_RENDERCOLOR_1	(1 << 18)
-#define FL_DELTA_RENDERCOLOR_2	(1 << 19)
-#define FL_DELTA_RENDERMODEFX	(1 << 20)
-#define FL_DELTA_SKIN			(1 << 21)
-#define FL_DELTA_BODY			(1 << 22)
-#define FL_DELTA_SCALE			(1 << 23)
-#define FL_DELTA_COLORMAP		(1 << 24)
-#define FL_DELTA_MODELINDEX		(1 << 25)
-#define FL_DELTA_CONTROLLER_HI	(1 << 26)	// rare for something to have more than 2 controllers
-#define FL_DELTA_AIMENT			(1 << 27)
-#define FL_DELTA_CLASSIFY		(1 << 28)
-#define FL_DELTA_EDFLAGS		(1 << 29)
-
-#define ENT_DELTA_BYTES 4 // size of a "big" ent delta
-
-#define FL_DELTA_INTERNAL_CLASSNAME		(1 << 0)
-#define FL_DELTA_INTERNAL_MONSTERSTATE	(1 << 1)
-#define FL_DELTA_INTERNAL_SCHEDULE		(1 << 2)
-#define FL_DELTA_INTERNAL_TASK			(1 << 3)
-#define FL_DELTA_INTERNAL_COND_LO		(1 << 4) // lower 16 condition bits
-#define FL_DELTA_INTERNAL_COND_HI		(1 << 5) // upper 16 condition bits
-#define FL_DELTA_INTERNAL_MEMORIES		(1 << 6)
-#define FL_DELTA_INTERNAL_HEALTH		(1 << 7)
 
 #define EDFLAG_VALID 1		// if no other flag is set, then it's a generic model entity (BSP/mdl/spr)
 #define EDFLAG_MONSTER 2	// should display health/name
 #define EDFLAG_PLAYER 4		// special model loading and rendering
 #define EDFLAG_BEAM 8		// lasers and stuff
-#define EDFLAG_GOD 16		// GODMODE/DAMAGE_NO
-#define EDFLAG_NOTARGET 32	// FL_NOTARGET
 
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
@@ -82,7 +45,8 @@ struct netedict {
 	uint8_t		colormap;
 
 	uint8_t		sequence;		// animation sequence
-	uint16_t	gaitblend;		// upper byte = gait sequence (player), lower byte = animation blend (grunts crouching+shooting)
+	uint8_t		gait;			// gait sequence (player)
+	uint8_t		blend;			// animation blend (grunts crouching+shooting)
 	uint8_t		frame;			// % playback position in animation sequences (0..255)
 	int8_t		framerate;		// animation playback rate (-8x to 8x) (4.4 fixed point)
 	uint16_t	controller_lo;	// bone controllers 0-1 settings
@@ -91,21 +55,23 @@ struct netedict {
 
 	uint16_t	scale;			// rendering scale (0..255) (8.8 fixed point)
 
-	uint8_t		rendermodefx; // upper 3 bits = rendermode, lower 5 bits = renderfx
+	uint8_t		rendermode; // 3 bits
+	uint8_t		renderfx;	// 5 bits
 	uint8_t		renderamt;
 	uint8_t		rendercolor[3];
 
-	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW
+	uint16_t	aiment;		// entity pointer when MOVETYPE_FOLLOW, 0 if movetype is not MOVETYPE_FOLLOW, combined ent index and attachment for beams
 	uint8_t		classify;	// class_ovverride
 
 	// internal entity state (for debugging)
-	uint16_t	classname;		// classname table index
-	uint8_t		monsterstate;
-	uint8_t		schedule;		// index in monster schedule table
-	uint8_t		task;			// index in the schedule task list
-	uint16_t	conditions_lo;	// bits_COND_*
+	uint16_t	classname;		// classname table index (12 bits for 4096 len string pool)
+	uint8_t		monsterstate;	// 4 bits
+	uint8_t		schedule;		// index in monster schedule table (7 bits) (max hl schedul table is 81)
+	uint8_t		task;			// index in the schedule task list (5 bits) (max HL task list len is 19)
+	uint8_t		conditions_lo;	// bits_COND_*
+	uint8_t		conditions_md;	// bits_COND_*
 	uint16_t	conditions_hi;	// bits_COND_*
-	uint16_t	memories;		// bits_MEMORY_*
+	uint16_t	memories;		// bits_MEMORY_* (12 bits in HL)
 	uint32_t	health;
 
 	// internal vars (not networked/written)

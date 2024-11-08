@@ -462,20 +462,25 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 	uint32_t indexSz = 0;
 	for (int i = 0; i < numEntDeltas; i++) {
 		loop++;
-		uint32_t readOffset = reader.tell();
+		uint64_t readOffset = reader.tellBits();
 
-		uint16_t offset = 0;
-		reader.read(&offset, 1);
+		uint8_t offsetSz = reader.readBits(2);
+		indexSz += 2;
 
-		if (offset & FL_ENTIDX_LONG) {
-			reader.seek(readOffset);
-			reader.read(&offset, 2);
-			fullIndex = offset >> 1;
-			indexSz += 2;
+		if (offsetSz == 3) {
+			fullIndex = reader.readBits(ENTINDEX_BITS);
+			indexSz += ENTINDEX_BITS;
+		}
+		else if (offsetSz == 2) {
+			fullIndex += reader.readBits(8);
+			indexSz += 8;
+		}
+		else if (offsetSz == 1) {
+			fullIndex += reader.readBits(4);
+			indexSz += 4;
 		}
 		else {
-			indexSz += 1;
-			fullIndex += offset >> 1;
+			fullIndex++;
 		}
 
 		if (fullIndex >= MAX_EDICTS) {
@@ -484,28 +489,24 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 			return false;
 		}
 
-		uint64_t startPos = reader.tell();
+		uint64_t startPos = reader.tellBits();
 
 		netedict temp;
 		memcpy(&temp, &fileedicts[fullIndex], sizeof(netedict));
 
 		netedict* ed = &fileedicts[fullIndex];
-		if (!ed->readDeltas(reader)) {
-			//ALERT(at_console, "Skip free %d\n", fullIndex);
-			continue;
-		}
+		ed->readDeltas(reader);
 
 		if (validate) {
-			int szRead = reader.tell() - readOffset;
+			int szRead = reader.tellBits() - readOffset;
 			netedict& expectedEd = validate->newEntState[fullIndex];
 
 			if (!expectedEd.matches(*ed)) {
 				ALERT(at_console, "Read unexpected ent state for %d!\n", (int)fullIndex);
-				// now debug it
-				expectedEd.matches(*ed);
 
+				// now debug it
 				memcpy(ed, &temp, sizeof(netedict));
-				reader.seek(startPos);
+				reader.seekBits(startPos);
 				ed->readDeltas(reader);
 
 				mstream testStream(1024 * 512); // no delta should be this big, being safe
@@ -520,7 +521,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 
 				// now debug it
 				memcpy(ed, &temp, sizeof(netedict));
-				reader.seek(startPos);
+				reader.seekBits(startPos);
 				ed->readDeltas(reader);
 				return false;
 			}
@@ -535,6 +536,8 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 			return false;
 		}
 	}
+
+	reader.endBitReading();
 
 	g_stats.entIndexTotalSz += indexSz;
 	g_stats.entDeltaCurrentSz = reader.tell() - startOffset;
@@ -723,7 +726,7 @@ bool DemoPlayer::createReplayEntities(int count) {
 void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 	InterpInfo& interp = replayEnts[i].interp;
 
-	if (fileedicts[i].deltaBitsLast & FL_DELTA_EDFLAGS) {
+	if (fileedicts[i].deltaBitsLast & FL_DELTA_FLAGS_CHANGED) {
 		// entity type changed. Don't interpolate first frame
 		interp.originStart = interp.originEnd = ent->v.origin;
 		interp.anglesStart = interp.anglesEnd = ent->v.angles;
@@ -740,9 +743,7 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 	}
 	else if (fileedicts[i].edflags & EDFLAG_MONSTER) {
 		// monster data is updated at a framerate independent of the server
-		uint32_t originMask = FL_DELTA_ORIGIN_X | FL_DELTA_ORIGIN_Y | FL_DELTA_ORIGIN_Z;
-		uint32_t anglesMask = FL_DELTA_ANGLES_X | FL_DELTA_ANGLES_Y | FL_DELTA_ANGLES_Z;
-		if (fileedicts[i].deltaBitsLast & (originMask|anglesMask)) {
+		if (fileedicts[i].deltaBitsLast & (FL_DELTA_ORIGIN_CHANGED|FL_DELTA_ANGLES_CHANGED)) {
 			interp.originStart = interp.originEnd;
 			interp.originEnd = ent->v.origin;
 
@@ -756,8 +757,7 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 
 	// frame prediction
 	if (fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) {
-		uint32_t animMask = FL_DELTA_FRAME | FL_DELTA_SEQUENCE | FL_DELTA_FRAMERATE;
-		if (fileedicts[i].deltaBitsLast & animMask) {
+		if (fileedicts[i].deltaBitsLast & FL_DELTA_ANIM_CHANGED) {
 			bool sequenceChanged = interp.sequenceEnd != ent->v.sequence;
 
 			interp.frameEnd = ent->v.frame; // interpolate from here
@@ -803,8 +803,13 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 	for (int i = 1; i < MAX_EDICTS; i++) {
 		if (!fileedicts[i].edflags) {
 			if (i < (int)replayEnts.size()) {
-				//replayEnts[i].h_ent.GetEdict()->v.effects |= EF_NODRAW;
-				UTIL_Remove(replayEnts[i].h_ent.GetEntity());
+
+				CBaseEntity* ent = replayEnts[i].h_ent;
+				if (ent) {
+					ent->pev->effects |= EF_NODRAW; // in case it's a player and can't be removed
+					UTIL_Remove(ent);
+				}
+				
 			}
 			continue;
 		}
@@ -1060,7 +1065,7 @@ bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* val
 #ifdef HLCOOP_BUILD
 	static uint8_t expectedSzLookup[TE_USERTRACER+1] = {
 		25, // TE_BEAMPOINTS
-		9, // TE_BEAMENTPOINT
+		21, // TE_BEAMENTPOINT
 		10, // TE_GUNSHOT
 		12, // TE_EXPLOSION
 		7, // TE_TAREXPLOSION
@@ -1934,7 +1939,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	if (!validate)
 		replayData->seek(nextFrameOffset);
 
-	writePings(); // spam this to override the engine messages
+	if (!validate) writePings(); // spam this to override the engine messages
 
 	if (validate) validate->success = false;
 

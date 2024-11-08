@@ -109,6 +109,14 @@ struct DeltaStat {
 		vec.push_back(stat); \
 }
 
+#define ADD_CAT_DELTA_STAT(vec, statArray, flag) {\
+	DeltaStat stat; \
+	stat.field = string( #flag ).substr(strlen("FL_DELTA_CAT_")); \
+	stat.bytes = (statArray[flag]+7) / 8; \
+	if (stat.bytes > 0) \
+		vec.push_back(stat); \
+}
+
 bool compareByBytes(const DeltaStat& a, const DeltaStat& b)
 {
 	return a.bytes > b.bytes;
@@ -141,50 +149,23 @@ void DemoStats::showStats(edict_t* edt) {
 	txt += UTIL_VarArgs("msg: %s (%d)\n", msgTotal.c_str(), g_stats.msgCurrentSz);
 	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);
 	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCount);
+	txt += UTIL_VarArgs("str: %d / %d\n", g_stringpool_idx, STRING_POOL_SIZE);
 
 	UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 
 	{
 		vector<DeltaStat> deltaStats;
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_ORIGIN_X);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_ORIGIN_Y);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_ORIGIN_Z);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_ANGLES_X);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_ANGLES_Y);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_ANGLES_Z);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_MODELINDEX);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_SKIN);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_BODY);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_EFFECTS);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_SEQUENCE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_GAITBLEND);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_FRAME);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_FRAMERATE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_LO);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CONTROLLER_HI);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_SCALE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERMODEFX);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERAMT);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERCOLOR_0);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERCOLOR_1);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_RENDERCOLOR_2);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_AIMENT);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_COLORMAP);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_CLASSIFY);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_EDFLAGS);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaSz, FL_DELTA_INTERNALS);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_CLASSNAME);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_MONSTERSTATE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_SCHEDULE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_TASK);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_COND_LO);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_COND_HI);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_MEMORIES);
-		ADD_DELTA_STAT(deltaStats, g_stats.entInternalDeltaSz, FL_DELTA_INTERNAL_HEALTH);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_EDFLAG);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ORIGIN);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ANGLES);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ANIM);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_RENDER);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_MISC);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_INTERNAL);
 
 		DeltaStat indexStat;
 		indexStat.field = "indexes";
-		indexStat.bytes = g_stats.entIndexTotalSz;
+		indexStat.bytes = (g_stats.entIndexTotalSz+7) / 8;
 		deltaStats.push_back(indexStat);
 
 		uint32_t sum = 0;
@@ -194,15 +175,14 @@ void DemoStats::showStats(edict_t* edt) {
 
 		DeltaStat headerStat;
 		headerStat.field = "headers";
-		headerStat.bytes = g_stats.entDeltaTotalSz - (sum);
+		headerStat.bytes = g_stats.entDeltaTotalSz - sum;
 		deltaStats.push_back(headerStat);
+		sum += headerStat.bytes;
 
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
 		string sumStr = formatSize(sum);
-		uint32_t smallUpdates = g_stats.entUpdateCount - (g_stats.entBigUpdates+g_stats.entMedUpdates);
-		txt = UTIL_VarArgs("ent deltas (%u, %u, %u, %s):\n", g_stats.entBigUpdates, g_stats.entMedUpdates,
-			smallUpdates, sumStr.c_str());
+		txt = UTIL_VarArgs("ent deltas (%u, %s):\n", g_stats.entUpdateCount, sumStr.c_str());
 		for (int i = 0; i < (int)deltaStats.size() && i < 10; i++) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}
@@ -210,47 +190,6 @@ void DemoStats::showStats(edict_t* edt) {
 		params.x = 0;
 		params.y = 0;
 		params.channel = 1;
-		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
-	}
-
-	{
-		vector<DeltaStat> deltaStats;
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ORIGIN_X);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ORIGIN_Y);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ORIGIN_Z);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ANGLES_X);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ANGLES_Y);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_ANGLES_Z);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_MODELINDEX);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SKIN);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_BODY);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_EFFECTS);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SEQUENCE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_GAITBLEND);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAME);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_FRAMERATE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_LO);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CONTROLLER_HI);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_SCALE);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERMODEFX);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERAMT);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_0);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_1);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_RENDERCOLOR_2);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_AIMENT);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_COLORMAP);
-		ADD_DELTA_STAT(deltaStats, g_stats.entDeltaBigReason, FL_DELTA_CLASSIFY);
-
-		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
-
-		txt = UTIL_VarArgs("big ent delta reason:\n");
-		for (int i = 0; i < (int)deltaStats.size() && i < 10; i++) {
-			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
-		}
-
-		params.x = 0.8f;
-		params.y = 0;
-		params.channel = 4;
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 
@@ -286,11 +225,12 @@ void DemoStats::showStats(edict_t* edt) {
 		headerStat.field = "headers";
 		headerStat.bytes = g_stats.plrDeltaTotalSz - sum;
 		deltaStats.push_back(headerStat);
+		sum += headerStat.bytes;
 
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
 		string sumStr = formatSize(sum);
-		txt = UTIL_VarArgs("plr deltas (%s):\n", sumStr.c_str());
+		txt = UTIL_VarArgs("plr deltas (%u, %s):\n", g_stats.plrDeltaCount, sumStr.c_str());
 		for (int i = 0; i < (int)deltaStats.size() && i < 10; i++) {
 			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
 		}
@@ -322,6 +262,7 @@ void DemoStats::showStats(edict_t* edt) {
 		headerStat.field = "headers";
 		headerStat.bytes = g_stats.msgTotalSz - sum;
 		deltaStats.push_back(headerStat);
+		sum += headerStat.bytes;
 
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
@@ -358,6 +299,7 @@ void DemoStats::showStats(edict_t* edt) {
 		headerStat.field = "headers";
 		headerStat.bytes = g_stats.eventTotalSz - sum;
 		deltaStats.push_back(headerStat);
+		sum += headerStat.bytes;
 
 		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
 
@@ -377,16 +319,6 @@ void DemoStats::showStats(edict_t* edt) {
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 
-	{
-		txt = "String pool: " + to_string(g_stringpool_idx) + " / " + to_string(STRING_POOL_SIZE) + "\n";
-		params.x = 0.5;
-		params.y = 0;
-		params.channel = -1;
-		params.holdTime = 0.05f;
-		params.fadeinTime = 0.025f;
-		params.fadeoutTime = 0.025f;
-		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
-	}
 	/*
 	{
 		static const char* cond_names[] = {
