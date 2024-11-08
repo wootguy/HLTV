@@ -116,13 +116,9 @@ void delayRenamePlayer(EHANDLE h_plr, string name) {
 
 DemoPlayer::DemoPlayer() {
 	fileedicts = new netedict[MAX_EDICTS];
-	fileplayerinfos = new DemoPlayerEnt[32];
-
-	memset(fileplayerinfos, 0, MAX_PLAYERS * sizeof(DemoPlayerEnt));
 }
 
 DemoPlayer::~DemoPlayer() {
-	delete[] fileplayerinfos;
 	delete[] fileedicts;
 
 	closeReplayFile();
@@ -570,7 +566,7 @@ void DemoPlayer::writePings() {
 		int originalEntIdx = plr->pev->iuser4;
 		pingStream.writeBits(1, 1);
 		pingStream.writeBits(i - 1, 5);
-		pingStream.writeBits(fileplayerinfos[originalEntIdx-1].ping, 12);
+		pingStream.writeBits(fileedicts[originalEntIdx].ping, 12);
 		pingStream.writeBits(0, 7); // packet loss
 	}
 	pingStream.writeBits(0, 1);
@@ -583,7 +579,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	bool playerSlotFree = true; // todo
 	bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER);
 	bool entIsPlayer = ent && ent->v.flags & FL_CLIENT;
-	bool playerInfoLoaded = (i-1) < MAX_PLAYERS && fileplayerinfos[i - 1].flags;
+	bool playerInfoLoaded = (i-1) < MAX_PLAYERS && fileedicts[i].playerFlags;
 	bool isBeam = fileedicts[i].edflags & EDFLAG_BEAM;
 	bool entIsBeam = ent && ent->v.flags & FL_CUSTOMENTITY;
 
@@ -592,7 +588,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	}
 
 	if (useBots && playerSlotFree && isPlayer && !entIsPlayer && playerInfoLoaded) {
-		DemoPlayerEnt& info = fileplayerinfos[i - 1];
+		netedict& info = fileedicts[i];
 
 		// rename real players so that chat colors work for the bots
 		for (int i = 1; i < gpGlobals->maxClients; i++) {
@@ -623,13 +619,13 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
-			bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel).c_str());
-			bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel).c_str());
+			bot->v.weaponmodel = MAKE_STRING(getReplayModel(info.weaponmodel));
+			bot->v.viewmodel = MAKE_STRING(getReplayModel(info.viewmodel));
 			bot->v.frags = info.frags;
 			bot->v.weaponanim = info.weaponanim;
 			bot->v.armorvalue = info.armorvalue;
 			bot->v.view_ofs.z = info.view_ofs / 16.0f;
-			bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
+			bot->v.deadflag = info.deadFlag;
 			bot->v.takedamage = DAMAGE_NO;
 			bot->v.movetype = MOVETYPE_NOCLIP;
 			bot->v.solid = SOLID_SLIDEBOX;
@@ -862,15 +858,15 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 	return true;
 }
 
-string DemoPlayer::getReplayModel(uint16_t modelIdx) {
+const char* DemoPlayer::getReplayModel(uint16_t modelIdx) {
 	if (modelIdx == PLR_NO_WEAPON_MODEL) {
 		return "";
 	}
 	else if (replayModelPath.count(modelIdx)) {
 		// Demo file model path
-		std::string replayModel = replayModelPath[modelIdx];
+		std::string& replayModel = replayModelPath[modelIdx];
 		if (g_precachedModels.find(replayModel) != g_precachedModels.end()) {
-			return replayModel;
+			return replayModel.c_str();
 		}
 		else {
 			std::string error = UTIL_VarArgs("Replay model not precached: %s\n", replayModel.c_str());
@@ -918,7 +914,7 @@ void DemoPlayer::convReplayModelIdx(byte* dat, int offset, int dataSz) {
 	}
 
 	uint16_t* modelIdx = (uint16_t*)(dat + offset);
-	*modelIdx = g_engfuncs.pfnModelIndex(getReplayModel(*modelIdx).c_str());
+	*modelIdx = g_engfuncs.pfnModelIndex(getReplayModel(*modelIdx));
 }
 
 bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
@@ -940,93 +936,6 @@ bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 			errorSpam.insert(error);
 		}
 	}
-}
-
-bool DemoPlayer::readPlayerDeltas(mstream& reader, DemoDataTest* validate) {
-	uint32_t startOffset = reader.tell();
-
-	uint32_t includedPlayers = 0;
-	reader.read(&includedPlayers, 4);
-
-	if (validate) validate->playerDeltaBits = includedPlayers;
-
-	int numPlayerDeltas = 0;
-	for (int i = 0; i < gpGlobals->maxClients; i++) {
-		if ((includedPlayers & (1 << i)) == 0) {
-			continue;
-		}
-
-		uint32_t deltas = fileplayerinfos[i].readDeltas(reader);
-		numPlayerDeltas++;
-
-		if (!validate && i+1 < (int)replayEnts.size()) {
-			edict_t* bot = replayEnts[i+1].h_ent.GetEdict();
-			if (!bot || (bot->v.flags & FL_FAKECLIENT) == 0) {
-				continue;
-			}
-			int eidx = ENTINDEX(bot);
-			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
-			DemoPlayerEnt& info = fileplayerinfos[i];
-
-			if (deltas & FL_DELTA_NAME) {
-				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", info.name);
-			}
-			if (deltas & FL_DELTA_MODEL) {
-				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
-			}
-			if (deltas & FL_DELTA_COLORS) {
-				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
-				g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
-			}
-			if (deltas & FL_DELTA_WEAPONMODEL) {
-				bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel).c_str());
-			}
-			if (deltas & FL_DELTA_VIEWMODEL) {
-				bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel).c_str());
-			}
-			bot->v.frags = info.frags;
-			bot->v.weaponanim = info.weaponanim;
-			bot->v.armorvalue = info.armorvalue;
-			bot->v.view_ofs.z = info.view_ofs / 16.0f;
-			bot->v.deadflag = info.observer & 1 ? DEAD_DEAD : DEAD_NO;
-
-			edict_t* specViewEnt = bot;
-			if (info.viewEnt) {
-				edict_t* camera = getReplayEntity(info.viewEnt);
-				if (camera) {
-					SET_VIEW(bot, camera);
-					specViewEnt = camera;
-				}
-				else {
-					ALERT(at_console, "Bad view entity %d\n", info.viewEnt);
-				}
-			}
-			else {
-				SET_VIEW(bot, bot);
-			}
-
-			// update spectator views
-			for (int i = 1; i < gpGlobals->maxClients; i++) {
-				CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
-				if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
-					continue;
-				}
-
-				if (spec->m_hObserverTarget.GetEdict() == bot && spec->pev->iuser1 == OBS_IN_EYE) {
-					SET_VIEW(spec->edict(), specViewEnt);
-				}
-				else {
-					SET_VIEW(spec->edict(), spec->edict());
-				}
-			}
-		}
-	}
-
-	//ALERT(at_console, "Got %d player deltas\n", numPlayerDeltas);
-
-	g_stats.plrDeltaCurrentSz = reader.tell() - startOffset;
-
-	return !reader.eom();
 }
 
 bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* validate) {
@@ -1902,7 +1811,7 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate, boo
 			continue;
 		}
 
-		DemoPlayerEnt& plr = fileplayerinfos[cmd.idx - 1];
+		netedict& plr = fileedicts[cmd.idx];
 
 		const char* legacySteamId = "STEAM_ID_INVALID";
 		if (plr.steamid64 == 1ULL) {
@@ -2019,11 +1928,9 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 
 	if (header.isKeyFrame) {
 		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
-		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 	}
 
-	g_stats.entDeltaCurrentSz = g_stats.plrDeltaCurrentSz 
-		= g_stats.msgCurrentSz = g_stats.cmdCurrentSz = g_stats.eventCurrentSz = 0;
+	g_stats.entDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = g_stats.eventCurrentSz = 0;
 
 	for (int i = 0; i < MAX_EDICTS; i++) {
 		fileedicts[i].deltaBitsLast = 0;
@@ -2041,11 +1948,6 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	}
 
 	if (header.hasEntityDeltas && (!readEntDeltas(reader, validate))) {
-		delete[] frameData;
-		return false;
-	}
-
-	if (header.hasPlayerDeltas && !readPlayerDeltas(reader, validate)) {
 		delete[] frameData;
 		return false;
 	}
@@ -2416,7 +2318,6 @@ void DemoPlayer::seek(int offsetSeconds, bool relative) {
 		nextFrameTime = 0;
 
 		memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
-		memset(fileplayerinfos, 0, sizeof(DemoPlayerEnt) * 32);
 		/*
 		for (int i = 0; i < (int)replayEnts.size(); i++) {
 			edict_t* ent = replayEnts[i].h_ent.GetEdict();
@@ -2459,7 +2360,7 @@ int DemoPlayer::GetWeaponData(edict_t* player, weapon_data_t* info) {
 	memset(info, 0, 32 * sizeof(weapon_data_t));
 
 	int originalEntIdx = pl->m_hObserverTarget.GetEdict()->v.iuser4;
-	DemoPlayerEnt& pinfo = fileplayerinfos[originalEntIdx-1];
+	netedict& pinfo = fileedicts[originalEntIdx-1];
 
 	// set up weapon state for spectators
 	weapon_data_t* item = &info[pinfo.weaponId];
@@ -2493,5 +2394,5 @@ void DemoPlayer::OverrideClientData(const edict_t* ent, int sendweapons, clientd
 
 	int originalEntIdx = pl->m_hObserverTarget.GetEdict()->v.iuser4;
 
-	cd->m_iId = fileplayerinfos[originalEntIdx - 1].weaponId;
+	cd->m_iId = fileedicts[originalEntIdx].weaponId;
 }

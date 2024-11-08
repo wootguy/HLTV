@@ -16,12 +16,9 @@ SvenTV::SvenTV(bool singleThreadMode) {
 	debugEdict = new netedict[MAX_EDICTS];
 
 	frame.netedicts = new netedict[MAX_EDICTS];
-	frame.playerinfos = new DemoPlayerEnt[32];
 	frame.netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 	frame.cmds = new CommandData[MAX_CMD_FRAME];
 	frame.events = new DemoEventData[MAX_EVENT_FRAME];
-
-	memset(frame.playerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 
 	deltaPacketBufferSz = 508; // max UDP payload before possible fragmentation
 	deltaPacketBuffer = new char[deltaPacketBufferSz];
@@ -56,7 +53,6 @@ SvenTV::~SvenTV() {
 		tv_thread->join();
 		delete tv_thread;
 		delete[] edicts;
-		delete[] frame.playerinfos;
 		delete[] frame.netmessages;
 		delete[] frame.cmds;
 	}
@@ -89,7 +85,6 @@ void SvenTV::think_mainThread() {
 		if (edictCopyState.getValue() == EDICT_COPY_REQUESTED && shouldCopy) {
 			if (singleThreadMode) {
 				edicts = INDEXENT(0);
-				frame.playerinfos = g_demoplayers;
 				frame.netmessages = g_netmessages;
 				frame.cmds = g_cmds;
 				frame.events = g_events;
@@ -98,7 +93,6 @@ void SvenTV::think_mainThread() {
 				// need to duplicate because the server thread will be running in parallel to the
 				// tv thread which is working on these ents
 				memcpy(edicts, INDEXENT(0), sizeof(edict_t) * MAX_EDICTS);
-				memcpy(frame.playerinfos, g_demoplayers, gpGlobals->maxClients * sizeof(DemoPlayerEnt));
 				memcpy(frame.netmessages, g_netmessages, g_netmessage_count * sizeof(NetMessageData));
 				memcpy(frame.cmds, g_cmds, g_command_count * sizeof(CommandData));
 				memcpy(frame.events, g_events, g_event_count * sizeof(DemoEventData));
@@ -122,11 +116,6 @@ void SvenTV::think_mainThread() {
 
 			if (singleThreadMode) {
 				think_tvThread();
-			}
-
-			for (int i = 1; i <= gpGlobals->maxClients; i++) {
-				DemoPlayerEnt& dplr = g_demoplayers[i - 1];
-				dplr.button = 0;
 			}
 		} else if (singleThreadMode) {
 			think_tvThread();
@@ -478,91 +467,6 @@ void SvenTV::think_tvThread() {
 					continue;
 				}
 				frame.netedicts[i].load(edicts[i]);
-			}
-			for (int i = 1; i <= gpGlobals->maxClients; i++) {
-				DemoPlayerEnt& dplr = frame.playerinfos[i - 1];
-				edict_t* ent = INDEXENT(i);
-				CBasePlayer* plr = UTIL_PlayerByIndex(i);
-
-				if (!IsValidPlayer(ent) || !plr) {
-					continue;
-				}
-
-				const char* viewmodel = STRING(ent->v.viewmodel);
-				const char* weaponmodel = STRING(ent->v.weaponmodel);
-
-				dplr.armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
-				dplr.fov = clamp(ent->v.fov + 0.5f, 0, 255);
-				dplr.frags = clamp(ent->v.frags, 0, UINT16_MAX);
-				dplr.punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
-				dplr.punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
-				dplr.punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
-				dplr.viewmodel = MODEL_INDEX(g_precachedModels.find(viewmodel) != g_precachedModels.end() ? viewmodel : NOT_PRECACHED_MODEL);
-				dplr.weaponmodel = MODEL_INDEX(g_precachedModels.find(weaponmodel) != g_precachedModels.end() ? weaponmodel : NOT_PRECACHED_MODEL);
-				dplr.weaponanim = ent->v.weaponanim;
-				dplr.view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
-				dplr.observer = ((uint8_t)ent->v.iuser2 << 3) | (ent->v.iuser1 & 0x7);
-				dplr.viewEnt = plr->m_hViewEntity ? ENTINDEX(plr->m_hViewEntity.GetEdict()) : 0;
-
-				if (weaponmodel[0] == '\0') {
-					dplr.weaponmodel = PLR_NO_WEAPON_MODEL;
-				}
-				if (viewmodel[0] == '\0') {
-					dplr.viewmodel = PLR_NO_WEAPON_MODEL;
-				}
-
-				CBasePlayerWeapon* wep = plr->m_pActiveItem ? plr->m_pActiveItem->GetWeaponPtr() : NULL;
-
-				if (wep) {
-					int ammoidx = wep->PrimaryAmmoIndex();
-					int ammoidx2 = wep->SecondaryAmmoIndex();
-
-					dplr.weaponId = wep->m_iId;
-					dplr.clip = wep->m_iClip;
-					dplr.clip2 = 0;
-					dplr.ammo = ammoidx != -1 ? plr->m_rgAmmo[ammoidx] : 0;
-					dplr.ammo2 = ammoidx2 != -1 ? plr->m_rgAmmo[ammoidx2] : 0;
-					dplr.chargeReady = wep->m_chargeReady;
-					dplr.inAttack = (int)wep->m_fInAttack;
-					dplr.inReload = (int)wep->m_fInReload;
-					dplr.inReloadSpecial = (int)wep->m_fInSpecialReload;
-					dplr.fireState = (int)wep->m_fireState;
-				}
-				else {
-					dplr.weaponId = 0;
-					dplr.clip = 0;
-					dplr.clip2 = 0;
-					dplr.ammo = 0;
-					dplr.ammo2 = 0;
-					dplr.chargeReady = 0;
-					dplr.inAttack = 0;
-					dplr.inReload = 0;
-					dplr.inReloadSpecial = 0;
-					dplr.fireState = 0;
-				}
-
-				if (ent->v.iuser1 == 0 && ent->v.deadflag != DEAD_NO) {
-					dplr.observer |= 7; // 7 isn't a spectator mode, so changing this to mean "dead"
-				}
-				
-				// not thread safe
-				char* info = g_engfuncs.pfnGetInfoKeyBuffer(ent);
-				char* model = g_engfuncs.pfnInfoKeyValue(info, "model");
-				dplr.topColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "topcolor"));
-				dplr.bottomColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "bottomcolor"));
-				strcpy_safe(dplr.model, model, 23);
-				strcpy_safe(dplr.name, STRING(ent->v.netname), 64);
-
-				int fl = ent->v.flags;
-				if (dplr.flags & PLR_FL_CONNECTED) {
-					dplr.flags = (fl & FL_INWATER ? PLR_FL_INWATER : 0)
-						| (fl & (FL_ONGROUND | FL_PARTIALGROUND) ? PLR_FL_ONGROUND : 0)
-						| (fl & FL_WATERJUMP ? PLR_FL_WATERJUMP : 0)
-						| (fl & FL_FROZEN ? PLR_FL_FROZEN : 0)
-						| (fl & FL_DUCKING ? PLR_FL_DUCKING : 0)
-						| (fl & FL_NOWEAPONS ? PLR_FL_NOWEAPONS : 0)
-						| PLR_FL_CONNECTED;
-				}
 			}
 			loadNewData = false;
 		}

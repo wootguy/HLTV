@@ -32,7 +32,6 @@ private:
 	void compressNetMessage(FrameData& frame, NetMessageData& msg);
 
 	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, DemoDataTest* testData);
-	mstream writePlrDeltas(FrameData& frame, uint32_t& numEntDeltas);
 	mstream writeMsgDeltas(FrameData& frame, DemoDataTest* testData);
 	mstream writeCmdDeltas(FrameData& frame);
 	mstream writeEvtDeltas(FrameData& frame);
@@ -47,10 +46,6 @@ private:
 	uint64_t lastDemoFrameTime = 0;
 	uint32_t stringPoolOffset = 0; // location of the string pool in the file
 	uint32_t lastStringPoolIdx = 0; // for detecting if the string pool needs updating in the file
-
-	DemoPlayerEnt* fileplayerinfos = NULL;
-	char* filePlayerInfoBuffer = NULL;
-	int filePlayerInfoBufferSize = -1;
 
 	netedict* fileedicts = NULL; // last edicts written to file
 	char* fileDeltaBuffer = NULL;

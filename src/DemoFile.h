@@ -1,7 +1,6 @@
 #pragma once
 #include "main.h"
 #include <stdint.h>
-#include "DemoPlayerEnt.h"
 #include "netedict.h"
 
 // Convert floats to/from signed fixed-point integers.
@@ -92,7 +91,6 @@ struct DemoFrame {
 	uint8_t hasEntityDeltas : 1;
 	uint8_t hasNetworkMessages : 1;
 	uint8_t hasEvents : 1;
-	uint8_t hasPlayerDeltas : 1;
 	uint8_t hasCommands : 1;
 	uint8_t deltaFrames; // server frames since last demoFrame (for server fps)
 	// if isGiantFrame:
@@ -205,7 +203,6 @@ struct DemoEventData {
 // data needed to simulate a server frame
 struct FrameData {
 	netedict* netedicts;
-	DemoPlayerEnt* playerinfos;
 	NetMessageData* netmessages;
 	CommandData* cmds;
 	DemoEventData* events;
