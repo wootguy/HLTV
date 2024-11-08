@@ -218,8 +218,6 @@ private:
 	// convert from a demo file sound idx to a sound idx idx in the current game
 	bool convReplaySoundIdx(uint16_t& soundIdx);
 
-	bool validateEdicts(); // debug
-
 	void writePings();
 
 	friend class DemoWriter;

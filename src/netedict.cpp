@@ -120,7 +120,7 @@ void netedict::reset() {
 }
 
 bool netedict::matches(netedict& other) {
-	CHECK_MATCH(edflags);
+	CHECK_MATCH(etype);
 
 	if (!FIXED_EQUALS(origin[0], other.origin[0], 24)) {
 		ALERT(at_console, "Mismatch origin[0] (%d != %d)\n", origin[0], other.origin[0]);
@@ -270,7 +270,7 @@ void netedict::load(const edict_t& ed) {
 	sequence = newSequence;
 	modelindex = newModelindex;
 
-	edflags |= EDFLAG_VALID;
+	etype = ETYPE_GENERIC;
 
 	if (ed.v.flags & FL_CLIENT) {
 		origin[0] = FLOAT_TO_FIXED(ed.v.origin[0], 19, 5);
@@ -279,10 +279,10 @@ void netedict::load(const edict_t& ed) {
 		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (255.0f / 360.0f));
 		angles[1] = (uint16_t)(normalizeRangef(vars.v_angle.y, 0, 360) * (255.0f / 360.0f));
 		angles[2] = (uint16_t)(normalizeRangef(vars.v_angle.z, 0, 360) * (255.0f / 360.0f));
-		edflags |= EDFLAG_PLAYER;
+		etype = ETYPE_PLAYER;
 	}
 	else if (ed.v.flags & FL_CUSTOMENTITY) {
-		edflags |= EDFLAG_BEAM;
+		etype = ETYPE_BEAM;
 		origin[0] = FLOAT_TO_FIXED(ed.v.origin[0], 21, 3);
 		origin[1] = FLOAT_TO_FIXED(ed.v.origin[1], 21, 3);
 		origin[2] = FLOAT_TO_FIXED(ed.v.origin[2], 21, 3);
@@ -305,7 +305,7 @@ void netedict::load(const edict_t& ed) {
 		angles[2] = (uint16_t)(normalizeRangef(vars.angles.z, 0, 360) * (255.0f / 360.0f));
 
 		if (ed.v.flags & FL_MONSTER) {
-			edflags |= EDFLAG_MONSTER;
+			etype = ETYPE_MONSTER;
 		}
 	}
 
@@ -463,7 +463,7 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 void netedict::apply(edict_t* ed, char* stringpool) {
 	entvars_t& vars = ed->v;
 
-	if (!edflags) {
+	if (!etype) {
 		return; // no need to update other values. Only the isFree var will be sent from now on
 	}
 
@@ -505,7 +505,7 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 
 	//vars.movetype = vars.aiment ? MOVETYPE_FOLLOW : MOVETYPE_NONE;
 
-	if (edflags & EDFLAG_BEAM) {
+	if (etype == ETYPE_BEAM) {
 		uint16_t startIdx = aiment & 0xfff;
 		uint16_t endIdx = controller_lo & 0xfff;
 
@@ -551,7 +551,7 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 				//vars.aiment = simEnts[aiment];
 				// aiment causing hard-to-troubleshoot crashes, so just set origin
 
-				if (!(edflags & (EDFLAG_MONSTER|EDFLAG_PLAYER)) && vars.skin && vars.body) {
+				if (!(etype == ETYPE_MONSTER || etype == ETYPE_PLAYER) && vars.skin && vars.body) {
 
 					if (!strstr(STRING(copyent->v.model), ".spr")) {
 						studiohdr_t* pstudiohdr = (studiohdr_t*)GET_MODEL_PTR(copyent);
@@ -572,7 +572,7 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 			}
 		}
 		else {
-			if (edflags & EDFLAG_PLAYER) {
+			if (etype == ETYPE_PLAYER) {
 				vars.origin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);
 				vars.origin[1] = FIXED_TO_FLOAT(origin[1], 19, 5);
 				vars.origin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
@@ -592,12 +592,12 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 	UTIL_SetOrigin(&vars, vars.origin);
 
 	// calculate instantaneous velocity for gait calculations
-	if (edflags & EDFLAG_PLAYER)
+	if (etype == ETYPE_PLAYER)
 		vars.velocity = (vars.origin - oldorigin);
 
 	vars.noise = MAKE_STRING(stringpool + classname);
 
-	if (baseent->IsMonster() && (edflags & EDFLAG_MONSTER) && classname) {
+	if (baseent->IsMonster() && (etype == ETYPE_MONSTER) && classname) {
 		CBaseMonster* mon = baseent->MyMonsterPointer();
 		
 		edict_t* temp = CREATE_NAMED_ENTITY(MAKE_STRING(stringpool + classname));
@@ -691,23 +691,23 @@ void netedict::applyPlayer(CBasePlayer* plr) {
 }
 
 bool netedict::readDeltas(mstream& reader) {
-	uint8_t oldedflags = edflags;
-	uint8_t newedflags = edflags;
+	uint8_t oldtype = etype;
+	uint8_t newtype = etype;
 
 	deltaBitsLast = 0;
 
 	if (reader.readBit()) {
 		deltaBitsLast |= FL_DELTA_FLAGS_CHANGED;
-		newedflags = reader.readBits(4);
-		g_stats.entDeltaCatSz[FL_DELTA_CAT_EDFLAG] += 4;
+		newtype = reader.readBits(3);
+		g_stats.entDeltaCatSz[FL_DELTA_CAT_EDFLAG] += 3;
 	}
 
-	if (!oldedflags && newedflags) {
+	if (!oldtype && newtype) {
 		// new entity created. Start deltas from a fresh state.
 		reset();
 	}
 
-	edflags = newedflags;
+	etype = newtype;
 
 	// origin category
 	if (reader.readBit()) {
@@ -823,7 +823,7 @@ bool netedict::readDeltas(mstream& reader) {
 		}
 	}
 
-	if ((edflags & EDFLAG_PLAYER) && reader.readBit()) {
+	if (etype == ETYPE_PLAYER && reader.readBit()) {
 		// player state
 		if (reader.readBit()) {
 			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, steamid64, 64);
@@ -877,7 +877,7 @@ bool netedict::readDeltas(mstream& reader) {
 int netedict::writeDeltas(mstream& writer, netedict& old) {
 	uint64_t startOffset = writer.tellBits();
 
-	if (!old.edflags) {
+	if (!old.etype) {
 		// new entity created. Start from a fresh previous state.
 		// some vars may have changed while we didn't send deltas but still memcpy()'d
 		// to fileedicts as if the client knows the latest state.
@@ -888,15 +888,15 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	// edflags must come first, so the reader can know to reset state when new ents are created
 	// or if the entity type changes
-	if (edflags != old.edflags) {
+	if (etype != old.etype) {
 		wroteAnyDeltas = true;
 		writer.writeBit(1);
 		
-		if (edflags & EDFLAG_VALID) {
-			writer.writeBits(edflags, 4);
+		if (etype) {
+			writer.writeBits(etype, 3);
 		}
 		else {
-			writer.writeBits(0, 4); // 0 flags = deleted ent
+			writer.writeBits(0, 3); // 0 flags = deleted ent
 		}
 
 		g_stats.entDeltaCatSz[FL_DELTA_CAT_EDFLAG] += 4;
@@ -955,7 +955,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		if (anglesChanged) {
 			wroteAnyDeltas = true;
 
-			bool bigAngles = edflags & EDFLAG_BEAM;
+			bool bigAngles = etype == ETYPE_BEAM;
 			writer.writeBit(bigAngles);
 
 			for (int i = 0; i < 3; i++) {
@@ -1035,7 +1035,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	END_DELTA_CATEGORY(FL_DELTA_CAT_INTERNAL)
 
 	// player state
-	BEGIN_DELTA_CATEGORY_COND(FL_DELTA_CAT_PLAYER, edflags & EDFLAG_PLAYER)
+	BEGIN_DELTA_CATEGORY_COND(FL_DELTA_CAT_PLAYER, etype == ETYPE_PLAYER)
 		// player info
 		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_PLAYER_INFO)
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, steamid64, 64);

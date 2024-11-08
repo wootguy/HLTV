@@ -541,16 +541,6 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 	return true;
 }
 
-bool DemoPlayer::validateEdicts() {
-	for (int i = 0; i < MAX_EDICTS; i++) {
-		if (fileedicts[i].edflags && !(fileedicts[i].edflags & EDFLAG_BEAM) && fileedicts[i].aiment > 8192) {
-			ALERT(at_console, "Invalid edict %d has %d\n", i, (int)fileedicts[i].aiment);
-			return false;
-		}
-	}
-	return true;
-}
-
 void DemoPlayer::writePings() {
 	MESSAGE_BEGIN(MSG_BROADCAST, SVC_PINGS);
 	static char pingBuffer[101]; // (25 bits per player * 32) + 1 = 101 bytes
@@ -577,13 +567,13 @@ void DemoPlayer::writePings() {
 
 edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 	bool playerSlotFree = true; // todo
-	bool isPlayer = (fileedicts[i].edflags & EDFLAG_PLAYER);
+	bool isPlayer = (fileedicts[i].etype == ETYPE_PLAYER);
 	bool entIsPlayer = ent && ent->v.flags & FL_CLIENT;
 	bool playerInfoLoaded = (i-1) < MAX_PLAYERS && fileedicts[i].playerFlags;
-	bool isBeam = fileedicts[i].edflags & EDFLAG_BEAM;
+	bool isBeam = fileedicts[i].etype == ETYPE_BEAM;
 	bool entIsBeam = ent && ent->v.flags & FL_CUSTOMENTITY;
 
-	if (!fileedicts[i].edflags & EDFLAG_VALID) {
+	if (!fileedicts[i].etype) {
 		return NULL;
 	}
 
@@ -730,14 +720,14 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 	}
 
 	// interpolation setup
-	if (!(fileedicts[i].edflags & EDFLAG_MONSTER)) {
+	if (fileedicts[i].etype != ETYPE_MONSTER) {
 		interp.originStart = interp.originEnd;
 		interp.originEnd = ent->v.origin;
 
 		interp.anglesStart = interp.anglesEnd;
 		interp.anglesEnd = ent->v.angles;
 	}
-	else if (fileedicts[i].edflags & EDFLAG_MONSTER) {
+	else if (fileedicts[i].etype == ETYPE_MONSTER) {
 		// monster data is updated at a framerate independent of the server
 		if (fileedicts[i].deltaBitsLast & (FL_DELTA_ORIGIN_CHANGED|FL_DELTA_ANGLES_CHANGED)) {
 			interp.originStart = interp.originEnd;
@@ -752,7 +742,7 @@ void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 	}
 
 	// frame prediction
-	if (fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) {
+	if (fileedicts[i].etype == ETYPE_MONSTER || fileedicts[i].etype == ETYPE_PLAYER) {
 		if (fileedicts[i].deltaBitsLast & FL_DELTA_ANIM_CHANGED) {
 			bool sequenceChanged = interp.sequenceEnd != ent->v.sequence;
 
@@ -797,7 +787,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 	int errorSprIdx = g_engfuncs.pfnModelIndex(NOT_PRECACHED_MODEL);
 
 	for (int i = 1; i < MAX_EDICTS; i++) {
-		if (!fileedicts[i].edflags) {
+		if (!fileedicts[i].etype) {
 			if (i < (int)replayEnts.size()) {
 
 				CBaseEntity* ent = replayEnts[i].h_ent;
@@ -829,12 +819,12 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 		string newModel = getReplayModel(ent->v.modelindex);
 
 		if (oldModelIdx != ent->v.modelindex) {
-			if (!(fileedicts[i].edflags & EDFLAG_PLAYER)) {
+			if (fileedicts[i].etype != ETYPE_PLAYER) {
 				SET_MODEL(ent, newModel.c_str());
 			}
 		}
 
-		if ((fileedicts[i].edflags & EDFLAG_BEAM) && newModel.find(".spr") == string::npos) {
+		if (fileedicts[i].etype == ETYPE_BEAM && newModel.find(".spr") == string::npos) {
 			ALERT(at_console, "Invalid model set on beam: %s\n", newModel.c_str());
 			ent->v.effects |= EF_NODRAW; // prevent client crash
 		}
@@ -2012,7 +2002,7 @@ void DemoPlayer::interpolateEdicts() {
 	lastTime = now;
 
 	for (int i = 0; i < (int)replayEnts.size(); i++) {
-		if (!fileedicts[i].edflags) {
+		if (!fileedicts[i].etype) {
 			continue;
 		}
 
@@ -2023,8 +2013,9 @@ void DemoPlayer::interpolateEdicts() {
 		edict_t* ent = replayEnts[i].h_ent.GetEdict();
 		InterpInfo& interp = replayEnts[i].interp;
 		bool isSprite = strstr(STRING(ent->v.model), ".spr");
+		int etype = fileedicts[i].etype;
 
-		if ((fileedicts[i].edflags & (EDFLAG_MONSTER | EDFLAG_PLAYER)) || isSprite) {
+		if (etype == ETYPE_MONSTER || etype == ETYPE_PLAYER || isSprite) {
 			float animTime = (gpGlobals->time - interp.animTime) * replaySpeed;
 			float inc = animTime * interp.framerateEnt * (isSprite ? 1.0f : interp.framerateSmd);
 
@@ -2042,7 +2033,7 @@ void DemoPlayer::interpolateEdicts() {
 			interp.interpFrame = ent->v.frame;
 		}
 
-		if ((fileedicts[i].edflags & EDFLAG_MONSTER)) {
+		if (etype == ETYPE_MONSTER) {
 			float t = 1;
 			if (interp.sequenceEnd == ent->v.sequence && interp.estimatedUpdateDelay > 0) {
 				float deltaTime = (gpGlobals->time - interp.lastMovementTime) * replaySpeed;
@@ -2065,7 +2056,7 @@ void DemoPlayer::interpolateEdicts() {
 			// fixes hud info
 			g_engfuncs.pfnSetOrigin(ent, ent->v.origin);
 
-			if (fileedicts[i].edflags & EDFLAG_PLAYER) {
+			if (fileedicts[i].etype == ETYPE_PLAYER) {
 				if ((ent->v.flags & FL_CLIENT) == 0) {
 					updatePlayerModelGait(ent, dt); // manual gait calculations for non-player entity
 					updatePlayerModelPitchBlend(ent);

@@ -47,10 +47,13 @@ enum DeltaStatCategories {
 	inReloadSpecial = (weaponState >> 5) & 0x1; \
 	fireState = (weaponState >> 6) & 0x1;
 
-#define EDFLAG_VALID 1		// if no other flag is set, then it's a generic model entity (BSP/mdl/spr)
-#define EDFLAG_MONSTER 2	// should display health/name
-#define EDFLAG_PLAYER 4		// special model loading and rendering
-#define EDFLAG_BEAM 8		// lasers and stuff
+enum ENTITY_TYPES {
+	ETYPE_INVALID, // deleted entity
+	ETYPE_GENERIC,
+	ETYPE_MONSTER,
+	ETYPE_PLAYER,
+	ETYPE_BEAM,
+};
 
 #define PLR_FL_CONNECTED 1
 #define PLR_FL_INWATER 2
@@ -64,7 +67,7 @@ enum DeltaStatCategories {
 
 // edict with only the data needed for rendering, and only the bits needed
 struct netedict {
-	uint8_t		edflags;		// EDFLAG_*  (0 == invalid/deleted edict)
+	uint8_t		etype;			// ENTITY_TYPES
 	int32_t		origin[3];		// 21.3 fixed point (beams), or 19.5 fixed point (everything else)
 	uint32_t	angles[3];		// 21.3 fixed point (beams), or 0-360 scaled to uint16_t (everything else)
 	uint16_t	modelindex;
