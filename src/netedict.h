@@ -24,6 +24,7 @@ enum DeltaStatCategories {
 	FL_DELTA_CAT_RENDER,
 	FL_DELTA_CAT_MISC,
 	FL_DELTA_CAT_INTERNAL,
+	FL_DELTA_CAT_VISIBILITY,
 };
 
 
@@ -38,6 +39,7 @@ struct netedict {
 	int32_t		origin[3];		// 21.3 fixed point (beams), or 19.5 fixed point (everything else)
 	uint32_t	angles[3];		// 21.3 fixed point (beams), or 0-360 scaled to uint16_t (everything else)
 	uint16_t	modelindex;
+	uint8_t		visibility[4];	// players who can see this entity (4-byte bitfield)
 
 	uint8_t		skin;
 	uint8_t		body;			// sub-model selection for studiomodels

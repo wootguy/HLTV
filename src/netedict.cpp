@@ -99,6 +99,10 @@ bool netedict::matches(netedict& other) {
 	CHECK_MATCH(conditions_md);
 	CHECK_MATCH(conditions_hi);
 	CHECK_MATCH(memories);
+	CHECK_MATCH(visibility[0]);
+	CHECK_MATCH(visibility[1]);
+	CHECK_MATCH(visibility[2]);
+	CHECK_MATCH(visibility[3]);
 	return true;
 }
 
@@ -208,15 +212,20 @@ void netedict::load(const edict_t& ed) {
 	}
 	*/
 
-	if (g_write_debug_info->value && (ed.v.flags & (FL_CLIENT | FL_MONSTER))) {
-		CBaseEntity* bent = (CBaseEntity*)GET_PRIVATE(&ed); // TODO: not thread safe
+	if (g_write_debug_info->value && ent && (ed.v.flags & (FL_CLIENT | FL_MONSTER))) {
 		health = vars.health > 0 ? V_min(vars.health, UINT32_MAX) : 0;
 		
-		if (g_write_debug_info->value && bent->IsNormalMonster()) {
-			CBaseMonster* mon = bent->MyMonsterPointer();
+		if (g_write_debug_info->value && ent->IsNormalMonster()) {
+			CBaseMonster* mon = ent->MyMonsterPointer();
 
 			monsterstate = mon->m_MonsterState;
 			schedule = mon->GetScheduleTableIdx();
+			if (schedule == 255) {
+				schedule = 127; // reduced bit count
+			}
+			else if (schedule > 127) {
+				ALERT(at_console, "Schedule too large for datatype! %d\n", mon->GetScheduleTableIdx());
+			}
 			task = mon->m_iScheduleIndex;
 			conditions_lo = mon->m_afConditions & 0xff;
 			conditions_md = (mon->m_afConditions >> 8) & 0xff;
@@ -225,9 +234,9 @@ void netedict::load(const edict_t& ed) {
 		}
 
 #ifdef HLCOOP_BUILD
-		uint8_t classifyBits = bent && bent->m_Classify ? bent->m_Classify : 0;
+		uint8_t classifyBits = ent && ent->m_Classify ? ent->m_Classify : 0;
 #else
-		uint8_t classifyBits = bent && bent->m_fOverrideClass ? bent->m_iClassSelection : 0;
+		uint8_t classifyBits = ent && ent->m_fOverrideClass ? ent->m_iClassSelection : 0;
 #endif
 		
 		classify = classifyBits;
@@ -236,6 +245,13 @@ void netedict::load(const edict_t& ed) {
 	if (classname_stringt != vars.classname) {
 		classname_stringt = vars.classname;
 		classname = getPoolOffsetForString(vars.classname);
+	}
+
+	if (ent) {
+		visibility[0] = ent->m_netPlayers >> 0;
+		visibility[1] = ent->m_netPlayers >> 8;
+		visibility[2] = ent->m_netPlayers >> 16;
+		visibility[3] = ent->m_netPlayers >> 24;
 	}
 }
 
@@ -463,6 +479,14 @@ bool netedict::readDeltas(mstream& reader) {
 		}
 	}
 
+	// visibility category
+	if (reader.readBit()) {
+		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
+		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[1], 8);
+		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[2], 8);
+		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[3], 8);
+	}
+
 	// animation deltas category
 	if (reader.readBit()) {
 		uint8_t oldFrame = frame;
@@ -622,6 +646,25 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 					WRITE_DELTA_BITS(FL_DELTA_CAT_ANGLES, angles[i], 8);
 				}
 			}
+		}
+	}
+
+	// visibility category
+	{
+		bool categoryFlag = false;
+		CHECK_CHANGED(visibility[0]);
+		CHECK_CHANGED(visibility[1]);
+		CHECK_CHANGED(visibility[2]);
+		CHECK_CHANGED(visibility[3]);
+
+		writer.writeBit(categoryFlag);
+		if (categoryFlag) {
+			wroteAnyDeltas = true;
+
+			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
+			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[1], 8);
+			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[2], 8);
+			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[3], 8);
 		}
 	}
 

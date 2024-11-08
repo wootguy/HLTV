@@ -189,6 +189,8 @@ private:
 	void setupInterpolation(edict_t* ent, int i);
 
 	void interpolateEdicts();
+	
+	void updateVisibility();
 
 	void decompressNetMessage(NetMessageData& msg);
 

@@ -853,16 +853,11 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 			// prevent console flooding with invalid frame errors
 			ent->v.frame = 0;
 		}
-
-		/*
-		if (g_engfuncs.pfnModelIndex("sprites/lgtning.spr") == ent->v.modelindex || g_engfuncs.pfnModelIndex("sprites/error.spr") == ent->v.modelindex) {
-			SET_MODEL(ent, "sprites/error.spr");
-			ALERT(at_console, "OK LIGHTNING: %f %d\n", ent->v.scale, ent->v.movetype);
-		}
-		*/
 	}
 
 	interpolateEdicts();
+
+	updateVisibility();
 
 	return true;
 }
@@ -2179,6 +2174,50 @@ void DemoPlayer::interpolateEdicts() {
 				}
 			}
 		}
+	}
+}
+
+void DemoPlayer::updateVisibility() {
+	for (int k = 1; k <= gpGlobals->maxClients; k++) {
+		CBasePlayer* spec = UTIL_PlayerByIndex(k);
+
+		if (!spec || spec->IsBot() || !spec->m_hObserverTarget) {
+			continue;
+		}
+
+		CBasePlayer* bot = UTIL_PlayerByIndex(spec->m_hObserverTarget.GetEntity()->entindex());
+
+		if (!bot || !bot->IsBot()) {
+			continue;
+		}
+
+		uint32_t botbit = 1 << (bot->pev->iuser4 & 31); // iuser4 = original ent index
+		edict_t* espec = spec->edict();
+		bool useBotVis = spec->pev->iuser1 == OBS_IN_EYE;
+		int numVis = 0;
+		int numHide = 0;
+
+		for (int e = 0; e < replayEnts.size(); e++) {
+			CBaseEntity* ent = replayEnts[e].h_ent.GetEntity();
+			uint32_t originalIdx = ent ? ent->pev->iuser4 : -1;
+
+			if (!ent || originalIdx >= MAX_EDICTS) {
+				continue;
+			}
+
+			uint32_t vis = *(uint32_t*)fileedicts[originalIdx].visibility;
+			if (useBotVis) {
+				ent->SetVisible(espec, (vis & botbit));
+				numVis += (vis & botbit) ? 1 : 0;
+				numHide += (vis & botbit) ? 0 : 1;
+			}
+			else {
+				ent->SetVisible(espec, true);
+				numVis += 1;
+			}
+		}
+
+		//ALERT(at_console, "%d / %d ents are visible to %s\n", numVis, numVis + numHide, bot->DisplayName());
 	}
 }
 

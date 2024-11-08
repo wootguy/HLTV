@@ -162,6 +162,7 @@ void DemoStats::showStats(edict_t* edt) {
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_RENDER);
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_MISC);
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_INTERNAL);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_VISIBILITY);
 
 		DeltaStat indexStat;
 		indexStat.field = "indexes";
