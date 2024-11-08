@@ -49,7 +49,6 @@ const bool singleThreadMode = true;
 
 SvenTV* g_sventv = NULL;
 DemoPlayer* g_demoPlayer = NULL;
-DemoPlayerEnt* g_demoplayers = NULL;
 NetMessageData* g_netmessages = NULL;
 int g_netmessage_count = 0;
 CommandData* g_cmds = NULL;
@@ -140,8 +139,6 @@ uint16_t getPoolOffsetForString(string_t classname) {
 }
 
 HOOK_RET_VOID ClientLeaveHook(edict_t* ent) {
-	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
-	plr.flags = 0;
 	demoStatPlayers[ENTINDEX(ent)] = false;
 	
 	DEFAULT_HOOK_RETURN;
@@ -195,36 +192,10 @@ HOOK_RET_VOID MapInit_post(edict_t * pEdictList, int edictCount, int maxClients)
 	DEFAULT_HOOK_RETURN;
 }
 
-void loadPlayerInfo(edict_t* pEntity, char* infobuffer) {
-	vector<string> parts = splitString(infobuffer, "\\");
-	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(pEntity) - 1];
-
-	for (int i = 1; i < (int)parts.size() - 1; i += 2) {
-		string key = parts[i];
-		string value = parts[i + 1];
-
-		if (key == "topcolor") {
-			plr.topColor = atoi(value.c_str());
-		}
-		else if (key == "bottomcolor") {
-			plr.bottomColor = atoi(value.c_str());
-		}
-		else if (key == "model") {
-			strcpy_safe(plr.model, value.c_str(), 23);
-		}
-		else if (key == "name") {
-			strcpy_safe(plr.name, value.c_str(), 32);
-			g_playerModels.insert(value);
-		}
-	}
-}
-
 HOOK_RET_VOID ClientUserInfoChangedHook(edict_t* pEntity, char* infobuffer) {
 	if (!IsValidPlayer(pEntity)) {
 		DEFAULT_HOOK_RETURN;
 	}
-
-	loadPlayerInfo(pEntity, infobuffer);
 
 	DEFAULT_HOOK_RETURN;
 }
@@ -321,77 +292,12 @@ HOOK_RET_VOID StartFrameHook() {
 		if (!IsValidPlayer(ent) || !plr) {
 			continue;
 		}
-
-#ifdef HLCOOP_BUILD
-		CBasePlayerWeapon* wep = (CBasePlayerWeapon*)plr->m_pActiveItem.GetEntity();
-#else
-		CBasePlayerWeapon* wep = (CBasePlayerWeapon*)plr->m_hActiveItem.GetEntity();
-#endif
-
-		DemoPlayerEnt& dplr = g_demoplayers[i - 1];
-		dplr.button |= (plr->m_afButtonLast | plr->m_afButtonPressed | plr->m_afButtonReleased | ent->v.button) & 0xffff;
-
-		if (wep) {
-			int pammo = wep->m_iPrimaryAmmoType;
-			int sammo = wep->m_iSecondaryAmmoType;
-			dplr.clip = clamp(wep->m_iClip, 0, 65535);
-
-			#ifdef HLCOOP_BUILD
-				dplr.clip2 = 0;
-			#else
-				dplr.clip2 = clamp(wep->m_iClip2, 0, 65535);
-			#endif
-
-			dplr.ammo = pammo >= 0 && pammo < 64 ? clamp(plr->m_rgAmmo[pammo], 0, 65535) : 0;
-			dplr.ammo2 = sammo >= 0 && sammo < 64 ? clamp(plr->m_rgAmmo[sammo], 0, 65535) : 0;
-		}
-	}
-
-	if (g_engfuncs.pfnTime() - lastPingUpdate > 1.0f) {
-		lastPingUpdate = g_engfuncs.pfnTime();
-
-		for (int i = 1; i <= gpGlobals->maxClients; i++) {
-			DemoPlayerEnt& plr = g_demoplayers[i - 1];
-			edict_t* ent = INDEXENT(i);
-			
-			if (!IsValidPlayer(ent)) {
-				plr.flags = 0;
-				continue;
-			}
-			
-			int ping;
-			int loss;
-			g_engfuncs.pfnGetPlayerStats(ent, &ping, &loss);
-			plr.ping = clamp(ping, 0, 65535);
-
-			if (plr.steamid64 == 0) {
-				// plugin reloaded mid-map
-				plr.flags |= PLR_FL_CONNECTED;
-				plr.steamid64 = getSteamId64(ent);
-				char* infobuffer = g_engfuncs.pfnGetInfoKeyBuffer(ent);
-				loadPlayerInfo(ent, infobuffer);
-			}
-		}
 	}
 
 	if (g_sventv) {
 		g_sventv->think_mainThread();
 	}
 
-	DEFAULT_HOOK_RETURN;
-}
-
-#ifdef HLCOOP_BUILD
-HOOK_RET_VOID ClientJoin(CBasePlayer* pPlayer)
-#else
-HOOK_RET_VOID ClientJoin(edict_t* ent)
-#endif
-{
-	edict_t* ent = pPlayer->edict();
-	DemoPlayerEnt& plr = g_demoplayers[ENTINDEX(ent) - 1];
-	plr.steamid64 = getSteamId64(ent);
-	plr.flags |= PLR_FL_CONNECTED;
-	
 	DEFAULT_HOOK_RETURN;
 }
 
@@ -883,7 +789,6 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnStartFrame = StartFrameHook;
 	g_hooks.pfnClientDisconnect = ClientLeaveHook;
 	g_hooks.pfnClientUserInfoChanged = ClientUserInfoChangedHook;
-	g_hooks.pfnClientPutInServer = ClientJoin;
 	g_hooks.pfnClientCommand = ClientCommand;
 
 	g_hooks.pfnMessageBegin = MessageBegin;
@@ -929,11 +834,9 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 		g_demoPlayer = new DemoPlayer();
 	}
 
-	g_demoplayers = new DemoPlayerEnt[32];
 	g_netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 	g_cmds = new CommandData[MAX_CMD_FRAME];
 	g_events = new DemoEventData[MAX_EVENT_FRAME];
-	memset(g_demoplayers, 0, 32 * sizeof(DemoPlayerEnt));
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 
 	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
@@ -942,7 +845,6 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 extern "C" void DLLEXPORT PluginExit() {
 	if (g_sventv) delete g_sventv;
 	if (g_demoPlayer) delete g_demoPlayer;
-	delete[] g_demoplayers;
 	delete[] g_netmessages;
 	delete[] g_cmds;
 	delete[] g_events;

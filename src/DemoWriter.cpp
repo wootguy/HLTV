@@ -8,11 +8,9 @@
 using namespace std;
 
 DemoWriter::DemoWriter() {
-	fileplayerinfos = new DemoPlayerEnt[32];
 	fileedicts = new netedict[MAX_EDICTS];
 
 	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
-	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 
 	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
 	int fullDeltaMaxSize = sizeof(netedict) + 4;
@@ -20,10 +18,6 @@ DemoWriter::DemoWriter() {
 	int headerBytes = 1; // 1 for first full index
 	fileDeltaBufferSize = headerBytes + (fullDeltaMaxSize + indexBytes) * MAX_EDICTS;
 	fileDeltaBuffer = new char[fileDeltaBufferSize];
-
-	// size of full delta on every player info
-	filePlayerInfoBufferSize = sizeof(DemoPlayerEnt) * 32 + 2;
-	filePlayerInfoBuffer = new char[filePlayerInfoBufferSize];
 
 	netmessagesBufferSize = sizeof(NetMessageData) * MAX_NETMSG_FRAME + 2;
 	netmessagesBuffer = new char[netmessagesBufferSize];
@@ -38,7 +32,6 @@ DemoWriter::DemoWriter() {
 DemoWriter::~DemoWriter() {
 	delete[] fileedicts;
 	delete[] fileDeltaBuffer;
-	delete[] fileplayerinfos;
 	delete[] netmessagesBuffer;
 	delete[] cmdsBuffer;
 	delete[] eventsBuffer;
@@ -122,7 +115,6 @@ void DemoWriter::initDemoFile() {
 	}
 
 	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
-	memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 
 	fileDeltaBuffer = new char[fileDeltaBufferSize];
 
@@ -250,28 +242,6 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, Dem
 	g_stats.entIndexTotalSz += indexWriteSz;
 
 	return entbuffer;
-}
-
-mstream DemoWriter::writePlrDeltas(FrameData& frame, uint32_t& plrDeltaBits) {
-	plrDeltaBits = 0;
-	mstream plrbuffer(filePlayerInfoBuffer, filePlayerInfoBufferSize);
-	for (int i = 0; i < gpGlobals->maxClients; i++) {
-		int ret = frame.playerinfos[i].writeDeltas(plrbuffer, fileplayerinfos[i]);
-
-		if (ret == EDELTA_OVERFLOW) {
-			ALERT(at_console, "ERROR: Demo file player delta buffer overflowed. Use a bigger buffer! The demo file is now broken\n");
-			break;
-		}
-		else if (ret == EDELTA_NONE) {
-			// no differences
-		}
-		else {
-			// delta written
-			plrDeltaBits |= 1 << i;
-		}
-	}
-
-	return plrbuffer;
 }
 
 void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
@@ -647,7 +617,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (isKeyframe) {
 		nextDemoKeyframe = now + (1000ULL * KEYFRAME_INTERVAL);
 		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
-		memset(fileplayerinfos, 0, 32 * sizeof(DemoPlayerEnt));
 	}
 
 	uint16_t numEntDeltas = 0;
@@ -667,16 +636,13 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	}
 
 	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
-	mstream plrbuffer = writePlrDeltas(frame, plrDeltaBits);
 	mstream msgbuffer = writeMsgDeltas(frame, testData);
 	mstream cmdbuffer = writeCmdDeltas(frame);
 	mstream evtbuffer = writeEvtDeltas(frame);
 
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
-	memcpy(fileplayerinfos, frame.playerinfos, 32 * sizeof(DemoPlayerEnt));
 
 	g_stats.entDeltaCurrentSz = entbuffer.tell() + (entbuffer.tell() ? 2 : 0);
-	g_stats.plrDeltaCurrentSz = plrbuffer.tell() + (plrbuffer.tell() ? 4 : 0);
 	g_stats.msgCurrentSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
 	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 1 : 0);
 	g_stats.eventCurrentSz = evtbuffer.tell() + (evtbuffer.tell() ? 1 : 0);
@@ -694,7 +660,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	header.hasEntityDeltas = numEntDeltas > 0;
 	header.hasNetworkMessages = frame.netmessage_count > 0;
 	header.hasEvents = frame.event_count > 0;
-	header.hasPlayerDeltas = plrDeltaBits > 0;
 	header.hasCommands = frame.cmds_count > 0;
 	header.isKeyFrame = isKeyframe;
 	header.isGiantFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (65535-3) || isKeyframe;
@@ -703,7 +668,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		header.isBigFrame = 0;
 	}
 
-	bool hasAnyDeltas = header.hasEntityDeltas + header.hasPlayerDeltas + header.hasNetworkMessages + header.hasEvents + header.hasCommands;
+	bool hasAnyDeltas = header.hasEntityDeltas + header.hasNetworkMessages + header.hasEvents + header.hasCommands;
 	if (!hasAnyDeltas) {
 		if (validateOutput) {
 			delete testData;
@@ -752,10 +717,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		fwrite(&numEntDeltas, sizeof(uint16_t), 1, demoFile);
 		fwrite(entbuffer.getBuffer(), entbuffer.tell(), 1, demoFile);
 	}
-	if (header.hasPlayerDeltas) {
-		fwrite(&plrDeltaBits, sizeof(uint32_t), 1, demoFile);
-		fwrite(plrbuffer.getBuffer(), plrbuffer.tell(), 1, demoFile);
-	}
 	if (header.hasNetworkMessages) {
 		fwrite(&frame.netmessage_count, sizeof(uint16_t), 1, demoFile);
 		fwrite(msgbuffer.getBuffer(), msgbuffer.tell(), 1, demoFile);
@@ -780,7 +741,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		size_t oldOffset = ftell(demoFile);
 		
 		uint32_t expectedEntSz = g_stats.entDeltaCurrentSz;
-		uint32_t expectedPlrSz = g_stats.plrDeltaCurrentSz;
 		uint32_t expectedNetSz = g_stats.msgCurrentSz;
 		uint32_t expectedEvtSz = g_stats.eventCurrentSz;
 		uint32_t expectedCmdSz = g_stats.cmdCurrentSz;
@@ -807,9 +767,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 		ASSERT_FRAME("ent count", testData->numEntDeltas, numEntDeltas);
 		ASSERT_FRAME("ent bytes", g_stats.entDeltaCurrentSz, expectedEntSz);
-
-		ASSERT_FRAME("plr bits", testData->playerDeltaBits, plrDeltaBits);
-		ASSERT_FRAME("plr bytes", g_stats.plrDeltaCurrentSz, expectedPlrSz);
 
 		ASSERT_FRAME("msg count", testData->msgCount, frame.netmessage_count);
 		ASSERT_FRAME("msg bytes", g_stats.msgCurrentSz, expectedNetSz);

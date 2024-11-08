@@ -2,32 +2,112 @@
 #include "DemoFile.h"
 #include "main.h"
 #include "DemoPlayer.h"
+#include "pm_shared.h"
 
 using namespace std;
 
 #undef read
 #undef write
 
-#define WRITE_DELTA_BITS(cat, field, sz) \
+#define BEGIN_DELTA_CATEGORY_COND(cat, cond) \
+	if (cond) { \
+		uint64_t start_##cat = writer.tellBits(); \
+		bool filled_##cat = false; \
+		writer.writeBit(0);
+
+#define BEGIN_DELTA_CATEGORY(cat) BEGIN_DELTA_CATEGORY_COND(cat, true)
+
+#define MARK_CATEGORY_FILLED(cat) \
+	filled_##cat = true; \
+	wroteAnyDeltas = true; \
+
+#define WRITE_DELTA_SINGLE(cat, field, sz) \
 	writer.writeBit(old.field != field); \
 	g_stats.entDeltaCatSz[cat] += 1; \
 	if (old.field != field) { \
+		writer.writeBits(field, sz); \
 		g_stats.entDeltaCatSz[cat] += sz; \
+	}
+
+#define WRITE_DELTA_COND(cat, field, sz, cond) \
+	writer.writeBit(cond); \
+	if (cond) { \
+		MARK_CATEGORY_FILLED(cat) \
 		writer.writeBits(field, sz); \
 	}
 
-#define READ_DELTA_BITS(cat, field, sz) \
+#define WRITE_DELTA_STR(cat, field) \
+	if (strcmp(old.field, field)) { \
+		MARK_CATEGORY_FILLED(cat) \
+		uint8_t len = strlen(field); \
+		writer.writeBit(1); \
+		writer.writeBits(len, 8); \
+		for (int z = 0; z < len; z++) { \
+			writer.writeBits(field[z], 8); \
+		} \
+	} else { \
+		writer.writeBit(0); \
+	}
+
+#define WRITE_DELTA(cat, field, sz) \
+	WRITE_DELTA_COND(cat, field, sz, old.field != field)
+
+#define END_DELTA_CATEGORY(cat) \
+		if (filled_##cat) { \
+			uint64_t end_##cat = writer.tellBits(); \
+			writer.seekBits(start_##cat); \
+			writer.writeBit(1); \
+			writer.seekBits(end_##cat); \
+			g_stats.entDeltaCatSz[cat] += end_##cat - start_##cat; \
+		} else { \
+			writer.seekBits(start_##cat + 1); \
+		} \
+	}
+
+#define END_DELTA_CATEGROY_NESTED(cat, parentcat) \
+		if (filled_##cat) { \
+			MARK_CATEGORY_FILLED(parentcat) \
+			uint64_t end_##cat = writer.tellBits(); \
+			writer.seekBits(start_##cat); \
+			writer.writeBit(1); \
+			writer.seekBits(end_##cat); \
+			g_stats.entDeltaCatSz[cat] += end_##cat - start_##cat; \
+		} else { \
+			writer.seekBits(start_##cat + 1); \
+		} \
+	}
+
+#define READ_DELTA(cat, field, sz) \
 	g_stats.entDeltaCatSz[cat] += 1; \
 	if (reader.readBit()) { \
 		field = reader.readBits(sz); \
 		g_stats.entDeltaCatSz[cat] += sz; \
 	}
 
-#define CHECK_CHANGED(field) if (old.field != field) categoryFlag = true;
+#define READ_DELTA_STR(cat, field) \
+	g_stats.entDeltaCatSz[cat] += 1; \
+	if (reader.readBit()) { \
+		uint8_t len = reader.readBits(8); \
+		if (len >= sizeof(field)) { \
+			ALERT(at_console, "Invalid " #field " length %d\n", (int)len); \
+			len = sizeof(field)-1; \
+		} \
+		for (int z = 0; z < (int)len; z++) { \
+			field[z] = reader.readBits(8); \
+		} \
+		field[len] = 0; \
+		g_stats.entDeltaCatSz[cat] += 8 + len*8; \
+	}
 
 #define CHECK_MATCH(field) \
 	if (field != other.field) { \
 		ALERT(at_console, "Mismatch " #field " (%d != %d)\n", (int)field, (int)other.field); \
+		return false; \
+	}
+
+#define CHECK_MATCH_STR(field) \
+	if (strcmp(field, other.field)) { \
+		ALERT(at_console, "Mismatch " #field " (%s != %s)\n", field, other.field); \
 		return false; \
 	}
 
@@ -67,7 +147,6 @@ bool netedict::matches(netedict& other) {
 		return false;
 	}
 
-	CHECK_MATCH(modelindex);
 	CHECK_MATCH(skin);
 	CHECK_MATCH(body);
 	CHECK_MATCH(effects);
@@ -103,6 +182,34 @@ bool netedict::matches(netedict& other) {
 	CHECK_MATCH(visibility[1]);
 	CHECK_MATCH(visibility[2]);
 	CHECK_MATCH(visibility[3]);
+	CHECK_MATCH(steamid64);
+	CHECK_MATCH_STR(name);
+	CHECK_MATCH_STR(model);
+	CHECK_MATCH(topColor);
+	CHECK_MATCH(bottomColor);
+	CHECK_MATCH(frags);
+	CHECK_MATCH(button);
+	CHECK_MATCH(armorvalue);
+	CHECK_MATCH(ping);
+	CHECK_MATCH(punchangle[0]);
+	CHECK_MATCH(punchangle[1]);
+	CHECK_MATCH(punchangle[2]);
+	CHECK_MATCH(playerFlags);
+	CHECK_MATCH(viewEnt);
+	CHECK_MATCH(viewmodel);
+	CHECK_MATCH(weaponmodel);
+	CHECK_MATCH(view_ofs);
+	CHECK_MATCH(fov);
+	CHECK_MATCH(specTarget);
+	CHECK_MATCH(specMode);
+	CHECK_MATCH(weaponId);
+	CHECK_MATCH(deadFlag);
+	CHECK_MATCH(clip);
+	CHECK_MATCH(clip2);
+	CHECK_MATCH(ammo);
+	CHECK_MATCH(ammo2);
+	CHECK_MATCH(weaponanim);
+	CHECK_MATCH(weaponState);
 	return true;
 }
 
@@ -123,7 +230,7 @@ void netedict::load(const edict_t& ed) {
 	blend = vars.blending[0];
 	int8_t newFramerate = clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
 	uint8_t newSequence = vars.sequence;
-	uint16_t newModelindex = vars.modelindex;
+	uint16_t newModelindex = vars.modelindex & ((1 << MODEL_BITS) - 1);
 
 	memcpy(&controller_lo, vars.controller, 4);
 
@@ -252,6 +359,104 @@ void netedict::load(const edict_t& ed) {
 		visibility[1] = ent->m_netPlayers >> 8;
 		visibility[2] = ent->m_netPlayers >> 16;
 		visibility[3] = ent->m_netPlayers >> 24;
+	}
+
+	if (ent->IsPlayer()) {
+		loadPlayer((CBasePlayer*)ent);
+	}
+}
+
+// definitely not thread safe
+void netedict::loadPlayer(CBasePlayer* plr) {
+	edict_t* ent = plr->edict();
+
+	const char* vmodel = STRING(ent->v.viewmodel);
+	const char* pmodel = STRING(ent->v.weaponmodel);
+
+	armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
+	fov = clamp(ent->v.fov + 0.5f, 0, 255);
+	frags = clamp(ent->v.frags, 0, UINT16_MAX);
+	punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
+	punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
+	punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
+	viewmodel = MODEL_INDEX(g_precachedModels.find(vmodel) != g_precachedModels.end() ? vmodel : NOT_PRECACHED_MODEL);
+	weaponmodel = MODEL_INDEX(g_precachedModels.find(pmodel) != g_precachedModels.end() ? pmodel : NOT_PRECACHED_MODEL);
+	weaponanim = ent->v.weaponanim;
+	view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
+	specMode = ent->v.iuser1;
+	specTarget = ent->v.iuser2;
+	viewEnt = plr->m_hViewEntity ? ENTINDEX(plr->m_hViewEntity.GetEdict()) : 0;
+	deadFlag = ent->v.deadflag;
+	button = (plr->m_afButtonLast | plr->m_afButtonPressed | plr->m_afButtonReleased | ent->v.button) & 0xffff;
+
+	if (pmodel[0] == '\0') {
+		weaponmodel = PLR_NO_WEAPON_MODEL;
+	}
+	if (vmodel[0] == '\0') {
+		viewmodel = PLR_NO_WEAPON_MODEL;
+	}
+
+	CBasePlayerWeapon* wep = plr->m_pActiveItem ? plr->m_pActiveItem->GetWeaponPtr() : NULL;
+
+	if (wep) {
+		int ammoidx = wep->PrimaryAmmoIndex();
+		int ammoidx2 = wep->SecondaryAmmoIndex();
+
+		weaponId = wep->m_iId;
+		clip = wep->m_iClip;
+		clip2 = 0;
+		ammo = ammoidx != -1 ? plr->m_rgAmmo[ammoidx] : 0;
+		ammo2 = ammoidx2 != -1 ? plr->m_rgAmmo[ammoidx2] : 0;
+		chargeReady = wep->m_chargeReady;
+		inAttack = (int)wep->m_fInAttack;
+		inReload = (int)wep->m_fInReload;
+		inReloadSpecial = (int)wep->m_fInSpecialReload;
+		fireState = (int)wep->m_fireState;
+		weaponState = PACK_WEAPON_STATE(fireState, inReloadSpecial, inReload, inAttack, chargeReady);
+	}
+	else {
+		weaponId = 0;
+		clip = 0;
+		clip2 = 0;
+		ammo = 0;
+		ammo2 = 0;
+		chargeReady = 0;
+		inAttack = 0;
+		inReload = 0;
+		inReloadSpecial = 0;
+		fireState = 0;
+	}
+
+	char* info = g_engfuncs.pfnGetInfoKeyBuffer(ent);
+	char* infomodel = g_engfuncs.pfnInfoKeyValue(info, "model");
+	topColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "topcolor"));
+	bottomColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "bottomcolor"));
+	strcpy_safe(model, infomodel, 23);
+	strcpy_safe(name, plr->DisplayName(), 32);
+
+	if (gpGlobals->time - lastPingTime >= 1.0f) {
+		lastPingTime = gpGlobals->time;
+		int ping;
+		int loss;
+		g_engfuncs.pfnGetPlayerStats(ent, &ping, &loss);
+		ping = clamp(ping, 0, 65535);
+	}
+
+	if (steamid64 == 0) {
+		// plugin reloaded mid-map
+		playerFlags |= PLR_FL_CONNECTED;
+		steamid64 = getPlayerCommunityId(ent);
+	}
+
+	if (playerFlags & PLR_FL_CONNECTED) {
+		int fl = ent->v.flags;
+
+		playerFlags = (fl & FL_INWATER ? PLR_FL_INWATER : 0)
+			| (fl & (FL_ONGROUND | FL_PARTIALGROUND) ? PLR_FL_ONGROUND : 0)
+			| (fl & FL_WATERJUMP ? PLR_FL_WATERJUMP : 0)
+			| (fl & FL_FROZEN ? PLR_FL_FROZEN : 0)
+			| (fl & FL_DUCKING ? PLR_FL_DUCKING : 0)
+			| PLR_FL_CONNECTED;
 	}
 }
 
@@ -417,6 +622,72 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 		mon->m_afConditions = ((uint32_t)conditions_hi << 16) | ((uint32_t)conditions_md << 8) | (uint32_t)conditions_lo;
 		mon->m_afMemory = memories;
 	}
+
+	if (baseent->IsPlayer()) {
+		applyPlayer((CBasePlayer*)baseent);
+	}
+}
+
+void netedict::applyPlayer(CBasePlayer* plr) {
+	if (!plr || (plr->pev->flags & FL_FAKECLIENT) == 0) {
+		return;
+	}
+
+	int eidx = plr->entindex();
+	char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(plr->edict());
+
+	if (strcmp(name, plr->DisplayName())) {
+		g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", name);
+	}
+	if (strcmp(name, STRING(plr->pev->model))) {
+		g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", model);
+	}
+	//if (deltas & FL_DELTA_COLORS) {
+		//TODO: is this expensive?
+		g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", topColor));
+		g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", bottomColor));
+	//}
+	//if (deltas & FL_DELTA_WEAPONMODEL) {
+		plr->pev->weaponmodel = MAKE_STRING(g_demoPlayer->getReplayModel(weaponmodel));
+	//}
+	//if (deltas & FL_DELTA_VIEWMODEL) {
+		plr->pev->viewmodel = MAKE_STRING(g_demoPlayer->getReplayModel(viewmodel));
+	//}
+	plr->pev->frags = frags;
+	plr->pev->weaponanim = weaponanim;
+	plr->pev->armorvalue = armorvalue;
+	plr->pev->view_ofs.z = view_ofs / 16.0f;
+	plr->pev->deadflag = deadFlag;
+
+	edict_t* specViewEnt = plr->edict();
+	if (viewEnt) {
+		edict_t* camera = g_demoPlayer->getReplayEntity(viewEnt);
+		if (camera) {
+			SET_VIEW(plr->edict(), camera);
+			specViewEnt = camera;
+		}
+		else {
+			ALERT(at_console, "Bad view entity %d\n", viewEnt);
+		}
+	}
+	else {
+		SET_VIEW(plr->edict(), plr->edict());
+	}
+
+	// update spectator views
+	for (int i = 1; i < gpGlobals->maxClients; i++) {
+		CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
+		if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
+			continue;
+		}
+
+		if (spec->m_hObserverTarget.GetEntity() == plr && spec->pev->iuser1 == OBS_IN_EYE) {
+			SET_VIEW(spec->edict(), specViewEnt);
+		}
+		else {
+			SET_VIEW(spec->edict(), spec->edict());
+		}
+	}
 }
 
 bool netedict::readDeltas(mstream& reader) {
@@ -471,72 +742,74 @@ bool netedict::readDeltas(mstream& reader) {
 
 		for (int i = 0; i < 3; i++) {
 			if (bigAngles) {
-				READ_DELTA_BITS(FL_DELTA_CAT_ANGLES, angles[i], 32);
+				READ_DELTA(FL_DELTA_CAT_ANGLES, angles[i], 32);
 			}
 			else {
-				READ_DELTA_BITS(FL_DELTA_CAT_ANGLES, angles[i], 8);
+				READ_DELTA(FL_DELTA_CAT_ANGLES, angles[i], 8);
 			}
 		}
 	}
 
-	// visibility category
 	if (reader.readBit()) {
-		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[1], 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[2], 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[3], 8);
-	}
-
-	// animation deltas category
-	if (reader.readBit()) {
-		uint8_t oldFrame = frame;
-		uint8_t oldSequence = sequence;
-		uint8_t oldFramerate = framerate;
-
-		READ_DELTA_BITS(FL_DELTA_CAT_ANIM, controller_lo, 16);
-		READ_DELTA_BITS(FL_DELTA_CAT_ANIM, controller_hi, 16);
-		READ_DELTA_BITS(FL_DELTA_CAT_ANIM, sequence, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_ANIM, gait, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_ANIM, blend, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_ANIM, framerate, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_ANIM, frame, 8);
-
-		if (oldFrame != frame || oldSequence != sequence || oldFramerate != framerate) {
-			deltaBitsLast |= FL_DELTA_ANIM_CHANGED;
+		// visibility category
+		if (reader.readBit()) {
+			READ_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
+			READ_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[1], 8);
+			READ_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[2], 8);
+			READ_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[3], 8);
 		}
-	}
 
-	// rendering deltas category
-	if (reader.readBit()) {
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, renderamt, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, rendercolor[0], 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, rendercolor[1], 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, rendercolor[2], 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, rendermode, 3);
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, renderfx, 5);
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, effects, 16);
-		READ_DELTA_BITS(FL_DELTA_CAT_RENDER, scale, 16);
+		// animation deltas category
+		if (reader.readBit()) {
+			uint8_t oldFrame = frame;
+			uint8_t oldSequence = sequence;
+			uint8_t oldFramerate = framerate;
+
+			READ_DELTA(FL_DELTA_CAT_ANIM, controller_lo, 16);
+			READ_DELTA(FL_DELTA_CAT_ANIM, controller_hi, 16);
+			READ_DELTA(FL_DELTA_CAT_ANIM, sequence, 8);
+			READ_DELTA(FL_DELTA_CAT_ANIM, gait, 8);
+			READ_DELTA(FL_DELTA_CAT_ANIM, blend, 8);
+			READ_DELTA(FL_DELTA_CAT_ANIM, framerate, 8);
+			READ_DELTA(FL_DELTA_CAT_ANIM, frame, 8);
+
+			if (oldFrame != frame || oldSequence != sequence || oldFramerate != framerate) {
+				deltaBitsLast |= FL_DELTA_ANIM_CHANGED;
+			}
+		}
+
+		// rendering deltas category
+		if (reader.readBit()) {
+			READ_DELTA(FL_DELTA_CAT_RENDER, renderamt, 8);
+			READ_DELTA(FL_DELTA_CAT_RENDER, rendercolor[0], 8);
+			READ_DELTA(FL_DELTA_CAT_RENDER, rendercolor[1], 8);
+			READ_DELTA(FL_DELTA_CAT_RENDER, rendercolor[2], 8);
+			READ_DELTA(FL_DELTA_CAT_RENDER, rendermode, 3);
+			READ_DELTA(FL_DELTA_CAT_RENDER, renderfx, 5);
+			READ_DELTA(FL_DELTA_CAT_RENDER, effects, 16);
+			READ_DELTA(FL_DELTA_CAT_RENDER, scale, 16);
+		}
 	}
 
 	// misc category (infrequently updated)
 	if (reader.readBit()) {
-		READ_DELTA_BITS(FL_DELTA_CAT_MISC, skin, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_MISC, body, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_MISC, colormap, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_MISC, aiment, 16);
-		READ_DELTA_BITS(FL_DELTA_CAT_MISC, modelindex, MODEL_BITS);
+		READ_DELTA(FL_DELTA_CAT_MISC, classname, 12);
+		READ_DELTA(FL_DELTA_CAT_MISC, skin, 8);
+		READ_DELTA(FL_DELTA_CAT_MISC, body, 8);
+		READ_DELTA(FL_DELTA_CAT_MISC, colormap, 8);
+		READ_DELTA(FL_DELTA_CAT_MISC, aiment, 16);
+		READ_DELTA(FL_DELTA_CAT_MISC, modelindex, MODEL_BITS);
 	}
 
 	// internal state category
 	if (reader.readBit()) {
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, classname, 12);
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, monsterstate, 4);
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, schedule, 7);
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, task, 5);
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, conditions_lo, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, conditions_md, 8);
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, conditions_hi, 16);
-		READ_DELTA_BITS(FL_DELTA_CAT_INTERNAL, memories, 12);
+		READ_DELTA(FL_DELTA_CAT_INTERNAL, monsterstate, 4);
+		READ_DELTA(FL_DELTA_CAT_INTERNAL, schedule, 7);
+		READ_DELTA(FL_DELTA_CAT_INTERNAL, task, 5);
+		READ_DELTA(FL_DELTA_CAT_INTERNAL, conditions_lo, 8);
+		READ_DELTA(FL_DELTA_CAT_INTERNAL, conditions_md, 8);
+		READ_DELTA(FL_DELTA_CAT_INTERNAL, conditions_hi, 16);
+		READ_DELTA(FL_DELTA_CAT_INTERNAL, memories, 12);
 
 		if (reader.readBit()) {
 			if (reader.readBit()) {
@@ -547,6 +820,52 @@ bool netedict::readDeltas(mstream& reader) {
 				health = reader.readBits(10);
 				g_stats.entDeltaCatSz[FL_DELTA_CAT_INTERNAL] += 10 + 2;
 			}
+		}
+	}
+
+	if ((edflags & EDFLAG_PLAYER) && reader.readBit()) {
+		// player state
+		if (reader.readBit()) {
+			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, steamid64, 64);
+			READ_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, name);
+			READ_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, model);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, topColor, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, bottomColor, 8);
+		}
+
+		// player state fast (frequently updated)
+		if (reader.readBit()) {
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, frags, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, button, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, armorvalue, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, ping, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[0], 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[1], 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[2], 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, playerFlags, 8);
+		}
+
+		// player state slow (infrequently updated)
+		if (reader.readBit()) {
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, viewEnt, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, viewmodel, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, weaponmodel, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, view_ofs, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, fov, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, specTarget, 5);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, specMode, 3);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, weaponId, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, deadFlag, 4);
+		}
+
+		// player weapon state (frequently updated together)
+		if (reader.readBit()) {
+			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, clip, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, clip2, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, ammo, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, ammo2, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, weaponanim, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, weaponState, 8);
 		}
 	}
 
@@ -567,8 +886,8 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	bool wroteAnyDeltas = false;
 
-	// edflags must come first, so the reader can know to reset state when new ents are created.
-	// TODO: really? can't you know that by checking the old flags in the reader?
+	// edflags must come first, so the reader can know to reset state when new ents are created
+	// or if the entity type changes
 	if (edflags != old.edflags) {
 		wroteAnyDeltas = true;
 		writer.writeBit(1);
@@ -626,13 +945,14 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 	// angles category
 	{
-		bool categoryFlag = false;
-		CHECK_CHANGED(angles[0]);
-		CHECK_CHANGED(angles[1]);
-		CHECK_CHANGED(angles[2]);
+		uint32_t dx = angles[0] - old.angles[0];
+		uint32_t dy = angles[1] - old.angles[1];
+		uint32_t dz = angles[2] - old.angles[2];
 
-		writer.writeBit(categoryFlag);
-		if (categoryFlag) {
+		bool anglesChanged = dx || dy || dz;
+
+		writer.writeBit(anglesChanged);
+		if (anglesChanged) {
 			wroteAnyDeltas = true;
 
 			bool bigAngles = edflags & EDFLAG_BEAM;
@@ -640,153 +960,127 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 
 			for (int i = 0; i < 3; i++) {
 				if (bigAngles) {
-					WRITE_DELTA_BITS(FL_DELTA_CAT_ANGLES, angles[i], 32);
+					WRITE_DELTA_SINGLE(FL_DELTA_CAT_ANGLES, angles[i], 32);
 				}
 				else {
-					WRITE_DELTA_BITS(FL_DELTA_CAT_ANGLES, angles[i], 8);
+					WRITE_DELTA_SINGLE(FL_DELTA_CAT_ANGLES, angles[i], 8);
 				}
 			}
 		}
 	}
 
-	// visibility category
-	{
-		bool categoryFlag = false;
-		CHECK_CHANGED(visibility[0]);
-		CHECK_CHANGED(visibility[1]);
-		CHECK_CHANGED(visibility[2]);
-		CHECK_CHANGED(visibility[3]);
+	// rendering category
+	BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_DISPLAY)
+		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_VISIBILITY)
+			WRITE_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
+			WRITE_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[1], 8);
+			WRITE_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[2], 8);
+			WRITE_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[3], 8);
+		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_VISIBILITY, FL_DELTA_CAT_DISPLAY)
 
-		writer.writeBit(categoryFlag);
-		if (categoryFlag) {
-			wroteAnyDeltas = true;
+		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_ANIM)
+			WRITE_DELTA(FL_DELTA_CAT_ANIM, controller_lo, 16);
+			WRITE_DELTA(FL_DELTA_CAT_ANIM, controller_hi, 16);
+			WRITE_DELTA(FL_DELTA_CAT_ANIM, sequence, 8);
+			WRITE_DELTA(FL_DELTA_CAT_ANIM, gait, 8);
+			WRITE_DELTA(FL_DELTA_CAT_ANIM, blend, 8);
+			WRITE_DELTA(FL_DELTA_CAT_ANIM, framerate, 8);
+			WRITE_DELTA_COND(FL_DELTA_CAT_ANIM, frame, 8, old.frame != frame || forceNextFrame);
+		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_ANIM, FL_DELTA_CAT_DISPLAY)
 
-			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[1], 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[2], 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_VISIBILITY, visibility[3], 8);
-		}
-	}
-
-	// animation deltas category
-	{
-		bool categoryFlag = forceNextFrame;
-		CHECK_CHANGED(frame);
-		CHECK_CHANGED(controller_lo);
-		CHECK_CHANGED(controller_hi);
-		CHECK_CHANGED(sequence);
-		CHECK_CHANGED(gait);
-		CHECK_CHANGED(blend);
-		CHECK_CHANGED(framerate);
-
-		writer.writeBit(categoryFlag);
-		if (categoryFlag) {
-			wroteAnyDeltas = true;
-
-			WRITE_DELTA_BITS(FL_DELTA_CAT_ANIM, controller_lo, 16);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_ANIM, controller_hi, 16);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_ANIM, sequence, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_ANIM, gait, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_ANIM, blend, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_ANIM, framerate, 8);
-
-			bool sendFrame = old.frame != frame || forceNextFrame;
-			writer.writeBit(sendFrame);
-			if (sendFrame) {
-				writer.writeBits(frame, 8);
-			}
-		}
-	}
-
-	// rendering deltas category
-	{
-		bool categoryFlag = false;
-		CHECK_CHANGED(renderamt);
-		CHECK_CHANGED(rendercolor[0]);
-		CHECK_CHANGED(rendercolor[1]);
-		CHECK_CHANGED(rendercolor[2]);
-		CHECK_CHANGED(rendermode);
-		CHECK_CHANGED(renderfx);
-		CHECK_CHANGED(effects);
-		CHECK_CHANGED(scale);
-
-		writer.writeBit(categoryFlag);
-		if (categoryFlag) {
-			wroteAnyDeltas = true;
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, renderamt, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, rendercolor[0], 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, rendercolor[1], 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, rendercolor[2], 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, rendermode, 3);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, renderfx, 5);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, effects, 16);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_RENDER, scale, 16);
-		}
-	}
+		// rendering deltas category
+		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_RENDER)
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, renderamt, 8);
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, rendercolor[0], 8);
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, rendercolor[1], 8);
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, rendercolor[2], 8);
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, rendermode, 3);
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, renderfx, 5);
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, effects, 16);
+			WRITE_DELTA(FL_DELTA_CAT_RENDER, scale, 16);
+		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_RENDER, FL_DELTA_CAT_DISPLAY)
+	END_DELTA_CATEGORY(FL_DELTA_CAT_DISPLAY)
 
 	// misc category (infrequently updated)
-	{
-		bool categoryFlag = false;
-		CHECK_CHANGED(skin);
-		CHECK_CHANGED(body);
-		CHECK_CHANGED(colormap);
-		CHECK_CHANGED(aiment);
-		CHECK_CHANGED(modelindex);
+	BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_MISC)
+		WRITE_DELTA(FL_DELTA_CAT_MISC, classname, 12);
+		WRITE_DELTA(FL_DELTA_CAT_MISC, skin, 8);
+		WRITE_DELTA(FL_DELTA_CAT_MISC, body, 8);
+		WRITE_DELTA(FL_DELTA_CAT_MISC, colormap, 8);
+		WRITE_DELTA(FL_DELTA_CAT_MISC, aiment, 16);
+		WRITE_DELTA(FL_DELTA_CAT_MISC, modelindex, MODEL_BITS);
+	END_DELTA_CATEGORY(FL_DELTA_CAT_MISC)
 
-		writer.writeBit(categoryFlag);
-		if (categoryFlag) {
-			wroteAnyDeltas = true;
-
-			WRITE_DELTA_BITS(FL_DELTA_CAT_MISC, skin, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_MISC, body, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_MISC, colormap, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_MISC, aiment, 16);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_MISC, modelindex, MODEL_BITS);
-		}
-	}
-
-	// internal state category
-	{
-		bool categoryFlag = false;
-		CHECK_CHANGED(classname);
-		CHECK_CHANGED(monsterstate);
-		CHECK_CHANGED(schedule);
-		CHECK_CHANGED(task);
-		CHECK_CHANGED(conditions_lo);
-		CHECK_CHANGED(conditions_md);
-		CHECK_CHANGED(conditions_hi);
-		CHECK_CHANGED(memories);
-		CHECK_CHANGED(health);
-
-		writer.writeBit(categoryFlag);
-		if (categoryFlag) {
-			wroteAnyDeltas = true;
-
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, classname, 12);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, monsterstate, 4);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, schedule, 7);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, task, 5);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, conditions_lo, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, conditions_md, 8);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, conditions_hi, 16);
-			WRITE_DELTA_BITS(FL_DELTA_CAT_INTERNAL, memories, 12);
-
-			bool healthChanged = old.health != health;
-			writer.writeBit(healthChanged);
-			if (healthChanged) {
-				if (health > 1023) {
-					writer.writeBit(1);
-					writer.writeBits(health, 32);
-					g_stats.entDeltaCatSz[FL_DELTA_CAT_INTERNAL] += 32 + 2;
-				}
-				else {
-					writer.writeBit(0);
-					writer.writeBits(health, 10);
-					g_stats.entDeltaCatSz[FL_DELTA_CAT_INTERNAL] += 10 + 2;
-				}
+	BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_INTERNAL)
+		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, monsterstate, 4);
+		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, schedule, 7);
+		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, task, 5);
+		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, conditions_lo, 8);
+		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, conditions_md, 8);
+		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, conditions_hi, 16);
+		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, memories, 12);
+		bool healthChanged = old.health != health;
+		writer.writeBit(healthChanged);
+		if (healthChanged) {
+			MARK_CATEGORY_FILLED(FL_DELTA_CAT_INTERNAL)
+			if (health > 1023) {
+				writer.writeBit(1);
+				writer.writeBits(health, 32);
+			}
+			else {
+				writer.writeBit(0);
+				writer.writeBits(health, 10);
 			}
 		}
-	}
+	END_DELTA_CATEGORY(FL_DELTA_CAT_INTERNAL)
+
+	// player state
+	BEGIN_DELTA_CATEGORY_COND(FL_DELTA_CAT_PLAYER, edflags & EDFLAG_PLAYER)
+		// player info
+		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_PLAYER_INFO)
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, steamid64, 64);
+			WRITE_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, name);
+			WRITE_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, model);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, topColor, 8);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, bottomColor, 8);
+		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_PLAYER_INFO, FL_DELTA_CAT_PLAYER)
+
+		// player state fast (frequently updated)
+		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_PLAYER_STATE_FAST)
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, frags, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, button, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, armorvalue, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, ping, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[0], 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[1], 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[2], 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, playerFlags, 8);
+		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_PLAYER_STATE_FAST, FL_DELTA_CAT_PLAYER)
+
+		// player state slow (infrequently updated)
+		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_PLAYER_STATE_SLOW)
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, viewEnt, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, viewmodel, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, weaponmodel, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, view_ofs, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, fov, 8);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, specTarget, 5);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, specMode, 3);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, weaponId, 8);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, deadFlag, 4);
+		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_PLAYER_STATE_SLOW, FL_DELTA_CAT_PLAYER)
+
+		// player weapon state (frequently updated together)
+		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_PLAYER_WEAPON)
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, clip, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, clip2, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, ammo, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, ammo2, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, weaponanim, 8);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, weaponState, 8);
+		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_PLAYER_WEAPON, FL_DELTA_CAT_PLAYER)
+	END_DELTA_CATEGORY(FL_DELTA_CAT_PLAYER)
+
 
 	if (writer.eom()) {
 		return EDELTA_OVERFLOW;

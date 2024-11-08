@@ -1,7 +1,6 @@
 #include "DemoStats.h"
 #include "main.h"
 #include "netedict.h"
-#include "DemoPlayerEnt.h"
 #include "DemoFile.h"
 
 string getMessageName(int messageType) {
@@ -68,19 +67,16 @@ void DemoStats::incTotals() {
 	frameCount++;
 
 	entDeltaTotalSz += entDeltaCurrentSz;
-	plrDeltaTotalSz += plrDeltaCurrentSz;
 	msgTotalSz += msgCurrentSz;
 	cmdTotalSz += cmdCurrentSz;
 	eventTotalSz += eventCurrentSz;
-
-	plrDeltaCount += plrDeltaCurrentSz != 0;
 
 	calcFrameSize();
 	totalWriteSz += currentWriteSz;
 }
 
 void DemoStats::calcFrameSize() {
-	currentWriteSz = entDeltaCurrentSz + plrDeltaCurrentSz + msgCurrentSz
+	currentWriteSz = entDeltaCurrentSz + msgCurrentSz
 		+ cmdCurrentSz + eventCurrentSz + sizeof(DemoFrame);
 }
 
@@ -136,7 +132,6 @@ void DemoStats::showStats(edict_t* edt) {
 
 	string hdrTotal = formatSize(g_stats.frameCount * sizeof(DemoFrame));
 	string entTotal = formatSize(g_stats.entDeltaTotalSz);
-	string plrTotal = formatSize(g_stats.plrDeltaTotalSz);
 	string msgTotal = formatSize(g_stats.msgTotalSz);
 	string evTotal = formatSize(g_stats.eventTotalSz);
 	string cmdTotal = formatSize(g_stats.cmdTotalSz);
@@ -145,7 +140,6 @@ void DemoStats::showStats(edict_t* edt) {
 	string txt = UTIL_VarArgs("Demo (%s, %u, %d+%d ms):\n", totalSz.c_str(), g_stats.currentWriteSz, g_copyTime, g_thinkTime);
 	txt += UTIL_VarArgs("ent: %s (%d)\n", entTotal.c_str(), g_stats.entDeltaCurrentSz);
 	txt += UTIL_VarArgs("hdr: %s (%d, %d, %d)\n", hdrTotal.c_str(), g_stats.giantFrameCount, g_stats.bigFrameCount, g_stats.frameCount- g_stats.bigFrameCount);
-	txt += UTIL_VarArgs("plr: %s (%d)\n", plrTotal.c_str(), g_stats.plrDeltaCurrentSz);
 	txt += UTIL_VarArgs("msg: %s (%d)\n", msgTotal.c_str(), g_stats.msgCurrentSz);
 	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);
 	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCount);
@@ -158,11 +152,10 @@ void DemoStats::showStats(edict_t* edt) {
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_EDFLAG);
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ORIGIN);
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ANGLES);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ANIM);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_RENDER);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_DISPLAY);
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_MISC);
 		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_INTERNAL);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_VISIBILITY);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_PLAYER);
 
 		DeltaStat indexStat;
 		indexStat.field = "indexes";
@@ -191,54 +184,6 @@ void DemoStats::showStats(edict_t* edt) {
 		params.x = 0;
 		params.y = 0;
 		params.channel = 1;
-		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
-	}
-
-	{
-		vector<DeltaStat> deltaStats;
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FLAGS);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_NAME);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_MODEL);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_STEAMID);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_COLORS);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PING);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_X);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Y);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_PUNCHANGLE_Z);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_WEAPONDELTA);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_VIEWMODEL);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_WEAPONMODEL);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_WEAPONANIM);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_ARMORVALUE);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_BUTTON);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_VIEWOFS);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FRAGS);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_FOV);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_OBSERVER);
-		ADD_DELTA_STAT(deltaStats, g_stats.plrDeltaSz, FL_DELTA_VIEWENT);
-
-		uint32_t sum = 0;
-		for (int i = 0; i < (int)deltaStats.size(); i++) {
-			sum += deltaStats[i].bytes;
-		}
-
-		DeltaStat headerStat;
-		headerStat.field = "headers";
-		headerStat.bytes = g_stats.plrDeltaTotalSz - sum;
-		deltaStats.push_back(headerStat);
-		sum += headerStat.bytes;
-
-		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
-
-		string sumStr = formatSize(sum);
-		txt = UTIL_VarArgs("plr deltas (%u, %s):\n", g_stats.plrDeltaCount, sumStr.c_str());
-		for (int i = 0; i < (int)deltaStats.size() && i < 10; i++) {
-			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
-		}
-
-		params.x = 0;
-		params.y = -1;
-		params.channel = 2;
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 

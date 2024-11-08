@@ -126,6 +126,9 @@ public:
 
 	edict_t* getReplayEntity(int idx);
 
+	// convert a model index read from a demo file into a model path
+	const char* getReplayModel(uint16_t modelIdx);
+
 	void validateFrame(DemoDataStream& reader, DemoDataTest* results);
 
 	int GetWeaponData(edict_t* player, weapon_data_t* info);
@@ -155,7 +158,6 @@ private:
 	DemoFrame lastReplayFrame;
 	char* stringPool = NULL;
 
-	DemoPlayerEnt* fileplayerinfos = NULL; // last infos read from file
 	netedict* fileedicts = NULL; // last edicts read from file
 
 	float offsetSeconds;
@@ -206,9 +208,6 @@ private:
 	void updatePlayerModelGait(edict_t* ent, float dt);
 
 	void updatePlayerModelPitchBlend(edict_t* ent);
-
-	// convert a model index read from a demo file into a model path
-	string getReplayModel(uint16_t modelIdx);
 
 	// convert from a demo file entity index to an entity index in the current game
 	void convReplayEntIdx(byte* dat, int offset, int dataSz);

@@ -20,11 +20,6 @@ struct DemoStats {
 	uint32_t entUpdateCount; // number of entity updates written
 	uint32_t entDeltaCatSz[64]; // total size of deltas for each delta category
 
-	uint32_t plrDeltaTotalSz;
-	uint32_t plrDeltaCurrentSz;
-	uint32_t plrDeltaCount; // number of frames that had any player data
-	uint32_t plrDeltaSz[64]; // total size of deltas for each delta type (bit offset = idx)
-
 	uint32_t msgTotalSz;
 	uint32_t msgCurrentSz;
 	uint32_t msgSz[512]; // indexes at 256+ = temporary entity type - 256
