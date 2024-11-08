@@ -23,8 +23,6 @@ public:
 
 	bool isFileOpen();
 
-	bool validateEdicts(); // debug
-
 	void compressDemo(std::string inPath, std::string outPath);
 
 private:

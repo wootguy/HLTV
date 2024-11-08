@@ -70,8 +70,6 @@ private:
 	void handleDeltaAck(mstream& reader, NetClient& client);
 
 	void broadcastEntityStates();
-
-	bool validateEdicts(); // debug
 };
 
 

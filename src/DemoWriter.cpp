@@ -830,13 +830,3 @@ void DemoWriter::closeDemoFile() {
 bool DemoWriter::isFileOpen() {
 	return demoFile != NULL;
 }
-
-bool DemoWriter::validateEdicts() {
-	for (int i = 0; i < MAX_EDICTS; i++) {
-		if (fileedicts[i].edflags && !(fileedicts[i].edflags & EDFLAG_BEAM) && fileedicts[i].aiment > 8192) {
-			ALERT(at_console, "Invalid edict %d has %d\n", i, (int)fileedicts[i].aiment);
-			return false;
-		}
-	}
-	return true;
-}
