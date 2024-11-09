@@ -116,7 +116,7 @@ struct netedict {
 	uint8_t		bottomColor;
 
 	// player state fast (frequently updated)
-	uint16_t	frags;
+	int16_t		frags;
 	uint16_t	button;
 	uint16_t	armorvalue;
 	uint16_t	ping;
