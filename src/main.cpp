@@ -341,7 +341,7 @@ HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edi
 		msg.eidx = 0;
 	}
 	msg.header.sz = 0;
-	msg.header.szHighBit = 0;
+	msg.header.longSz = 0;
 	msg.sz = 0;
 
 	DEFAULT_HOOK_RETURN;
@@ -780,6 +780,35 @@ HOOK_RET_VOID UpdateClientDataPost(const edict_t* ent, int sendweapons, clientda
 #ifdef HLCOOP_BUILD
 HLCOOP_PLUGIN_HOOKS g_hooks;
 
+HOOK_RETURN_DATA SendVoiceData(int senderidx, int receiveridx, uint8_t* data, int sz, bool& mute) {
+	if (sz >= MAX_NETMSG_DATA) {
+		ALERT(at_error, "Dropped huge voice packet (%d bytes)\n", sz);
+		return HOOK_CONTINUE;
+	}
+
+	// save to the demo as a normal message
+	MessageBegin(MSG_ONE_UNRELIABLE, SVC_VOICEDATA, NULL, INDEXENT(receiveridx));
+	WriteByte(senderidx - 1);
+	WriteShort(sz);
+	int longCount = sz / 4;
+	int byteCount = sz % 4;
+
+	int32_t* longPtr = (int32_t*)data;
+	for (int i = 0; i < longCount; i++) {
+		WriteLong(*longPtr);
+		longPtr++;
+	}
+
+	uint8_t* bytePtr = data + longCount * 4;
+	for (int i = 0; i < byteCount; i++) {
+		WriteByte(*bytePtr);
+		bytePtr++;
+	}
+	MessageEnd();
+
+	return HOOK_CONTINUE;
+}
+
 extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_plugin_exiting = false;
 
@@ -790,6 +819,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnClientDisconnect = ClientLeaveHook;
 	g_hooks.pfnClientUserInfoChanged = ClientUserInfoChangedHook;
 	g_hooks.pfnClientCommand = ClientCommand;
+	g_hooks.pfnSendVoiceData = SendVoiceData;
 
 	g_hooks.pfnMessageBegin = MessageBegin;
 	g_hooks.pfnWriteAngle = WriteAngle;

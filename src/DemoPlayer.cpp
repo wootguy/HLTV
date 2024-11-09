@@ -1,3 +1,4 @@
+#include "rehlds.h"
 #include "main.h"
 #include "DemoPlayer.h"
 #include "SvenTV.h"
@@ -1247,6 +1248,12 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		return processTempEntityMessage(msg, validate) ? 1 : -1;
 	case SVC_WEAPONANIM:
 		return 1;
+	case SVC_VOICEDATA: {
+		uint16_t idx = args[0]+1;
+		convReplayEntIdx((byte*)&idx, 0, msg.sz);
+		args[0] = idx-1;
+		return 1;
+	}
 	case SVC_SOUND: {
 		mstream bitbuffer((char*)msg.data, msg.sz);
 		uint16_t field_mask = bitbuffer.readBits(9);
@@ -1569,8 +1576,13 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 
 	for (int i = 0; i < numMessages; i++) {
 		reader.read(&msg.header, sizeof(DemoNetMessage));
-		msg.sz = (msg.header.szHighBit << 8) | msg.header.sz;
+		msg.sz = msg.header.sz;
 
+		if (msg.header.longSz) {
+			uint8_t szHighBits = 0;
+			reader.read(&szHighBits, 1);
+			msg.sz |= (uint16_t)szHighBits << 8;
+		}
 		if (msg.header.hasOrigin) {
 			int sz = msg.header.hasLongOrigin ? 3 : 2;
 			reader.read(&msg.origin[0], sz);

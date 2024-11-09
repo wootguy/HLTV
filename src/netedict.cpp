@@ -6,9 +6,6 @@
 
 using namespace std;
 
-#undef read
-#undef write
-
 #define BEGIN_DELTA_CATEGORY_COND(cat, cond) \
 	if (cond) { \
 		uint64_t start_##cat = writer.tellBits(); \
@@ -169,7 +166,7 @@ bool netedict::matches(netedict& other) {
 	CHECK_MATCH(health);
 	CHECK_MATCH(colormap);
 	CHECK_MATCH(health);
-	CHECK_MATCH(classify);
+	//CHECK_MATCH(classify);
 	CHECK_MATCH(classname);
 	CHECK_MATCH(schedule);
 	CHECK_MATCH(monsterstate);
