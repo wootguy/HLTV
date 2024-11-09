@@ -1,7 +1,20 @@
+#include "rehlds.h"
 #include "DemoFile.h"
 
 void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 	float forigin[3];
+
+	if (sz >= 512 - 3 ) {
+		if (g_RehldsApi) {
+			rehlds_SendBigMessage(msg_dest, header.type, data, sz, targetEnt ? ENTINDEX(targetEnt) : 0);
+		}
+		else {
+			ALERT(at_console, "Dropped %d byte %s message (rehlds API not available)\n",
+				sz, msgTypeStr(header.type));
+		}
+
+		return;
+	}
 
 	if (header.hasOrigin) {
 		if (header.hasLongOrigin) {

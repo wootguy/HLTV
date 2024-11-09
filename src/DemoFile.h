@@ -42,8 +42,8 @@ inline bool FIXED_EQUALS(int x, int y, int totalBits) {
 
 #define MAX_EVENT_FRAME 256 // max events per frame
 #define MAX_CMD_FRAME 256 // max client commands per frame
-#define MAX_NETMSG_FRAME 4096 // max network messages per frame
-#define MAX_NETMSG_DATA 512 // max bytes before overflow message from game
+#define MAX_NETMSG_FRAME 512 // max network messages per frame
+#define MAX_NETMSG_DATA 2048 // max bytes before overflow message from game
 #define MAX_CMD_LENGTH 128
 #define KEYFRAME_INTERVAL 60ULL // seconds between keyframes in demo files
 
@@ -117,7 +117,9 @@ struct DemoNetMessage {
 	uint8_t hasEdict : 1;
 	uint8_t hasOrigin : 1;
 	uint8_t hasLongOrigin : 1;
-	uint8_t szHighBit : 1; // high bit of the "sz" field
+	uint8_t longSz : 1;
+	// if longSz:
+	//     uint8_t = high bits of sz
 	// if hasLongOrigin:
 	//     uint24[3] = origin (stored as 19.5 fixed point)
 	// if hasOrigin:
@@ -129,10 +131,10 @@ struct DemoNetMessage {
 
 struct NetMessageData {
 	DemoNetMessage header;
-	uint16_t sz; // header.sz + szHighBit, for ease of use
+	uint16_t sz; // header.sz + high bits, for ease of use
 	uint32_t origin[3]; // 19.5 fixed point, or 16bit integers, depending on hasLongOrigin
 	uint16_t eidx;
-	uint8_t data[512];
+	uint8_t data[2048]; // most messages are 512 max, but SVC_VOICEDATA can be much larger
 
 	int getSize() { 
 		return sizeof(DemoNetMessage) + (header.hasOrigin*3*sizeof(float)) 

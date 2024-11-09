@@ -420,12 +420,12 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 		compressNetMessage(frame, dat);
 
 		dat.header.sz = dat.sz & 0xff;
-		dat.header.szHighBit = (dat.sz & 0x100) != 0;
+		dat.header.longSz = (dat.sz & 0xff00) ? 1 : 0;
 
 		if (testData) {
 			testData->expectedMsg[i].header.sz = dat.header.sz;
-			testData->expectedMsg[i].header.szHighBit = dat.header.szHighBit;
-			testData->expectedMsg[i].sz = (dat.header.szHighBit << 8) | dat.header.sz;
+			testData->expectedMsg[i].header.longSz = dat.header.longSz;
+			testData->expectedMsg[i].sz = dat.sz;
 		}
 
 		if (dat.header.type == SVC_BAD)
@@ -436,6 +436,11 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 		g_stats.msgSz[dat.header.type] += dat.sz;
 		if (dat.header.type == SVC_TEMPENTITY) {
 			g_stats.msgSz[256 + dat.data[0]] += dat.sz;
+		}
+
+		if (dat.header.longSz) {
+			uint8_t szUpperBits = dat.sz >> 8;
+			msgbuffer.write(&szUpperBits, 1);
 		}
 
 		if (dat.header.hasOrigin) {
