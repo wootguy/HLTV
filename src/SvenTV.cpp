@@ -449,7 +449,7 @@ void SvenTV::broadcastEntityStates() {
 }
 
 void SvenTV::think_tvThread() {
-	bool loadNewData = true;
+	bool loadNewData = demoWriter->isFileOpen();
 
 	while (!threadShouldExit) {
 		while (!singleThreadMode && edictCopyState.getValue() != EDICT_COPY_FINISHED && !threadShouldExit) {
@@ -478,6 +478,10 @@ void SvenTV::think_tvThread() {
 		}
 		else if (demoWriter->isFileOpen()) {
 			demoWriter->closeDemoFile();
+
+			for (int i = 0; i < gpGlobals->maxEntities; i++) {
+				frame.netedicts[i].reset();
+			}
 		}
 
 		if (enableServer && !socket) {

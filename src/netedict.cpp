@@ -372,7 +372,7 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 
 	armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
 	fov = clamp(ent->v.fov + 0.5f, 0, 255);
-	frags = clamp(ent->v.frags, 0, UINT16_MAX);
+	frags = clamp(ent->v.frags, INT16_MIN, INT16_MAX);
 	punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
 	punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
 	punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
@@ -433,16 +433,19 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 
 	if (gpGlobals->time - lastPingTime >= 1.0f) {
 		lastPingTime = gpGlobals->time;
-		int ping;
-		int loss;
-		g_engfuncs.pfnGetPlayerStats(ent, &ping, &loss);
-		ping = clamp(ping, 0, 65535);
+		int iping;
+		int iloss;
+		g_engfuncs.pfnGetPlayerStats(ent, &iping, &iloss);
+		ping = clamp(iping, 0, 65535);
 	}
 
 	if (steamid64 == 0) {
-		// plugin reloaded mid-map
 		playerFlags |= PLR_FL_CONNECTED;
 		steamid64 = getPlayerCommunityId(ent);
+	}
+	else if (!IsValidPlayer(ent)) {
+		playerFlags = 0;
+		steamid64 = 0;
 	}
 
 	if (playerFlags & PLR_FL_CONNECTED) {
@@ -699,15 +702,15 @@ bool netedict::readDeltas(mstream& reader) {
 		g_stats.entDeltaCatSz[FL_DELTA_CAT_EDFLAG] += 3;
 	}
 
-	if (!oldtype && newtype) {
-		// new entity created. Start deltas from a fresh state.
+	if ((!oldtype && newtype) || !newtype) {
+		// new entity created or old deleted. Start deltas from a fresh state.
 		reset();
 	}
 
 	etype = newtype;
 
 	// origin category
-	if (reader.readBit()) {
+	if (etype && reader.readBit()) {
 		deltaBitsLast |= FL_DELTA_ORIGIN_CHANGED;
 
 		for (int i = 0; i < 3; i++) {
@@ -732,7 +735,7 @@ bool netedict::readDeltas(mstream& reader) {
 	}
 
 	// angles category
-	if (reader.readBit()) {
+	if (etype && reader.readBit()) {
 		deltaBitsLast |= FL_DELTA_ANGLES_CHANGED;
 
 		bool bigAngles = reader.readBit();
@@ -747,7 +750,7 @@ bool netedict::readDeltas(mstream& reader) {
 		}
 	}
 
-	if (reader.readBit()) {
+	if (etype && reader.readBit()) {
 		// visibility category
 		if (reader.readBit()) {
 			READ_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
@@ -789,7 +792,7 @@ bool netedict::readDeltas(mstream& reader) {
 	}
 
 	// misc category (infrequently updated)
-	if (reader.readBit()) {
+	if (etype && reader.readBit()) {
 		READ_DELTA(FL_DELTA_CAT_MISC, classname, 12);
 		READ_DELTA(FL_DELTA_CAT_MISC, skin, 8);
 		READ_DELTA(FL_DELTA_CAT_MISC, body, 8);
@@ -799,7 +802,7 @@ bool netedict::readDeltas(mstream& reader) {
 	}
 
 	// internal state category
-	if (reader.readBit()) {
+	if (etype && reader.readBit()) {
 		READ_DELTA(FL_DELTA_CAT_INTERNAL, monsterstate, 4);
 		READ_DELTA(FL_DELTA_CAT_INTERNAL, schedule, 7);
 		READ_DELTA(FL_DELTA_CAT_INTERNAL, task, 5);
@@ -828,14 +831,14 @@ bool netedict::readDeltas(mstream& reader) {
 			READ_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, model);
 			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, topColor, 8);
 			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, bottomColor, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, ping, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, frags, 16);
 		}
 
 		// player state fast (frequently updated)
 		if (reader.readBit()) {
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, frags, 16);
 			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, button, 16);
 			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, armorvalue, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, ping, 16);
 			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[0], 16);
 			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[1], 16);
 			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[2], 16);
@@ -903,7 +906,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	}
 
 	// origin category
-	{
+	if (etype != ETYPE_INVALID) {
 		int32_t dx = origin[0] - old.origin[0];
 		int32_t dy = origin[1] - old.origin[1];
 		int32_t dz = origin[2] - old.origin[2];
@@ -941,7 +944,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	}
 
 	// angles category
-	{
+	if (etype != ETYPE_INVALID) {
 		uint32_t dx = angles[0] - old.angles[0];
 		uint32_t dy = angles[1] - old.angles[1];
 		uint32_t dz = angles[2] - old.angles[2];
@@ -967,7 +970,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	}
 
 	// rendering category
-	BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_DISPLAY)
+	BEGIN_DELTA_CATEGORY_COND(FL_DELTA_CAT_DISPLAY, etype != ETYPE_INVALID)
 		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_VISIBILITY)
 			WRITE_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[0], 8);
 			WRITE_DELTA(FL_DELTA_CAT_VISIBILITY, visibility[1], 8);
@@ -999,7 +1002,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 	END_DELTA_CATEGORY(FL_DELTA_CAT_DISPLAY)
 
 	// misc category (infrequently updated)
-	BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_MISC)
+	BEGIN_DELTA_CATEGORY_COND(FL_DELTA_CAT_MISC, etype != ETYPE_INVALID)
 		WRITE_DELTA(FL_DELTA_CAT_MISC, classname, 12);
 		WRITE_DELTA(FL_DELTA_CAT_MISC, skin, 8);
 		WRITE_DELTA(FL_DELTA_CAT_MISC, body, 8);
@@ -1008,7 +1011,7 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		WRITE_DELTA(FL_DELTA_CAT_MISC, modelindex, MODEL_BITS);
 	END_DELTA_CATEGORY(FL_DELTA_CAT_MISC)
 
-	BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_INTERNAL)
+	BEGIN_DELTA_CATEGORY_COND(FL_DELTA_CAT_INTERNAL, etype != ETYPE_INVALID)
 		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, monsterstate, 4);
 		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, schedule, 7);
 		WRITE_DELTA(FL_DELTA_CAT_INTERNAL, task, 5);
@@ -1040,14 +1043,14 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			WRITE_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, model);
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, topColor, 8);
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, bottomColor, 8);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, ping, 16);
+			WRITE_DELTA(FL_DELTA_CAT_PLAYER_INFO, frags, 16);
 		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_PLAYER_INFO, FL_DELTA_CAT_PLAYER)
 
 		// player state fast (frequently updated)
 		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_PLAYER_STATE_FAST)
-			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, frags, 16);
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, button, 16);
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, armorvalue, 16);
-			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, ping, 16);
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[0], 16);
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[1], 16);
 			WRITE_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[2], 16);
