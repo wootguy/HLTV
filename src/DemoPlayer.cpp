@@ -1783,6 +1783,50 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate, bool seekin
 	return true;
 }
 
+bool DemoPlayer::readUserCmds(mstream& reader, DemoDataTest* validate, bool seeking) {
+	uint32_t startOffset = reader.tell();
+
+	uint16_t numUsercmds;
+	reader.read(&numUsercmds, 2);
+
+	if (validate) validate->usrCount = numUsercmds;
+
+	for (int i = 0; i < numUsercmds; i++) {
+		DemoUserCmdData cmd;
+		memset(&cmd, 0, sizeof(DemoUserCmdData));
+		reader.read(&cmd, sizeof(DemoUserCmdData));
+
+		netedict& plr = fileedicts[cmd.playerindex];
+
+		string legacySteamId = "STEAM_ID_INVALID";
+		if (plr.steamid64 == 1ULL) {
+			legacySteamId = "STEAM_ID_LAN";
+		}
+		else if (plr.steamid64 == 2ULL) {
+			legacySteamId = "BOT";
+		}
+		else if (plr.steamid64 > 0ULL) {
+			uint32_t accountIdLowBit = plr.steamid64 & 1;
+			uint32_t accountIdHighBits = (plr.steamid64 >> 1) & 0x7FFFFFF;
+			legacySteamId = UTIL_VarArgs("STEAM_0:%u:%u", accountIdLowBit, accountIdHighBits);
+		}
+
+		float viewx = cmd.viewangles[0] * (360.0f / 65535.0f);
+		float viewy = cmd.viewangles[1] * (360.0f / 65535.0f);
+		float viewz = cmd.viewangles[2] * (360.0f / 65535.0f);
+
+		ALERT(at_console, "[usercmd][%s][%s] %d %d (%.2f %.2f %.2f) (%.2f %.2f %.2f) %d %d %d %d\n",
+			legacySteamId.c_str(), plr.name, (int)cmd.lerp_msec, (int)cmd.msec, viewx, viewy, viewz,
+			cmd.forwardmove, cmd.sidemove, cmd.upmove, (int)cmd.lightlevel, (int)cmd.buttons,
+			(int)cmd.impulse, (int)cmd.weaponselect);
+	}
+
+	g_stats.usercmdCurrentSz = reader.tell() - startOffset;
+	g_stats.usercmdCount += numUsercmds;
+
+	return true;
+}
+
 bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate, bool seeking) {
 	uint32_t startOffset = reader.tell();
 
@@ -2011,6 +2055,10 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		return false;
 	}
 	if (header.hasCommands && !readClientCommands(reader, validate, seeking)) {
+		delete[] frameData;
+		return false;
+	}
+	if (header.hasUsercmds && !readUserCmds(reader, validate, seeking)) {
 		delete[] frameData;
 		return false;
 	}

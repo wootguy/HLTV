@@ -36,6 +36,7 @@ private:
 	mstream writeMsgDeltas(FrameData& frame, DemoDataTest* testData);
 	mstream writeCmdDeltas(FrameData& frame);
 	mstream writeEvtDeltas(FrameData& frame);
+	mstream writeUserCmdDeltas(FrameData& frame);
 
 	// vars for writing a demo file
 	uint64_t nextDemoUpdate = 0;
@@ -60,4 +61,7 @@ private:
 
 	char* eventsBuffer = NULL;
 	int eventsBufferSize = -1;
+
+	char* usercmdBuffer = NULL;
+	int usercmdBufferSize = -1;
 };

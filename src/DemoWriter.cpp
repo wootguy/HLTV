@@ -27,6 +27,9 @@ DemoWriter::DemoWriter() {
 
 	eventsBufferSize = sizeof(DemoEventData) * MAX_EVENT_FRAME + 2;
 	eventsBuffer = new char[eventsBufferSize];
+
+	usercmdBufferSize = sizeof(DemoUserCmdData) * MAX_USERCMD_FRAME + 2;
+	usercmdBuffer = new char[usercmdBufferSize];
 }
 
 DemoWriter::~DemoWriter() {
@@ -517,6 +520,23 @@ mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 	return evbuffer;
 }
 
+mstream DemoWriter::writeUserCmdDeltas(FrameData& frame) {
+	mstream buffer(usercmdBuffer, usercmdBufferSize);
+
+	for (int i = 0; i < (int)frame.usercmd_count; i++) {
+		DemoUserCmdData& dat = frame.usercmds[i];
+
+		buffer.write(&dat, sizeof(DemoUserCmdData));
+	}
+
+	if (buffer.eom()) {
+		ALERT(at_console, "ERROR: Demo file user cmd buffer overflowed (%d > %d). Use a bigger buffer!\n",
+			frame.usercmd_count, MAX_USERCMD_FRAME);
+	}
+
+	return buffer;
+}
+
 #define ASSERT_FRAME(desc, expect, actual) \
 	if (expect != actual) { ALERT(at_console, "Read unexpected %s! %d != %d\n", desc, expect, actual); valid = false; }
 
@@ -646,6 +666,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	mstream msgbuffer = writeMsgDeltas(frame, testData);
 	mstream cmdbuffer = writeCmdDeltas(frame);
 	mstream evtbuffer = writeEvtDeltas(frame);
+	mstream usrbuffer = writeUserCmdDeltas(frame);
 
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
 
@@ -653,9 +674,11 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	g_stats.msgCurrentSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
 	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 1 : 0);
 	g_stats.eventCurrentSz = evtbuffer.tell() + (evtbuffer.tell() ? 1 : 0);
+	g_stats.usercmdCurrentSz = usrbuffer.tell() + (usrbuffer.tell() ? 2 : 0);
 	g_stats.msgCount += frame.netmessage_count;
 	g_stats.cmdCount += frame.cmds_count;
 	g_stats.eventCount += frame.event_count;
+	g_stats.usercmdCount += frame.usercmd_count;
 	
 	g_stats.calcFrameSize();
 
@@ -668,6 +691,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	header.hasNetworkMessages = frame.netmessage_count > 0;
 	header.hasEvents = frame.event_count > 0;
 	header.hasCommands = frame.cmds_count > 0;
+	header.hasUsercmds = frame.usercmd_count > 0;
 	header.isKeyFrame = isKeyframe;
 	header.isGiantFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (65535-3) || isKeyframe;
 	header.isBigFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (255 - 3) || isKeyframe;
@@ -736,6 +760,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		fwrite(&frame.cmds_count, sizeof(uint8_t), 1, demoFile);
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
 	}
+	if (header.hasUsercmds) {
+		fwrite(&frame.usercmd_count, sizeof(uint16_t), 1, demoFile);
+		fwrite(usrbuffer.getBuffer(), usrbuffer.tell(), 1, demoFile);
+	}
 
 	if (lastStringPoolIdx != g_stringpool_idx) {
 		uint32_t currentOffset = ftell(demoFile);
@@ -751,6 +779,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		uint32_t expectedNetSz = g_stats.msgCurrentSz;
 		uint32_t expectedEvtSz = g_stats.eventCurrentSz;
 		uint32_t expectedCmdSz = g_stats.cmdCurrentSz;
+		uint32_t expectedUsrSz = g_stats.usercmdCurrentSz;
 		uint32_t expectedFrameSz = g_stats.currentWriteSz;
 
 		DemoStats oldStats = g_stats;
@@ -783,6 +812,9 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 		ASSERT_FRAME("evt count", testData->cmdCount, frame.cmds_count);
 		ASSERT_FRAME("evt bytes", g_stats.cmdCurrentSz, expectedCmdSz);
+
+		ASSERT_FRAME("usr count", testData->usrCount, frame.usercmd_count);
+		ASSERT_FRAME("usr bytes", g_stats.usercmdCurrentSz, expectedUsrSz);
 
 		ASSERT_FRAME("frame bytes", g_stats.currentWriteSz, expectedFrameSz);
 

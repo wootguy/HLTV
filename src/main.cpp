@@ -52,6 +52,8 @@ SvenTV* g_sventv = NULL;
 DemoPlayer* g_demoPlayer = NULL;
 NetMessageData* g_netmessages = NULL;
 int g_netmessage_count = 0;
+DemoUserCmdData* g_usercmds = NULL;
+int g_usercmd_count = 0;
 CommandData* g_cmds = NULL;
 int g_command_count = 0;
 DemoEventData* g_events = NULL;
@@ -78,6 +80,7 @@ cvar_t* g_demo_file_path;
 cvar_t* g_validate_output;
 cvar_t* g_compress_demos; // compress demos with lzma after writing
 cvar_t* g_write_debug_info; // write debugging info to the demo files (monster state, health, etc.)
+cvar_t* g_write_user_cmds; // write user commands (movement, buttons, etc.)
 
 DemoStats g_stats;
 bool demoStatPlayers[33] = { false };
@@ -812,6 +815,37 @@ HOOK_RET_VOID UpdateClientDataPost(const edict_t* ent, int sendweapons, clientda
 	return HOOK_CONTINUE;
 }
 
+HOOK_RET_VOID CmdStart(const edict_t* player, const struct usercmd_s* cmd, unsigned int random_seed) {
+	if (!g_write_user_cmds->value || (!g_sventv->enableDemoFile && !g_sventv->enableServer)) {
+		DEFAULT_HOOK_RETURN;
+	}
+
+	DemoUserCmdData& dcmd = g_usercmds[g_usercmd_count];
+	memset(&dcmd, 0, sizeof(DemoUserCmdData));
+
+	dcmd.playerindex = ENTINDEX(player);
+	dcmd.lerp_msec = cmd->lerp_msec;
+	dcmd.msec = cmd->msec;
+	dcmd.viewangles[0] = normalizeRangef(cmd->viewangles[0], 0, 360.0f) * (65535.0f / 360.0f);
+	dcmd.viewangles[1] = normalizeRangef(cmd->viewangles[1], 0, 360.0f) * (65535.0f / 360.0f);
+	dcmd.viewangles[2] = normalizeRangef(cmd->viewangles[2], 0, 360.0f) * (65535.0f / 360.0f);
+	dcmd.forwardmove = cmd->forwardmove;
+	dcmd.sidemove = cmd->sidemove;
+	dcmd.upmove = cmd->upmove;
+	dcmd.lightlevel = cmd->lightlevel;
+	dcmd.buttons = cmd->buttons;
+	dcmd.impulse = cmd->impulse;
+	dcmd.weaponselect = cmd->weaponselect;
+
+	g_usercmd_count++;
+	if (g_usercmd_count >= MAX_USERCMD_FRAME) {
+		ALERT(at_console, "usercmd capture overflow!\n");
+		g_usercmd_count--; // overwrite last event
+	}
+
+	DEFAULT_HOOK_RETURN;
+}
+
 #ifdef HLCOOP_BUILD
 HLCOOP_PLUGIN_HOOKS g_hooks;
 
@@ -855,6 +889,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnClientUserInfoChanged = ClientUserInfoChangedHook;
 	g_hooks.pfnClientCommand = ClientCommand;
 	g_hooks.pfnSendVoiceData = SendVoiceData;
+	g_hooks.pfnCmdStart = CmdStart;
 
 	g_hooks.pfnMessageBegin = MessageBegin;
 	g_hooks.pfnWriteAngle = WriteAngle;
@@ -885,6 +920,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.path", "hltv/", 0, 0);
 	g_validate_output = RegisterPluginCVar(plugin, "hltv.validate", "0", 0, 0);
 	g_write_debug_info = RegisterPluginCVar(plugin, "hltv.debug_info", "1", 0, 0);
+	g_write_user_cmds = RegisterPluginCVar(plugin, "hltv.write_user_cmds", "0", 0, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 
@@ -902,6 +938,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 	g_cmds = new CommandData[MAX_CMD_FRAME];
 	g_events = new DemoEventData[MAX_EVENT_FRAME];
+	g_usercmds = new DemoUserCmdData[MAX_USERCMD_FRAME];
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 
 	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
@@ -913,6 +950,7 @@ extern "C" void DLLEXPORT PluginExit() {
 	delete[] g_netmessages;
 	delete[] g_cmds;
 	delete[] g_events;
+	delete[] g_usercmds;
 }
 #else
 
