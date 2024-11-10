@@ -43,6 +43,9 @@ public:
 	// called from main thread to copy data to SvenTV thread
 	void think_mainThread();
 
+	// millis since recording started
+	uint32_t getRecordingTime();
+
 private:
 	// main thread vars
 	bool singleThreadMode;

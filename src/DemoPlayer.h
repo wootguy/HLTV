@@ -103,6 +103,7 @@ public:
 	bool useBots = true; // try to use bots for player entites
 	float replaySpeed = 1.0f;
 	int netmsgPlrIdx = 1; // player to replay network messages for
+	DemoHeader demoHeader;
 
 	DemoPlayer();
 	~DemoPlayer();
@@ -139,6 +140,12 @@ public:
 
 	void setPlaybackSpeed(float speed);
 
+	// search the demo file for a player command
+	void searchCommand(edict_t* searcher, string searchStr);
+
+	// return playback position in milliseconds
+	uint32_t getPlaybackTime();
+
 private:
 	// vars for replaying a demo file
 	DemoDataStream* replayData = NULL;
@@ -154,9 +161,12 @@ private:
 	vector<ReplayEntity> replayEnts;
 	map<int, string> replayModelPath; // maps model index in demo file to a path
 	map<int, string> replaySoundPath; // maps a sound index in a demo file to a path
-	DemoHeader demoHeader;
 	DemoFrame lastReplayFrame;
 	char* stringPool = NULL;
+	string cmdSearchStr;
+	edict_t* searchingPlayer = NULL;
+	vector<string> searchResults;
+	bool wasSeeking;
 
 	netedict* fileedicts = NULL; // last edicts read from file
 

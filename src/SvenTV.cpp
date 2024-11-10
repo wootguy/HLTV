@@ -59,7 +59,6 @@ SvenTV::~SvenTV() {
 }
 
 void SvenTV::think_mainThread() {
-	uint64_t startMillis = getEpochMillis();
 	/*
 	if (singleThreadMode) {
 		uint64_t now = getEpochMillis();
@@ -83,6 +82,8 @@ void SvenTV::think_mainThread() {
 		bool shouldCopy = (demoWriter->shouldWriteDemoFrame() || !singleThreadMode);
 		
 		if (edictCopyState.getValue() == EDICT_COPY_REQUESTED && shouldCopy) {
+			uint64_t startMillis = getEpochMillis();
+			
 			if (singleThreadMode) {
 				edicts = INDEXENT(0);
 				frame.netmessages = g_netmessages;
@@ -110,8 +111,8 @@ void SvenTV::think_mainThread() {
 
 			//int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);
-
 			g_copyTime = getEpochMillis() - startMillis;
+			
 			//ALERT(at_console, "Copy %.1fKB in %lums\n", copySz / 1024.0f, copyTime);
 
 			if (singleThreadMode) {
@@ -121,6 +122,14 @@ void SvenTV::think_mainThread() {
 			think_tvThread();
 		}
 	}
+}
+
+uint32_t SvenTV::getRecordingTime() {
+	if (demoWriter) {
+		return demoWriter->getRecordingTime();
+	}
+
+	return 0;
 }
 
 void SvenTV::handleDeltaAck(mstream& reader, NetClient& client) {

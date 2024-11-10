@@ -837,3 +837,7 @@ void DemoWriter::closeDemoFile() {
 bool DemoWriter::isFileOpen() {
 	return demoFile != NULL;
 }
+
+uint32_t DemoWriter::getRecordingTime() {
+	return getEpochMillis() - demoStartTime;
+}
