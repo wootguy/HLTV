@@ -78,8 +78,8 @@ private:
 
 // data written to by main thread
 // and copied to svenTV thread when needed
-extern DemoUserCmdData* g_usercmds;
-extern int g_usercmd_count;
+extern DemoUserCmdData* g_usercmds[32];
+extern int g_usercmd_count[32];
 extern NetMessageData* g_netmessages;
 extern int g_netmessage_count;
 extern CommandData* g_cmds;

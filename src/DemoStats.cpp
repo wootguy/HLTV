@@ -108,9 +108,9 @@ struct DeltaStat {
 		vec.push_back(stat); \
 }
 
-#define ADD_CAT_DELTA_STAT(vec, statArray, flag) {\
+#define ADD_CAT_DELTA_STAT(vec, statArray, flag, skipPrefix) {\
 	DeltaStat stat; \
-	stat.field = string( #flag ).substr(strlen("FL_DELTA_CAT_")); \
+	stat.field = string( #flag ).substr(strlen(skipPrefix)); \
 	stat.bytes = (statArray[flag]+7) / 8; \
 	if (stat.bytes > 0) \
 		vec.push_back(stat); \
@@ -165,13 +165,13 @@ void DemoStats::showStats(edict_t* edt) {
 
 	{
 		vector<DeltaStat> deltaStats;
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_EDFLAG);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ORIGIN);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ANGLES);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_DISPLAY);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_MISC);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_INTERNAL);
-		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_PLAYER);
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_EDFLAG, "FL_DELTA_CAT_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ORIGIN, "FL_DELTA_CAT_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_ANGLES, "FL_DELTA_CAT_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_DISPLAY, "FL_DELTA_CAT_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_MISC, "FL_DELTA_CAT_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_INTERNAL, "FL_DELTA_CAT_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.entDeltaCatSz, FL_DELTA_CAT_PLAYER, "FL_DELTA_CAT_");
 
 		DeltaStat indexStat;
 		indexStat.field = "indexes";
@@ -200,6 +200,42 @@ void DemoStats::showStats(edict_t* edt) {
 		params.x = 0;
 		params.y = 0;
 		params.channel = 1;
+		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
+	}
+
+	{
+		vector<DeltaStat> deltaStats;
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_LERP, "DELTA_CAT_USERCMD_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_MSEC, "DELTA_CAT_USERCMD_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_ANGLES, "DELTA_CAT_USERCMD_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_MOVE, "DELTA_CAT_USERCMD_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_LIGHTLEVEL, "DELTA_CAT_USERCMD_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_BUTTONS, "DELTA_CAT_USERCMD_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_IMPULSE, "DELTA_CAT_USERCMD_");
+		ADD_CAT_DELTA_STAT(deltaStats, g_stats.usercmdSz, DELTA_CAT_USERCMD_WEAPON, "DELTA_CAT_USERCMD_");
+
+		uint32_t sum = 0;
+		for (int i = 0; i < (int)deltaStats.size(); i++) {
+			sum += deltaStats[i].bytes;
+		}
+
+		DeltaStat headerStat;
+		headerStat.field = "headers";
+		headerStat.bytes = g_stats.usercmdTotalSz - sum;
+		deltaStats.push_back(headerStat);
+		sum += headerStat.bytes;
+
+		std::sort(deltaStats.begin(), deltaStats.end(), compareByBytes);
+
+		string sumStr = formatSize(sum);
+		txt = UTIL_VarArgs("usercmd deltas (%u, %s):\n", g_stats.usercmdCount, sumStr.c_str());
+		for (int i = 0; i < (int)deltaStats.size() && i < 10; i++) {
+			txt += string(formatSize(deltaStats[i].bytes)) + " " + deltaStats[i].field + "\n";
+		}
+
+		params.x = 0.8f;
+		params.y = 0;
+		params.channel = 2;
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
 

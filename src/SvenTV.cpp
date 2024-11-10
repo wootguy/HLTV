@@ -21,7 +21,8 @@ SvenTV::SvenTV(bool singleThreadMode) {
 		frame.netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 		frame.cmds = new CommandData[MAX_CMD_FRAME];
 		frame.events = new DemoEventData[MAX_EVENT_FRAME];
-		frame.usercmds = new DemoUserCmdData[MAX_USERCMD_FRAME];
+		for (int i = 0; i < MAX_PLAYERS; i++)
+			frame.usercmds[i] = new DemoUserCmdData[MAX_USERCMD_FRAME];
 	}
 
 	deltaPacketBufferSz = 508; // max UDP payload before possible fragmentation
@@ -60,7 +61,8 @@ SvenTV::~SvenTV() {
 		delete[] frame.netmessages;
 		delete[] frame.events;
 		delete[] frame.cmds;
-		delete[] frame.usercmds;
+		for (int i = 0; i < MAX_PLAYERS; i++)
+			delete[] frame.usercmds[i];
 	}
 }
 
@@ -95,7 +97,8 @@ void SvenTV::think_mainThread() {
 				frame.netmessages = g_netmessages;
 				frame.cmds = g_cmds;
 				frame.events = g_events;
-				frame.usercmds = g_usercmds;
+				for (int i = 0; i < MAX_PLAYERS; i++)
+					frame.usercmds[i] = g_usercmds[i];
 			}
 			else {
 				// need to duplicate because the server thread will be running in parallel to the
@@ -110,13 +113,15 @@ void SvenTV::think_mainThread() {
 			frame.cmds_count = g_command_count;
 			frame.serverFrameCount = g_server_frame_count;
 			frame.event_count = g_event_count;
-			frame.usercmd_count = g_usercmd_count;
+			for (int i = 0; i < MAX_PLAYERS; i++) {
+				frame.usercmd_count[i] = g_usercmd_count[i];
+				g_usercmd_count[i] = 0;
+			}
 
 			// clear the main thread buffers
 			g_netmessage_count = 0;
 			g_command_count = 0;
 			g_event_count = 0;
-			g_usercmd_count = 0;
 
 			//int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);

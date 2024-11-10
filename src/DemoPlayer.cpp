@@ -117,6 +117,7 @@ void delayRenamePlayer(EHANDLE h_plr, string name) {
 
 DemoPlayer::DemoPlayer() {
 	fileedicts = new netedict[MAX_EDICTS];
+	memset(usrstates, 0, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 }
 
 DemoPlayer::~DemoPlayer() {
@@ -143,6 +144,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	replayData = new DemoDataStream(fopen(path.c_str(), "rb"));
 
 	memset(&g_stats, 0, sizeof(DemoStats));
+	memset(usrstates, 0, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 
 	if (!replayData->valid()) {
 		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
@@ -1783,46 +1785,144 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate, bool seekin
 	return true;
 }
 
+void DemoPlayer::processUserCmd(int playerindex) {
+	DemoUserCmdData& cmd = usrstates[playerindex];
+
+	netedict& plr = fileedicts[playerindex+1];
+
+	string legacySteamId = "STEAM_ID_INVALID";
+	if (plr.steamid64 == 1ULL) {
+		legacySteamId = "STEAM_ID_LAN";
+	}
+	else if (plr.steamid64 == 2ULL) {
+		legacySteamId = "BOT";
+	}
+	else if (plr.steamid64 > 0ULL) {
+		uint32_t accountIdLowBit = plr.steamid64 & 1;
+		uint32_t accountIdHighBits = (plr.steamid64 >> 1) & 0x7FFFFFF;
+		legacySteamId = UTIL_VarArgs("STEAM_0:%u:%u", accountIdLowBit, accountIdHighBits);
+	}
+
+	float viewx = cmd.viewangles[0] * (360.0f / 65535.0f);
+	float viewy = cmd.viewangles[1] * (360.0f / 65535.0f);
+	float viewz = cmd.viewangles[2] * (360.0f / 65535.0f);
+
+	/*
+	ALERT(at_console, "[usercmd][%s][%s] %d %d (%.2f %.2f %.2f) (%.2f %.2f %.2f) %d %d %d %d\n",
+		legacySteamId.c_str(), plr.name, (int)cmd.lerp_msec, (int)cmd.msec, viewx, viewy, viewz,
+		cmd.forwardmove, cmd.sidemove, cmd.upmove, (int)cmd.lightlevel, (int)cmd.buttons,
+		(int)cmd.impulse, (int)cmd.weaponselect);
+	*/
+}
+
 bool DemoPlayer::readUserCmds(mstream& reader, DemoDataTest* validate, bool seeking) {
 	uint32_t startOffset = reader.tell();
 
-	uint16_t numUsercmds;
-	reader.read(&numUsercmds, 2);
+	uint8_t maxPlayerIdx = reader.readBits(5);
 
-	if (validate) validate->usrCount = numUsercmds;
+	for (int e = 0; e <= maxPlayerIdx; e++) {
 
-	for (int i = 0; i < numUsercmds; i++) {
-		DemoUserCmdData cmd;
-		memset(&cmd, 0, sizeof(DemoUserCmdData));
-		reader.read(&cmd, sizeof(DemoUserCmdData));
-
-		netedict& plr = fileedicts[cmd.playerindex];
-
-		string legacySteamId = "STEAM_ID_INVALID";
-		if (plr.steamid64 == 1ULL) {
-			legacySteamId = "STEAM_ID_LAN";
-		}
-		else if (plr.steamid64 == 2ULL) {
-			legacySteamId = "BOT";
-		}
-		else if (plr.steamid64 > 0ULL) {
-			uint32_t accountIdLowBit = plr.steamid64 & 1;
-			uint32_t accountIdHighBits = (plr.steamid64 >> 1) & 0x7FFFFFF;
-			legacySteamId = UTIL_VarArgs("STEAM_0:%u:%u", accountIdLowBit, accountIdHighBits);
+		if (!reader.readBit()) {
+			continue;
 		}
 
-		float viewx = cmd.viewangles[0] * (360.0f / 65535.0f);
-		float viewy = cmd.viewangles[1] * (360.0f / 65535.0f);
-		float viewz = cmd.viewangles[2] * (360.0f / 65535.0f);
+		uint16_t cmdCount = reader.readBits(10);
+		g_stats.usercmdCount += cmdCount;
 
-		ALERT(at_console, "[usercmd][%s][%s] %d %d (%.2f %.2f %.2f) (%.2f %.2f %.2f) %d %d %d %d\n",
-			legacySteamId.c_str(), plr.name, (int)cmd.lerp_msec, (int)cmd.msec, viewx, viewy, viewz,
-			cmd.forwardmove, cmd.sidemove, cmd.upmove, (int)cmd.lightlevel, (int)cmd.buttons,
-			(int)cmd.impulse, (int)cmd.weaponselect);
+		if (!reader.readBit()) {
+			// all commands are the same as the current state
+			for (int i = 0; i < (int)cmdCount; i++) {
+				if (!validate) processUserCmd(e);
+			}
+		}
+
+		if (validate) validate->usrCount[e] = cmdCount;
+
+		DemoUserCmdData& old = usrstates[e];
+
+		for (int i = 0; i < (int)cmdCount; i++) {
+			if (!reader.readBit()) {
+				// command is the same as the previous
+				if (!validate) processUserCmd(e);
+				continue;
+			}
+
+			if (reader.readBit()) {
+				old.lerp_msec = reader.readBits(8);
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_LERP] += 8;
+			}
+
+			if (reader.readBit()) {
+				old.msec = reader.readBits(16);
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_MSEC] += 16;
+			}
+
+			if (reader.readBit()) {
+				for (int i = 0; i < 3; i++) {
+					if (reader.readBit()) {
+						old.viewangles[i] = reader.readBits(16);
+						g_stats.usercmdSz[DELTA_CAT_USERCMD_ANGLES] += 16;
+					}
+				}
+			}
+
+			if (reader.readBit()) {
+				if (reader.readBit()) {
+					uint32_t floatBits = reader.readBits(32);
+					old.forwardmove = *(float*)&floatBits;
+					g_stats.usercmdSz[DELTA_CAT_USERCMD_MOVE] += 32;
+				}
+
+				if (reader.readBit()) {
+					uint32_t floatBits = reader.readBits(32);
+					old.sidemove = *(float*)&floatBits;
+					g_stats.usercmdSz[DELTA_CAT_USERCMD_MOVE] += 32;
+				}
+
+				if (reader.readBit()) {
+					uint32_t floatBits = reader.readBits(32);
+					old.upmove = *(float*)&floatBits;
+					g_stats.usercmdSz[DELTA_CAT_USERCMD_MOVE] += 32;
+				}
+			}
+
+			if (reader.readBit()) {
+				old.lightlevel = reader.readBits(8);
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_LIGHTLEVEL] += 8;
+			}
+
+			if (reader.readBit()) {
+				old.buttons = reader.readBits(16);
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_BUTTONS] += 16;
+			}
+
+			if (reader.readBit()) {
+				old.impulse = reader.readBits(8);
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_IMPULSE] += 8;
+			}
+
+			if (reader.readBit()) {
+				old.weaponselect = reader.readBits(8);
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_WEAPON] += 8;
+			}
+
+			if (!validate)
+				processUserCmd(e);
+		}
 	}
 
+	if (validate) {
+		for (int e = 0; e < MAX_PLAYERS; e++) {
+			if (memcmp(&validate->newUsercmdState[e], &usrstates[e], sizeof(DemoUserCmdData))) {
+				ALERT(at_console, "Mismatch user command state %d\n", e);
+				return false;
+			}
+		}
+	}
+
+	reader.endBitReading();
+
 	g_stats.usercmdCurrentSz = reader.tell() - startOffset;
-	g_stats.usercmdCount += numUsercmds;
 
 	return true;
 }
