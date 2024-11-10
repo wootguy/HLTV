@@ -45,7 +45,7 @@ inline bool FIXED_EQUALS(int x, int y, int totalBits) {
 #define MAX_NETMSG_FRAME 512 // max network messages per frame
 #define MAX_NETMSG_DATA 2048 // max bytes before overflow message from game
 #define MAX_CMD_LENGTH 128
-#define MAX_USERCMD_FRAME 8192 // max user cmds per frame (should be high for speedhackers)
+#define MAX_USERCMD_FRAME 1024 // max user cmds per frame (should be high for speedhackers)
 #define KEYFRAME_INTERVAL 60ULL // seconds between keyframes in demo files
 
 #define DEMO_VERSION 1 // version number written to demo files for compatibility check (0-65535)
@@ -202,7 +202,6 @@ struct DemoUserCmd {
 */
 
 struct DemoUserCmdData {
-	uint8_t		playerindex;	// player that sent the command
 	int16_t		lerp_msec;      // Interpolation time on client
 	uint8_t		msec;           // Duration in ms of command
 	uint16_t	viewangles[3];	// Command view angles (0-360.0f scaled to 0-65535)
@@ -245,11 +244,11 @@ struct FrameData {
 	NetMessageData* netmessages;
 	CommandData* cmds;
 	DemoEventData* events;
-	DemoUserCmdData* usercmds;
+	DemoUserCmdData* usercmds[32];
 
 	uint32_t netmessage_count = 0;
 	uint32_t cmds_count = 0;
 	uint32_t event_count = 0;
-	uint32_t usercmd_count = 0;
+	uint32_t usercmd_count[32];
 	uint32_t serverFrameCount = 0;
 };

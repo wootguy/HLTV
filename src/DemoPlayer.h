@@ -85,7 +85,7 @@ struct DemoDataTest {
 	uint32_t msgCount;
 	uint32_t evtCount;
 	uint32_t cmdCount;
-	uint32_t usrCount;
+	uint32_t usrCount[32];
 	bool success;
 
 	int entDeltaSz[ABSOLUTE_MAX_EDICTS]; // hopefully big enough
@@ -93,6 +93,8 @@ struct DemoDataTest {
 	netedict newEntState[ABSOLUTE_MAX_EDICTS];
 
 	NetMessageData expectedMsg[MAX_NETMSG_FRAME];
+	DemoUserCmdData oldUsercmdState[32];
+	DemoUserCmdData newUsercmdState[32];
 };
 
 class DemoPlayer {
@@ -168,6 +170,7 @@ private:
 	bool wasSeeking;
 
 	netedict* fileedicts = NULL; // last edicts read from file
+	DemoUserCmdData usrstates[32];
 
 	float offsetSeconds;
 	float frameProgress; // for interpolation (0-1 progress to next frame)
@@ -212,6 +215,8 @@ private:
 
 	// really like 127 different messages
 	bool processTempEntityMessage(NetMessageData& msg, DemoDataTest* validate);
+
+	void processUserCmd(int playerindex);
 
 	// ent = replay entitiy to update pitch/gait angles
 	// dt = seconds between current time and last time

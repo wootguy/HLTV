@@ -50,6 +50,8 @@ private:
 	uint32_t lastStringPoolIdx = 0; // for detecting if the string pool needs updating in the file
 
 	netedict* fileedicts = NULL; // last edicts written to file
+	DemoUserCmdData usrstates[32];
+
 	char* fileDeltaBuffer = NULL;
 	int fileDeltaBufferSize = -1;
 

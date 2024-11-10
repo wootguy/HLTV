@@ -11,6 +11,7 @@ DemoWriter::DemoWriter() {
 	fileedicts = new netedict[MAX_EDICTS];
 
 	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+	memset(usrstates, 0, MAX_PLAYERS * sizeof(DemoUserCmdData));
 
 	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
 	int fullDeltaMaxSize = sizeof(netedict) + 4;
@@ -118,6 +119,7 @@ void DemoWriter::initDemoFile() {
 	}
 
 	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+	memset(usrstates, 0, MAX_PLAYERS * sizeof(DemoUserCmdData));
 	memset(g_userInfoDirty, 1, sizeof(bool) * 33);
 
 	fileDeltaBuffer = new char[fileDeltaBufferSize];
@@ -523,11 +525,139 @@ mstream DemoWriter::writeEvtDeltas(FrameData& frame) {
 mstream DemoWriter::writeUserCmdDeltas(FrameData& frame) {
 	mstream buffer(usercmdBuffer, usercmdBufferSize);
 
-	for (int i = 0; i < (int)frame.usercmd_count; i++) {
-		DemoUserCmdData& dat = frame.usercmds[i];
-
-		buffer.write(&dat, sizeof(DemoUserCmdData));
+	uint8_t maxPlayerIdx = 0;
+	for (int e = 0; e < MAX_PLAYERS; e++) {
+		if (frame.usercmd_count[e]) {
+			maxPlayerIdx = e;
+		}
 	}
+
+	buffer.writeBits(maxPlayerIdx, 5);
+
+	for (int e = 0; e <= maxPlayerIdx; e++) {
+		if (frame.usercmd_count[e] == 0) {
+			buffer.writeBit(0);
+			continue;
+		}
+
+		buffer.writeBit(1);
+		buffer.writeBits(frame.usercmd_count[e], 10);
+
+		// 1 = user commands have deltas, 0 = all commands are identical to the current state (rewrite later)
+		uint64_t startOffset = buffer.tellBits();
+		buffer.writeBit(1);
+
+		DemoUserCmdData& old = usrstates[e];
+		bool anyDeltas = false;
+
+		for (int i = 0; i < (int)frame.usercmd_count[e]; i++) {
+			DemoUserCmdData& dat = frame.usercmds[e][i];
+
+			uint64_t cmdOffset = buffer.tellBits();
+
+			buffer.writeBit(1); // 1 = command is not exactly the same as the previous
+			
+			buffer.writeBit(dat.lerp_msec != old.lerp_msec);
+			if (dat.lerp_msec != old.lerp_msec) {
+				buffer.writeBits(dat.lerp_msec, 8);
+				old.lerp_msec = dat.lerp_msec;
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_LERP] += 8;
+			}
+
+			buffer.writeBit(dat.msec != old.msec);
+			if (dat.msec != old.msec) {
+				buffer.writeBits(dat.msec, 16);
+				old.msec = dat.msec;
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_MSEC] += 16;
+			}
+
+			bool angleChanged = dat.viewangles[0] != old.viewangles[0] || dat.viewangles[1] != old.viewangles[1]
+				|| dat.viewangles[2] != old.viewangles[2];
+
+			buffer.writeBit(angleChanged);
+			if (angleChanged) {
+				for (int i = 0; i < 3; i++) {
+					buffer.writeBit(dat.viewangles[i] != old.viewangles[i]);
+					if (dat.viewangles[i] != old.viewangles[i]) {
+						buffer.writeBits(dat.viewangles[i], 16);
+						old.viewangles[i] = dat.viewangles[i];
+						g_stats.usercmdSz[DELTA_CAT_USERCMD_ANGLES] += 16;
+					}
+				}
+			}
+
+			bool moveChanged = dat.forwardmove != old.forwardmove || dat.sidemove != old.sidemove
+				|| dat.upmove != old.upmove;
+			
+			buffer.writeBit(moveChanged);
+			if (moveChanged) {
+				buffer.writeBit(dat.forwardmove != old.forwardmove);
+				if (dat.forwardmove != old.forwardmove) {
+					buffer.writeBits(*(uint32_t*)&dat.forwardmove, 32);
+					old.forwardmove = dat.forwardmove;
+					g_stats.usercmdSz[DELTA_CAT_USERCMD_MOVE] += 32;
+				}
+
+				buffer.writeBit(dat.sidemove != old.sidemove);
+				if (dat.sidemove != old.sidemove) {
+					buffer.writeBits(*(uint32_t*)&dat.sidemove, 32);
+					old.sidemove = dat.sidemove;
+					g_stats.usercmdSz[DELTA_CAT_USERCMD_MOVE] += 32;
+				}
+
+				buffer.writeBit(dat.upmove != old.upmove);
+				if (dat.upmove != old.upmove) {
+					buffer.writeBits(*(uint32_t*)&dat.upmove, 32);
+					old.upmove = dat.upmove;
+					g_stats.usercmdSz[DELTA_CAT_USERCMD_MOVE] += 32;
+				}
+			}
+
+			buffer.writeBit(dat.lightlevel != old.lightlevel);
+			if (dat.lightlevel != old.lightlevel) {
+				buffer.writeBits(dat.lightlevel, 8);
+				old.lightlevel = dat.lightlevel;
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_LIGHTLEVEL] += 8;
+			}
+
+			buffer.writeBit(dat.buttons != old.buttons);
+			if (dat.buttons != old.buttons) {
+				buffer.writeBits(dat.buttons, 16);
+				old.buttons = dat.buttons;
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_BUTTONS] += 16;
+			}
+
+			buffer.writeBit(dat.impulse != old.impulse);
+			if (dat.impulse != old.impulse) {
+				buffer.writeBits(dat.impulse, 8);
+				old.impulse = dat.impulse;
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_IMPULSE] += 8;
+			}
+
+			buffer.writeBit(dat.weaponselect != old.weaponselect);
+			if (dat.weaponselect != old.weaponselect) {
+				buffer.writeBits(dat.weaponselect, 8);
+				old.weaponselect = dat.weaponselect;
+				g_stats.usercmdSz[DELTA_CAT_USERCMD_WEAPON] += 8;
+			}
+
+			if (buffer.tellBits() - cmdOffset == 12) {
+				// no deltas were written
+				buffer.seek(cmdOffset);
+				buffer.writeBit(0); // command is exactly the same as the previous
+			}
+			else {
+				anyDeltas = true;
+			}
+		}
+	
+		if (!anyDeltas) {
+			buffer.seek(startOffset);
+			buffer.writeBit(0);
+		}
+	}
+
+	buffer.endBitReading();
 
 	if (buffer.eom()) {
 		ALERT(at_console, "ERROR: Demo file user cmd buffer overflowed (%d > %d). Use a bigger buffer!\n",
@@ -660,13 +790,25 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		memset(testData, 0, sizeof(DemoDataTest));
 		memcpy(testData->oldEntState, fileedicts, sizeof(netedict) * MAX_EDICTS);
 		memcpy(testPlayer->fileedicts, fileedicts, sizeof(netedict) * MAX_EDICTS);
+		memcpy(testData->oldUsercmdState, usrstates, sizeof(DemoUserCmdData) * MAX_PLAYERS);
+		memcpy(testPlayer->usrstates, usrstates, sizeof(DemoUserCmdData) * MAX_PLAYERS);
+	}
+
+	bool anyUsercmds = false;
+	for (int i = 0; i < MAX_PLAYERS; i++) {
+		g_stats.usercmdCount += frame.usercmd_count[i];
+		if (frame.usercmd_count[i]) {
+			anyUsercmds = true;
+		}
 	}
 
 	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
 	mstream msgbuffer = writeMsgDeltas(frame, testData);
 	mstream cmdbuffer = writeCmdDeltas(frame);
 	mstream evtbuffer = writeEvtDeltas(frame);
-	mstream usrbuffer = writeUserCmdDeltas(frame);
+	mstream usrbuffer;
+	if (anyUsercmds)
+		usrbuffer = writeUserCmdDeltas(frame);
 
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
 
@@ -674,11 +816,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	g_stats.msgCurrentSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
 	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 1 : 0);
 	g_stats.eventCurrentSz = evtbuffer.tell() + (evtbuffer.tell() ? 1 : 0);
-	g_stats.usercmdCurrentSz = usrbuffer.tell() + (usrbuffer.tell() ? 2 : 0);
+	g_stats.usercmdCurrentSz = usrbuffer.tell();
 	g_stats.msgCount += frame.netmessage_count;
 	g_stats.cmdCount += frame.cmds_count;
 	g_stats.eventCount += frame.event_count;
-	g_stats.usercmdCount += frame.usercmd_count;
 	
 	g_stats.calcFrameSize();
 
@@ -691,7 +832,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	header.hasNetworkMessages = frame.netmessage_count > 0;
 	header.hasEvents = frame.event_count > 0;
 	header.hasCommands = frame.cmds_count > 0;
-	header.hasUsercmds = frame.usercmd_count > 0;
+	header.hasUsercmds = anyUsercmds;
 	header.isKeyFrame = isKeyframe;
 	header.isGiantFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (65535-3) || isKeyframe;
 	header.isBigFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (255 - 3) || isKeyframe;
@@ -761,7 +902,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		fwrite(cmdbuffer.getBuffer(), cmdbuffer.tell(), 1, demoFile);
 	}
 	if (header.hasUsercmds) {
-		fwrite(&frame.usercmd_count, sizeof(uint16_t), 1, demoFile);
 		fwrite(usrbuffer.getBuffer(), usrbuffer.tell(), 1, demoFile);
 	}
 
@@ -786,6 +926,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		memset(&g_stats, 0, sizeof(DemoStats));
 
 		memcpy(testData->newEntState, frame.netedicts, sizeof(netedict) * MAX_EDICTS);
+		memcpy(testData->newUsercmdState, usrstates, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 
 		DemoDataStream testStream(demoFile);
 		testStream.seek(frameStartOffset);
@@ -813,7 +954,9 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		ASSERT_FRAME("evt count", testData->cmdCount, frame.cmds_count);
 		ASSERT_FRAME("evt bytes", g_stats.cmdCurrentSz, expectedCmdSz);
 
-		ASSERT_FRAME("usr count", testData->usrCount, frame.usercmd_count);
+		for (int i = 0; i < MAX_PLAYERS; i++) {
+			ASSERT_FRAME("usr count", testData->usrCount[i], frame.usercmd_count[i]);
+		}
 		ASSERT_FRAME("usr bytes", g_stats.usercmdCurrentSz, expectedUsrSz);
 
 		ASSERT_FRAME("frame bytes", g_stats.currentWriteSz, expectedFrameSz);

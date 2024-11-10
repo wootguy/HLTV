@@ -7,6 +7,17 @@
 #include "mmlib.h"
 #endif
 
+enum DeltaCats {
+	DELTA_CAT_USERCMD_LERP,
+	DELTA_CAT_USERCMD_MSEC,
+	DELTA_CAT_USERCMD_ANGLES,
+	DELTA_CAT_USERCMD_MOVE,
+	DELTA_CAT_USERCMD_LIGHTLEVEL,
+	DELTA_CAT_USERCMD_BUTTONS,
+	DELTA_CAT_USERCMD_IMPULSE,
+	DELTA_CAT_USERCMD_WEAPON,
+};
+
 struct DemoStats {
 	uint32_t frameCount;
 	uint32_t bigFrameCount;
@@ -33,6 +44,7 @@ struct DemoStats {
 	uint32_t usercmdTotalSz;
 	uint32_t usercmdCurrentSz;
 	uint32_t usercmdCount; // number of usercmds sent
+	uint32_t usercmdSz[16];
 
 	uint32_t cmdTotalSz;
 	uint32_t cmdCurrentSz;

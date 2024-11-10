@@ -52,8 +52,8 @@ SvenTV* g_sventv = NULL;
 DemoPlayer* g_demoPlayer = NULL;
 NetMessageData* g_netmessages = NULL;
 int g_netmessage_count = 0;
-DemoUserCmdData* g_usercmds = NULL;
-int g_usercmd_count = 0;
+DemoUserCmdData* g_usercmds[32];
+int g_usercmd_count[32];
 CommandData* g_cmds = NULL;
 int g_command_count = 0;
 DemoEventData* g_events = NULL;
@@ -820,10 +820,11 @@ HOOK_RET_VOID CmdStart(const edict_t* player, const struct usercmd_s* cmd, unsig
 		DEFAULT_HOOK_RETURN;
 	}
 
-	DemoUserCmdData& dcmd = g_usercmds[g_usercmd_count];
+	int eidx = ENTINDEX(player) - 1;
+
+	DemoUserCmdData& dcmd = g_usercmds[eidx][g_usercmd_count[eidx]];
 	memset(&dcmd, 0, sizeof(DemoUserCmdData));
 
-	dcmd.playerindex = ENTINDEX(player);
 	dcmd.lerp_msec = cmd->lerp_msec;
 	dcmd.msec = cmd->msec;
 	dcmd.viewangles[0] = normalizeRangef(cmd->viewangles[0], 0, 360.0f) * (65535.0f / 360.0f);
@@ -837,10 +838,10 @@ HOOK_RET_VOID CmdStart(const edict_t* player, const struct usercmd_s* cmd, unsig
 	dcmd.impulse = cmd->impulse;
 	dcmd.weaponselect = cmd->weaponselect;
 
-	g_usercmd_count++;
-	if (g_usercmd_count >= MAX_USERCMD_FRAME) {
-		ALERT(at_console, "usercmd capture overflow!\n");
-		g_usercmd_count--; // overwrite last event
+	g_usercmd_count[eidx]++;
+	if (g_usercmd_count[eidx] >= MAX_USERCMD_FRAME) {
+		ALERT(at_console, "usercmd capture overflow for player %d!\n", eidx);
+		g_usercmd_count[eidx]--; // overwrite last event
 	}
 
 	DEFAULT_HOOK_RETURN;
@@ -938,7 +939,9 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_netmessages = new NetMessageData[MAX_NETMSG_FRAME];
 	g_cmds = new CommandData[MAX_CMD_FRAME];
 	g_events = new DemoEventData[MAX_EVENT_FRAME];
-	g_usercmds = new DemoUserCmdData[MAX_USERCMD_FRAME];
+
+	for (int i = 0; i < MAX_PLAYERS; i++)
+		g_usercmds[i] = new DemoUserCmdData[MAX_USERCMD_FRAME];
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 
 	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
