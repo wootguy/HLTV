@@ -132,15 +132,15 @@ bool netedict::matches(netedict& other) {
 		return false;
 	}
 	if (!FIXED_EQUALS(angles[0], other.angles[0], 24)) {
-		ALERT(at_console, "Mismatch angles[0]\n");
+		ALERT(at_console, "Mismatch angles[0] (%d != %d)\n", angles[0], other.angles[0]);
 		return false;
 	}
 	if (!FIXED_EQUALS(angles[1], other.angles[1], 24)) {
-		ALERT(at_console, "Mismatch angles[1]\n");
+		ALERT(at_console, "Mismatch angles[1] (%d != %d)\n", angles[1], other.angles[1]);
 		return false;
 	}
 	if (!FIXED_EQUALS(angles[2], other.angles[2], 24)) {
-		ALERT(at_console, "Mismatch angles[2]\n");
+		ALERT(at_console, "Mismatch angles[2] (%d != %d)\n", angles[2], other.angles[2]);
 		return false;
 	}
 
@@ -280,9 +280,9 @@ void netedict::load(const edict_t& ed) {
 		origin[0] = FLOAT_TO_FIXED(ed.v.origin[0], 19, 5);
 		origin[1] = FLOAT_TO_FIXED(ed.v.origin[1], 19, 5);
 		origin[2] = FLOAT_TO_FIXED(ed.v.origin[2], 19, 5);
-		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (255.0f / 360.0f));
-		angles[1] = (uint16_t)(normalizeRangef(vars.v_angle.y, 0, 360) * (255.0f / 360.0f));
-		angles[2] = (uint16_t)(normalizeRangef(vars.v_angle.z, 0, 360) * (255.0f / 360.0f));
+		angles[0] = (uint16_t)(normalizeRangef(vars.v_angle.x, 0, 360) * (65535.0f / 360.0f));
+		angles[1] = (uint16_t)(normalizeRangef(vars.v_angle.y, 0, 360) * (65535.0f / 360.0f));
+		angles[2] = (uint16_t)(normalizeRangef(vars.v_angle.z, 0, 360) * (65535.0f / 360.0f));
 		etype = ETYPE_PLAYER;
 	}
 	else if (ed.v.flags & FL_CUSTOMENTITY) {
@@ -589,7 +589,7 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 			
 		}
 
-		const float angleConvert = (360.0f / 255.0f);
+		const float angleConvert = etype == ETYPE_PLAYER ? (360.0f / 65535.0f) : (360.0f / 255.0f);
 		vars.angles = Vector((float)angles[0] * angleConvert, (float)angles[1] * angleConvert, (float)angles[2] * angleConvert);
 	}
 
@@ -662,6 +662,7 @@ void netedict::applyPlayer(CBasePlayer* plr) {
 	plr->pev->armorvalue = armorvalue;
 	plr->pev->view_ofs.z = view_ofs / 16.0f;
 	plr->pev->deadflag = deadFlag;
+	plr->m_iFOV = fov;
 
 	edict_t* specViewEnt = plr->edict();
 	if (viewEnt) {
@@ -729,8 +730,8 @@ bool netedict::readDeltas(mstream& reader) {
 				g_stats.entDeltaCatSz[FL_DELTA_CAT_ORIGIN] += 10;
 			}
 			else if (coordSz == 2) {
-				origin[i] += SIGN_EXTEND_FIXED(reader.readBits(14), 14);
-				g_stats.entDeltaCatSz[FL_DELTA_CAT_ORIGIN] += 16;
+				origin[i] += SIGN_EXTEND_FIXED(reader.readBits(12), 12);
+				g_stats.entDeltaCatSz[FL_DELTA_CAT_ORIGIN] += 14;
 			}
 			else if (coordSz == 3) {
 				origin[i] = reader.readBits(32);
@@ -743,11 +744,46 @@ bool netedict::readDeltas(mstream& reader) {
 	if (etype && reader.readBit()) {
 		deltaBitsLast |= FL_DELTA_ANGLES_CHANGED;
 
-		bool bigAngles = reader.readBit();
-
 		for (int i = 0; i < 3; i++) {
-			if (bigAngles) {
-				READ_DELTA(FL_DELTA_CAT_ANGLES, angles[i], 32);
+			if (etype == ETYPE_BEAM) {
+				uint8_t coordSz = reader.readBits(2);
+
+				if (coordSz == 0) {
+					continue;
+				}
+				else if (coordSz == 1) {
+					angles[i] += SIGN_EXTEND_FIXED(reader.readBits(8), 8);
+					g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 10;
+				}
+				else if (coordSz == 2) {
+					angles[i] += SIGN_EXTEND_FIXED(reader.readBits(12), 12);
+					g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 16;
+				}
+				else if (coordSz == 3) {
+					angles[i] = reader.readBits(32);
+					g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 34;
+				}
+			}
+			else if (etype == ETYPE_PLAYER) {
+				uint8_t coordSz = reader.readBits(2);
+
+				if (coordSz == 0) {
+					continue;
+				}
+				else if (coordSz == 1) { // for small movements
+					int32_t d = SIGN_EXTEND_FIXED(reader.readBits(8), 8);
+					angles[i] = (uint16_t)((int32_t)angles[i] + d);
+					g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 10;
+				}
+				else if (coordSz == 2) {
+					int32_t d = SIGN_EXTEND_FIXED(reader.readBits(12), 12);
+					angles[i] = (uint16_t)((int32_t)angles[i] + d);
+					g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 14;
+				}
+				else {
+					angles[i] = reader.readBits(16);
+					g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 18;
+				}
 			}
 			else {
 				READ_DELTA(FL_DELTA_CAT_ANGLES, angles[i], 8);
@@ -936,8 +972,8 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 				}
 				else if (abs(d) < 2048) { // can handle the speed of rockets and gauss jumps
 					writer.writeBits(2, 2);
-					writer.writeBits(d, 14);
-					g_stats.entDeltaCatSz[FL_DELTA_CAT_ORIGIN] += 16;
+					writer.writeBits(d, 12);
+					g_stats.entDeltaCatSz[FL_DELTA_CAT_ORIGIN] += 14;
 				}
 				else {
 					writer.writeBits(3, 2);
@@ -960,12 +996,54 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 		if (anglesChanged) {
 			wroteAnyDeltas = true;
 
-			bool bigAngles = etype == ETYPE_BEAM;
-			writer.writeBit(bigAngles);
-
 			for (int i = 0; i < 3; i++) {
-				if (bigAngles) {
-					WRITE_DELTA_SINGLE(FL_DELTA_CAT_ANGLES, angles[i], 32);
+
+				if (etype == ETYPE_BEAM) {
+					int32_t d = angles[i] - old.angles[i];
+
+					if (d == 0) {
+						writer.writeBits(0, 2);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 2;
+					}
+					else if (abs(d) < 128) {
+						writer.writeBits(1, 2);
+						writer.writeBits(d, 8);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 10;
+					}
+					else if (abs(d) < 2048) {
+						writer.writeBits(2, 2);
+						writer.writeBits(d, 12);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 16;
+					}
+					else {
+						writer.writeBits(3, 2);
+						writer.writeBits(angles[i], 32);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 34;
+					}
+				}
+				else if (etype == ETYPE_PLAYER) {
+					// shortest addition to reach target, accounting for underflow/overflow of uint16
+					int32_t d = ((((angles[i] - old.angles[i]) % 65536) + 98304) % 65536) - 32768;
+
+					if (d == 0) {
+						writer.writeBits(0, 2);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 2;
+					}
+					else if (abs(d) < 128) {
+						writer.writeBits(1, 2);
+						writer.writeBits(d, 8);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 10;
+					}
+					else if (abs(d) < 2048) {
+						writer.writeBits(2, 2);
+						writer.writeBits(d, 12);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 14;
+					}
+					else {
+						writer.writeBits(3, 2);
+						writer.writeBits(angles[i], 16);
+						g_stats.entDeltaCatSz[FL_DELTA_CAT_ANGLES] += 18;
+					}
 				}
 				else {
 					WRITE_DELTA_SINGLE(FL_DELTA_CAT_ANGLES, angles[i], 8);
