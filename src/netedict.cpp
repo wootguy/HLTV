@@ -211,7 +211,7 @@ bool netedict::matches(netedict& other) {
 }
 
 void netedict::load(const edict_t& ed) {
-	entvars_t vars = ed.v;
+	const entvars_t& vars = ed.v;
 
 	bool isValid = false;
 
@@ -383,8 +383,8 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 	punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
 	punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
 	punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
-	viewmodel = MODEL_INDEX(g_precachedModels.find(vmodel) != g_precachedModels.end() ? vmodel : NOT_PRECACHED_MODEL);
-	weaponmodel = MODEL_INDEX(g_precachedModels.find(pmodel) != g_precachedModels.end() ? pmodel : NOT_PRECACHED_MODEL);
+	viewmodel = pmodel[0] ? MODEL_INDEX(STRING(ent->v.viewmodel)) : PLR_NO_WEAPON_MODEL;
+	weaponmodel = vmodel[0] ? MODEL_INDEX(STRING(ent->v.weaponmodel)) : PLR_NO_WEAPON_MODEL;
 	weaponanim = ent->v.weaponanim;
 	view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
 	specMode = ent->v.iuser1;
@@ -392,13 +392,6 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 	viewEnt = plr->m_hViewEntity ? ENTINDEX(plr->m_hViewEntity.GetEdict()) : 0;
 	deadFlag = ent->v.deadflag;
 	button = (plr->m_afButtonLast | plr->m_afButtonPressed | plr->m_afButtonReleased | ent->v.button) & 0xffff;
-
-	if (pmodel[0] == '\0') {
-		weaponmodel = PLR_NO_WEAPON_MODEL;
-	}
-	if (vmodel[0] == '\0') {
-		viewmodel = PLR_NO_WEAPON_MODEL;
-	}
 
 	CBasePlayerWeapon* wep = plr->m_pActiveItem ? plr->m_pActiveItem->GetWeaponPtr() : NULL;
 
@@ -431,12 +424,16 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 		fireState = 0;
 	}
 
-	char* info = g_engfuncs.pfnGetInfoKeyBuffer(ent);
-	char* infomodel = g_engfuncs.pfnInfoKeyValue(info, "model");
-	topColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "topcolor"));
-	bottomColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "bottomcolor"));
-	strcpy_safe(model, infomodel, 23);
-	strcpy_safe(name, plr->DisplayName(), 32);
+	int eidx = ENTINDEX(ent);
+	if (g_userInfoDirty[eidx]) {
+		char* info = g_engfuncs.pfnGetInfoKeyBuffer(ent);
+		char* infomodel = g_engfuncs.pfnInfoKeyValue(info, "model");
+		topColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "topcolor"));
+		bottomColor = atoi(g_engfuncs.pfnInfoKeyValue(info, "bottomcolor"));
+		strcpy_safe(model, infomodel, 23);
+		strcpy_safe(name, plr->DisplayName(), 32);
+		g_userInfoDirty[eidx] = false;
+	}
 
 	if (gpGlobals->time - lastPingTime >= 1.0f) {
 		lastPingTime = gpGlobals->time;
