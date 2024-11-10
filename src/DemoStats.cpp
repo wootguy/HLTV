@@ -2,6 +2,8 @@
 #include "main.h"
 #include "netedict.h"
 #include "DemoFile.h"
+#include "DemoPlayer.h"
+#include "SvenTV.h"
 
 string getMessageName(int messageType) {
 #ifndef HLCOOP_BUILD
@@ -137,13 +139,24 @@ void DemoStats::showStats(edict_t* edt) {
 	string cmdTotal = formatSize(g_stats.cmdTotalSz);
 	string totalSz = formatSize(g_stats.totalWriteSz);
 
-	string txt = UTIL_VarArgs("Demo (%s, %u, %d+%d ms):\n", totalSz.c_str(), g_stats.currentWriteSz, g_copyTime, g_thinkTime);
+	bool recording = !g_demoPlayer->isPlaying();
+	string txt;
+	
+	if (recording)
+		txt = UTIL_VarArgs("Demo (%s, %s, %d+%d ms):\n", totalSz.c_str(),
+			formatTime(g_sventv->getRecordingTime() / 1000).c_str(), g_copyTime, g_thinkTime);
+	else
+		txt = UTIL_VarArgs("Demo (%s):\n", totalSz.c_str());
+
 	txt += UTIL_VarArgs("ent: %s (%d)\n", entTotal.c_str(), g_stats.entDeltaCurrentSz);
 	txt += UTIL_VarArgs("hdr: %s (%d, %d, %d)\n", hdrTotal.c_str(), g_stats.giantFrameCount, g_stats.bigFrameCount, g_stats.frameCount- g_stats.bigFrameCount);
 	txt += UTIL_VarArgs("msg: %s (%d)\n", msgTotal.c_str(), g_stats.msgCurrentSz);
 	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);
 	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCount);
-	txt += UTIL_VarArgs("str: %d / %d\n", g_stringpool_idx, STRING_POOL_SIZE);
+
+	if (recording) {
+		txt += UTIL_VarArgs("str: %d / %d\n", g_stringpool_idx, STRING_POOL_SIZE);
+	}
 
 	UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 

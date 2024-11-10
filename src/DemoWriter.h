@@ -25,6 +25,9 @@ public:
 
 	void compressDemo(std::string inPath, std::string outPath);
 
+	// get millis since recording started
+	uint32_t getRecordingTime();
+
 private:
 	std::thread* compress_thread = NULL;
 	void compressNetMessage(FrameData& frame, NetMessageData& msg);

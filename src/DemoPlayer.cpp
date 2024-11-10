@@ -132,19 +132,6 @@ void show_message(edict_t* plr, int mode, const char* msg) {
 		g_engfuncs.pfnServerPrint(msg);
 }
 
-std::string formatTime(int seconds, bool forceHours=false) {
-	int hours = seconds / (60 * 60);
-	int minutes = (seconds - (hours * 60 * 60)) / 60;
-	int s = seconds % 60;
-
-	if (hours > 0) {
-		return UTIL_VarArgs("%02d:%02d:%02d", hours, minutes, s);
-	}
-	else {
-		return UTIL_VarArgs("%02d:%02d", minutes, s);
-	}
-}
-
 bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache) {
 	this->offsetSeconds = offsetSeconds;
 	stopReplay();
@@ -338,6 +325,7 @@ void DemoPlayer::prepareDemo() {
 			//if (ent && strlen(STRING(ent->v.classname)) > 0 && (!ent->v.aiment || (ent->v.aiment->v.flags & FL_CLIENT) == 0)) {
 			if (ent && strlen(STRING(ent->v.classname)) > 0) {
 				REMOVE_ENTITY(ent);
+				ent->freetime = 0; // allow using this slow immediately
 			}
 		}
 	}
@@ -351,6 +339,7 @@ void DemoPlayer::prepareDemo() {
 			int flags = ent->v.flags;
 			if ((flags & FL_CLIENT) == 0 && (flags & FL_MONSTER) != 0) {
 				REMOVE_ENTITY(ent);
+				ent->freetime = 0; // allow using this slow immediately
 			}
 		}
 	}
@@ -422,7 +411,8 @@ void DemoPlayer::closeReplayFile() {
 			KickPlayer(ent);
 		}
 		else {
-			REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+			REMOVE_ENTITY(ent);
+			ent->freetime = 0; // allow using this slow immediately
 		}			
 	}
 	replayEnts.clear();
@@ -604,8 +594,10 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 
 		if (bot) {
 			int eidx = ENTINDEX(bot);
-			if (ent && !(ent->v.flags & FL_CLIENT))
+			if (ent && !(ent->v.flags & FL_CLIENT)) {
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+				replayEnts[i].h_ent.GetEdict()->freetime = 0;
+			}
 
 			bot->v.flags |= FL_FAKECLIENT;
 			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
@@ -645,6 +637,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			}
 			else {
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+				replayEnts[i].h_ent.GetEdict()->freetime = 0;
 			}
 		}
 
@@ -665,6 +658,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			}
 			else {
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+				replayEnts[i].h_ent.GetEdict()->freetime = 0;
 			}
 		}
 
@@ -698,6 +692,7 @@ bool DemoPlayer::createReplayEntities(int count) {
 			ALERT(at_console, "Entity overflow at %d\n", (int)replayEnts.size());
 			for (int i = 0; i < (int)replayEnts.size(); i++) {
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+				replayEnts[i].h_ent.GetEdict()->freetime = 0;
 			}
 			closeReplayFile();
 			return false;
@@ -717,7 +712,7 @@ bool DemoPlayer::createReplayEntities(int count) {
 void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 	InterpInfo& interp = replayEnts[i].interp;
 
-	if (fileedicts[i].deltaBitsLast & FL_DELTA_ETYPE_CHANGED) {
+	if ((fileedicts[i].deltaBitsLast & FL_DELTA_ETYPE_CHANGED) || wasSeeking) {
 		// entity type changed. Don't interpolate first frame
 		interp.originStart = interp.originEnd = ent->v.origin;
 		interp.anglesStart = interp.anglesEnd = ent->v.angles;
@@ -797,11 +792,14 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 
 				CBaseEntity* ent = replayEnts[i].h_ent;
 				if (ent) {
+					edict_t* ed = ent->edict();
+
 					if (ent->IsPlayer()) {
-						KickPlayer(ent->edict());
+						KickPlayer(ed);
 					}
 					else {
-						UTIL_Remove(ent);
+						REMOVE_ENTITY(ed);
+						ed->freetime = 0; // allow using this slow immediately
 					}
 				}
 			}
@@ -1310,6 +1308,8 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		if (!validate && !convReplaySoundIdx(*sound_num)) {
 			return -1;
 		}
+		if (!validate)
+			convReplayEntIdx(args, 10, msg.sz);
 		return 1;
 	}
 	case SVC_STUFFTEXT:
@@ -1805,24 +1805,31 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate, boo
 		reader.read(commandChars, cmd.len);
 		commandChars[cmd.len] = '\0';
 
-		if (seeking) {
-			continue;
-		}
+		bool isSearchResult = cmdSearchStr.size() && strstr(commandChars, cmdSearchStr.c_str());
+		string resultPos = isSearchResult ? formatTime((lastFrameDemoTime / 1000) - 1) : "";
 
 		if (cmd.idx > demoHeader.maxPlayers) {
-			ALERT(at_console, "Invalid command player %d / %d\n", (int)cmd.idx, (int)demoHeader.maxPlayers);
+			if (!seeking)
+				ALERT(at_console, "Invalid command player %d / %d\n", (int)cmd.idx, (int)demoHeader.maxPlayers);
 			if (validate) return false;
 			continue;
 		}
+
 		if (cmd.idx == 0) {
-			if (!validate)
-				ALERT(at_console, "[SvenTV][Cmd][Server] %s\n", commandChars);
+			if (!validate) {
+				if (!seeking)
+					ALERT(at_console, "[Cmd][Server] %s\n", commandChars);
+				if (isSearchResult) {
+					searchResults.push_back(UTIL_VarArgs(".replay %s = [Server] %s\n", resultPos.c_str(), commandChars));
+				}
+			}
+				
 			continue;
 		}
 
 		netedict& plr = fileedicts[cmd.idx];
 
-		const char* legacySteamId = "STEAM_ID_INVALID";
+		string legacySteamId = "STEAM_ID_INVALID";
 		if (plr.steamid64 == 1ULL) {
 			legacySteamId = "STEAM_ID_LAN";
 		}
@@ -1836,7 +1843,12 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate, boo
 		}
 
 		if (!validate) {
-			ALERT(at_console, "[Cmd][%s][%s] %s\n", legacySteamId, plr.name, commandChars);
+			if (!seeking)
+				ALERT(at_console, "[Cmd][%s][%s] %s\n", legacySteamId.c_str(), plr.name, commandChars);
+			
+			if (isSearchResult) {
+				searchResults.push_back(UTIL_VarArgs(".replay %s = [%s] %s\n", resultPos.c_str(), plr.name, commandChars));
+			}
 		}
 	}
 
@@ -1858,6 +1870,31 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 
 	DemoFrame header;
 	if (!replayData->read(&header, sizeof(DemoFrame))) {
+		if (cmdSearchStr.size()) {
+
+			if (searchResults.size()) {
+				show_message(searchingPlayer, print_chat, 
+					UTIL_VarArgs("[HLTV] Found %d command uses with string '%s' (check console).\n",
+					searchResults.size(), cmdSearchStr.c_str()));
+			
+				show_message(searchingPlayer, print_console, "\nSearch results are below. Run one of the .replay commands to seek.\n");
+				for (const string& result : searchResults) {
+					show_message(searchingPlayer, print_console, UTIL_VarArgs("    %s", result.c_str()));
+				}
+				show_message(searchingPlayer, print_console, "\n");
+			}
+			else {
+				show_message(searchingPlayer, print_chat, 
+					UTIL_VarArgs("[HLTV] No commands found with string '%s'\n", cmdSearchStr.c_str()));
+			}
+			
+			cmdSearchStr = "";
+			searchingPlayer = NULL;
+			searchResults.clear();
+			seek(0, false);
+			return false;
+		}
+
 		closeReplayFile();
 		if (demoHeader.startTime + lastFrameDemoTime == demoHeader.endTime)
 			UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] End of demo\n");
@@ -1948,6 +1985,8 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		fileedicts[i].deltaBitsLast = 0;
 	}
 
+	static bool wasSeeking = false;
+
 	double fileTime = demoTime / 1000.0;
 	double viewTime = t / 1000.0;
 	bool seeking = !validate && (fileTime + (1.0f / demoFileFps) * 10 < viewTime);
@@ -1979,6 +2018,8 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		delete[] frameData;
 		return false;
 	}
+
+	wasSeeking = seeking;
 
 	g_stats.incTotals();
 
@@ -2343,6 +2384,7 @@ void DemoPlayer::seek(int offsetSeconds, bool relative) {
 			}
 			else {
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+				replayEnts[i].h_ent.GetEdict()->freetime = 0;
 			}
 		}
 		replayEnts.clear();
@@ -2408,4 +2450,33 @@ void DemoPlayer::OverrideClientData(const edict_t* ent, int sendweapons, clientd
 	int originalEntIdx = pl->m_hObserverTarget.GetEdict()->v.iuser4;
 
 	cd->m_iId = fileedicts[originalEntIdx].weaponId;
+}
+
+void DemoPlayer::searchCommand(edict_t* searcher, string searchStr) {
+	if (!replayData) {
+		string path = g_demo_file_path->string + string(STRING(gpGlobals->mapname)) + ".demo";
+		g_demoPlayer->stopReplay();
+		g_demoPlayer->prepareDemo();
+		g_demoPlayer->openDemo(searcher, path, 0, true);
+	}
+	if (trimSpaces(searchStr).empty()) {
+		ALERT(at_console, "Can't search for an empty string.\n");
+		return;
+	}
+
+	replayData->seek(firstFrameOffset); // start from the beginning then fast-forward
+	lastFrameDemoTime = 0;
+	replayFrame = 0;
+	nextFrameOffset = replayData ? replayData->tell() : 0;
+	nextFrameTime = 0;
+
+	memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
+	replayStartTime = 0; // seek to the end
+	
+	cmdSearchStr = searchStr;
+	searchingPlayer = searcher;
+}
+
+uint32_t DemoPlayer::getPlaybackTime() {
+	return (getEpochMillis() - replayStartTime) * replaySpeed;
 }

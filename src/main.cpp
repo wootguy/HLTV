@@ -138,6 +138,19 @@ uint16_t getPoolOffsetForString(string_t classname) {
 	return ret;
 }
 
+std::string formatTime(int seconds, bool forceHours) {
+	int hours = seconds / (60 * 60);
+	int minutes = (seconds - (hours * 60 * 60)) / 60;
+	int s = seconds % 60;
+
+	if (hours > 0) {
+		return UTIL_VarArgs("%02d:%02d:%02d", hours, minutes, s);
+	}
+	else {
+		return UTIL_VarArgs("%02d:%02d", minutes, s);
+	}
+}
+
 HOOK_RET_VOID ClientLeaveHook(edict_t* ent) {
 	demoStatPlayers[ENTINDEX(ent)] = false;
 	
@@ -456,26 +469,40 @@ HOOK_RET_VOID WriteString(const char* s) {
 	DEFAULT_HOOK_RETURN;
 }
 
-void begin_replay(edict_t* ed, std::string path, int offsetSeconds) {
-	g_demoPlayer->openDemo(ed, path, offsetSeconds, true);
-}
-
 void replay_demo(edict_t* plr) {
 	CommandArgs args = CommandArgs();
 	args.loadArgs();
 
-	string path = g_demo_file_path->string + args.ArgV(1);
-	if (args.ArgV(1).empty()) {
+	string path = g_demo_file_path->string + args.ArgV(2);
+	if (args.ArgV(2).empty()) {
 		path += string(STRING(gpGlobals->mapname)) + ".demo";
 	}
-	float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
+
+	float offsetSeconds = 0;
+	if (args.ArgC() > 1) {
+		string offsetArg = args.ArgV(1);
+
+		if (offsetArg.find(":") != string::npos) {
+			vector<string> parts = splitString(offsetArg, ":");
+
+			if (parts.size() > 2) {
+				int hours = atoi(parts[0].c_str());
+				int mins = atoi(parts[1].c_str());
+				offsetSeconds = atoi(parts[2].c_str()) + mins*60 + hours*60*60;
+			}
+			else if (parts.size() == 2) {
+				int mins = atoi(parts[0].c_str());
+				offsetSeconds = atoi(parts[1].c_str()) + mins*60;
+			}
+		}
+		else {
+			offsetSeconds = atof(offsetArg.c_str());
+		}
+	}
 
 	g_demoPlayer->stopReplay();
 	g_demoPlayer->prepareDemo();
-
-	static ScheduledFunction sched;
-	g_Scheduler.RemoveTimer(sched);
-	sched = g_Scheduler.SetTimeout(begin_replay, 0.5f, plr, path, offsetSeconds);
+	g_demoPlayer->openDemo(plr, path, offsetSeconds, true);
 	
 	g_sventv->enableDemoFile = false;
 }
@@ -521,6 +548,10 @@ bool doCommand(edict_t* plr) {
 		float speed = atof(args.ArgV(1).c_str());
 		g_demoPlayer->setPlaybackSpeed(speed);
 		UTIL_ClientPrintAll(print_center, UTIL_VarArgs("Playback speed: %.2fx\n", speed));
+		return true;
+	}
+	if (args.ArgC() > 0 && lowerArg == ".search") {
+		g_demoPlayer->searchCommand(plr, args.ArgV(1));
 		return true;
 	}
 	/*

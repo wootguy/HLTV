@@ -61,6 +61,8 @@ using namespace std;
 
 extern bool g_compressMessages; // for debugging
 
+std::string formatTime(int seconds, bool forceHours = false);
+
 uint16_t getPoolOffsetForString(string_t classname);
 
 void MapInit(edict_t* pEdictList, int edictCount, int maxClients);
