@@ -2045,11 +2045,16 @@ inline float lerp(float start, float end, float t) {
 	return start + (end - start) * t;
 }
 
-inline int anglelerp16(int start, int end, float t) {
+inline float anglelerpf(float start, float end, float t) {
 	// 65536 = 360 deg
-	int shortest_angle = ((((end - start) % 65536) + 98304) % 65536) - 32768;
+	int istart = start * (65535.0f / 360.0f);
+	int iend = end * (65535.0f / 360.0f);
 
-	return start + shortest_angle * t;
+	int ishortest_angle = ((((iend - istart) % 65536) + 98304) % 65536) - 32768;
+	float shortest_angle = (float)ishortest_angle * (360.0f / 65535.0f);
+
+	float ret = start + shortest_angle * t;
+	return ret;
 }
 
 inline int anglelerp(int start, int end, float t) {
@@ -2112,9 +2117,9 @@ void DemoPlayer::interpolateEdicts() {
 		else {
 			ent->v.origin = lerp(interp.originStart, interp.originEnd, frameProgress);
 
-			ent->v.angles[0] = anglelerp(interp.anglesStart[0], interp.anglesEnd[0], frameProgress);
-			ent->v.angles[1] = anglelerp(interp.anglesStart[1], interp.anglesEnd[1], frameProgress);
-			//ent->v.angles[2] = anglelerp(interp.anglesStart[2], interp.anglesEnd[1], frameProgress);
+			ent->v.angles[0] = anglelerpf(interp.anglesStart[0], interp.anglesEnd[0], frameProgress);
+			ent->v.angles[1] = anglelerpf(interp.anglesStart[1], interp.anglesEnd[1], frameProgress);
+			//ent->v.angles[2] = anglelerpf(interp.anglesStart[2], interp.anglesEnd[1], frameProgress);
 
 			// fixes hud info
 			g_engfuncs.pfnSetOrigin(ent, ent->v.origin);
@@ -2126,7 +2131,7 @@ void DemoPlayer::interpolateEdicts() {
 				}
 				else {
 					// bot code sets gait/blends automatically
-					ent->v.angles.x = normalizeRangef(ent->v.angles.x, -180.0f, 180.0f) * -0.33f;
+					ent->v.angles.x = normalizeRangef(ent->v.angles.x, -180.0f, 180.0f) * -0.3333f;
 				}
 			}
 		}
@@ -2450,6 +2455,7 @@ void DemoPlayer::OverrideClientData(const edict_t* ent, int sendweapons, clientd
 	int originalEntIdx = pl->m_hObserverTarget.GetEdict()->v.iuser4;
 
 	cd->m_iId = fileedicts[originalEntIdx].weaponId;
+	cd->fov = fileedicts[originalEntIdx].fov;
 }
 
 void DemoPlayer::searchCommand(edict_t* searcher, string searchStr) {
