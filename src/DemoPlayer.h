@@ -29,11 +29,9 @@
 // - NetMessage compression is WIP and broke replays or isn't working I forget
 
 // optimize ideas:
-// - 1-2byte deltaidx for players
 // - init framerate to 16
-// - simpler startSound message
-// - fewer startsound messages for apache
-// - 1-2byte delta for health
+// - predict angle from avelocity
+// - predict origin from velocity
 
 struct InterpInfo {
 	Vector originStart;
@@ -87,6 +85,7 @@ struct DemoDataTest {
 	uint32_t msgCount;
 	uint32_t evtCount;
 	uint32_t cmdCount;
+	uint32_t usrCount;
 	bool success;
 
 	int entDeltaSz[ABSOLUTE_MAX_EDICTS]; // hopefully big enough
@@ -186,6 +185,7 @@ private:
 	bool readPlayerDeltas(mstream& reader, DemoDataTest* validate = NULL);
 	bool readNetworkMessages(mstream& reader, DemoDataTest* validate=NULL, bool seeking=false); // only validate if given a validate arg
 	bool readEvents(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
+	bool readUserCmds(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
 	bool readClientCommands(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
 	
 	// converts a simulated entity into a class best suited for the demo entity

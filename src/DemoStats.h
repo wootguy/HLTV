@@ -30,6 +30,10 @@ struct DemoStats {
 	uint32_t eventCount; // number of events sent
 	uint32_t evtSize[256];
 
+	uint32_t usercmdTotalSz;
+	uint32_t usercmdCurrentSz;
+	uint32_t usercmdCount; // number of usercmds sent
+
 	uint32_t cmdTotalSz;
 	uint32_t cmdCurrentSz;
 	uint32_t cmdCount; // number of commands sent

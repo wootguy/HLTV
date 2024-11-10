@@ -45,6 +45,7 @@ inline bool FIXED_EQUALS(int x, int y, int totalBits) {
 #define MAX_NETMSG_FRAME 512 // max network messages per frame
 #define MAX_NETMSG_DATA 2048 // max bytes before overflow message from game
 #define MAX_CMD_LENGTH 128
+#define MAX_USERCMD_FRAME 8192 // max user cmds per frame (should be high for speedhackers)
 #define KEYFRAME_INTERVAL 60ULL // seconds between keyframes in demo files
 
 #define DEMO_VERSION 1 // version number written to demo files for compatibility check (0-65535)
@@ -83,7 +84,6 @@ struct DemoCommand {
 	// byte[] = command bytes
 };
 
-
 struct DemoFrame {
 	uint8_t isKeyFrame : 1; // if true, zero out entity and player info for a full update
 	uint8_t isGiantFrame : 1; // time delta or frame size does not fit in a BigFrame
@@ -92,6 +92,7 @@ struct DemoFrame {
 	uint8_t hasNetworkMessages : 1;
 	uint8_t hasEvents : 1;
 	uint8_t hasCommands : 1;
+	uint8_t hasUsercmds : 1;
 	uint8_t deltaFrames; // server frames since last demoFrame (for server fps)
 	// if isGiantFrame:
 	//     uint32_t demoTime = milliseconds since recording started
@@ -178,6 +179,42 @@ struct DemoEventData {
 	int16_t iparam2;
 };
 
+/*
+struct DemoUserCmd {
+	uint8_t	has_lerp_msec : 1;      // Interpolation time on client
+	uint8_t	has_msec : 1;           // Duration in ms of command
+	uint8_t	has_viewangles_x : 1;     // Command view angles.
+	uint8_t	has_viewangles_y : 1;     // Command view angles.
+	uint8_t	has_viewangles_z : 1;     // Command view angles.
+	uint8_t	has_forwardmove : 1;    // Forward velocity.
+	uint8_t	has_sidemove : 1;       // Sideways velocity.
+	uint8_t	has_upmove : 1;         // Upward velocity.
+	
+	uint8_t	has_lightlevel : 1;     // Light level at spot where we are standing.
+	uint8_t has_buttons : 1;		// Attack buttons
+	uint8_t has_impulse : 1;		// Impulse command issued.
+	uint8_t	has_weaponselect : 1;	// Current weapon id
+
+	// if has_lep_msec:
+	//    short = lerp_msec
+	// ...
+};
+*/
+
+struct DemoUserCmdData {
+	uint8_t		playerindex;	// player that sent the command
+	int16_t		lerp_msec;      // Interpolation time on client
+	uint8_t		msec;           // Duration in ms of command
+	uint16_t	viewangles[3];	// Command view angles (0-360.0f scaled to 0-65535)
+	float		forwardmove;    // Forward velocity.
+	float		sidemove;       // Sideways velocity.
+	float		upmove;         // Upward velocity.
+	uint8_t		lightlevel;     // Light level at spot where we are standing.
+	uint16_t	buttons;		// Attack buttons
+	uint8_t		impulse;        // Impulse command issued.
+	uint8_t		weaponselect;	// Current weapon id
+};
+
 // File layout:
 // DemoHeader
 // DemoFrame[]
@@ -187,18 +224,18 @@ struct DemoEventData {
 // if hasEntityDeltas:
 //     uint16 = count of entity deltas
 //     byte[] = deltas
-// if hasPlayerDeltas:
-//     uint32 = bitfield of included deltas (count of bits = count of deltas)
-//     DemoPlayerDelta[]
 // if hasNetworkMessages:
-//     uint16 = count of DemoNetMessage[]
+//     uint16 = count of DemoNetMessage
 //     DemoNetMessage[]
 // if hasEvents:
-//     uint8 = count of DemoEvent[]
+//     uint8 = count of DemoEvent
 //     DemoEvent[]
 // if hasCommands:
-//     uint8 = count of DemoCommand[]
+//     uint8 = count of DemoCommand
 //     DemoCommand[]
+// if hasUserCmds:
+//		uint16_t = count of usercmds
+//		DemoUserCmd[]
 
 #pragma pack(pop)
 
@@ -208,9 +245,11 @@ struct FrameData {
 	NetMessageData* netmessages;
 	CommandData* cmds;
 	DemoEventData* events;
+	DemoUserCmdData* usercmds;
 
 	uint32_t netmessage_count = 0;
 	uint32_t cmds_count = 0;
 	uint32_t event_count = 0;
+	uint32_t usercmd_count = 0;
 	uint32_t serverFrameCount = 0;
 };
