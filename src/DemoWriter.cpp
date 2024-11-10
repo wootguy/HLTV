@@ -635,6 +635,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (validateOutput) {
 		testData = new DemoDataTest;
 		testPlayer = new DemoPlayer();
+		testPlayer->isValidating = true;
 		memset(testData, 0, sizeof(DemoDataTest));
 		memcpy(testData->oldEntState, fileedicts, sizeof(netedict) * MAX_EDICTS);
 		memcpy(testPlayer->fileedicts, fileedicts, sizeof(netedict) * MAX_EDICTS);
@@ -793,6 +794,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 		testStream.seek(oldOffset);
 		g_stats = oldStats;
+		testPlayer->isValidating = true;
 		delete testData;
 		delete testPlayer;
 	}

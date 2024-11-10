@@ -470,6 +470,7 @@ void replay_demo(edict_t* plr) {
 	}
 	float offsetSeconds = args.ArgC() > 2 ? atof(args.ArgV(2).c_str()) : 0;
 
+	g_demoPlayer->stopReplay();
 	g_demoPlayer->prepareDemo();
 
 	static ScheduledFunction sched;

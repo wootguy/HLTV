@@ -13,7 +13,7 @@
 
 #define FL_DELTA_ORIGIN_CHANGED (1 << 0)
 #define FL_DELTA_ANGLES_CHANGED (1 << 1)
-#define FL_DELTA_FLAGS_CHANGED	(1 << 2)
+#define FL_DELTA_ETYPE_CHANGED	(1 << 2)
 #define FL_DELTA_ANIM_CHANGED	(1 << 4)
 
 class CBasePlayer;
