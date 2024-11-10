@@ -115,6 +115,7 @@ void DemoWriter::initDemoFile() {
 	}
 
 	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+	memset(g_userInfoDirty, 1, sizeof(bool) * 33);
 
 	fileDeltaBuffer = new char[fileDeltaBufferSize];
 

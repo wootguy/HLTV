@@ -26,6 +26,7 @@ plugin_info_t Plugin_info = {
 #else
 
 bool g_compressMessages = false;
+bool g_userInfoDirty[33];
 
 #define DEFAULT_HOOK_RETURN return HOOK_CONTINUE
 
@@ -209,6 +210,8 @@ HOOK_RET_VOID ClientUserInfoChangedHook(edict_t* pEntity, char* infobuffer) {
 	if (!IsValidPlayer(pEntity)) {
 		DEFAULT_HOOK_RETURN;
 	}
+
+	g_userInfoDirty[ENTINDEX(pEntity)] = true;
 
 	DEFAULT_HOOK_RETURN;
 }

@@ -61,6 +61,8 @@ using namespace std;
 
 extern bool g_compressMessages; // for debugging
 
+extern bool g_userInfoDirty[33];
+
 std::string formatTime(int seconds, bool forceHours = false);
 
 uint16_t getPoolOffsetForString(string_t classname);
