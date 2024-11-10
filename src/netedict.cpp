@@ -213,7 +213,14 @@ bool netedict::matches(netedict& other) {
 void netedict::load(const edict_t& ed) {
 	entvars_t vars = ed.v;
 
-	bool isValid = !ed.free && ed.pvPrivateData && (vars.effects & EF_NODRAW) == 0 && vars.modelindex;
+	bool isValid = false;
+
+	if (ed.v.flags & FL_CLIENT) {
+		isValid = IsValidPlayer((edict_t*)&ed);
+	}
+	else {
+		isValid = !ed.free && ed.pvPrivateData && (vars.effects & EF_NODRAW) == 0 && vars.modelindex;
+	}
 
 	if (!isValid) {
 		reset();
@@ -697,7 +704,7 @@ bool netedict::readDeltas(mstream& reader) {
 	deltaBitsLast = 0;
 
 	if (reader.readBit()) {
-		deltaBitsLast |= FL_DELTA_FLAGS_CHANGED;
+		deltaBitsLast |= FL_DELTA_ETYPE_CHANGED;
 		newtype = reader.readBits(3);
 		g_stats.entDeltaCatSz[FL_DELTA_CAT_EDFLAG] += 3;
 	}
@@ -705,6 +712,7 @@ bool netedict::readDeltas(mstream& reader) {
 	if ((!oldtype && newtype) || !newtype) {
 		// new entity created or old deleted. Start deltas from a fresh state.
 		reset();
+		deltaBitsLast |= FL_DELTA_ETYPE_CHANGED;
 	}
 
 	etype = newtype;

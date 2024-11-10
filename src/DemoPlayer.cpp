@@ -371,6 +371,7 @@ void DemoPlayer::prepareDemo() {
 	replayFrame = 0;
 	nextFrameOffset = replayData ? replayData->tell() : 0;
 	nextFrameTime = 0;
+	lastFrameDemoTime = 0;
 }
 
 void DemoPlayer::precacheLastDemo() {
@@ -387,6 +388,7 @@ void DemoPlayer::stopReplay() {
 	closeReplayFile();
 	replayModelPath.clear();
 	replayEnts.clear();
+	memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
 }
 
 bool DemoPlayer::isPlaying() {
@@ -408,9 +410,6 @@ void DemoPlayer::closeReplayFile() {
 		WRITE_STRING("stopsound\n");
 		MESSAGE_END();
 		UTIL_StopGlobalMp3();
-
-		// allow leave/join messages for bots in the hlcoop plugin
-		CVAR_SET_FLOAT("mp_leavejoin_msg", 2);
 	}
 
 	for (int i = 0; i < (int)replayEnts.size(); i++) {
@@ -442,6 +441,9 @@ void DemoPlayer::closeReplayFile() {
 			g_engfuncs.pfnSetClientKeyValue(i, infoBuffer, "name", (char*)oldPlayerNames[i - 1].c_str());
 		}
 	}
+
+	// allow leave/join messages for bots in the hlcoop plugin
+	CVAR_SET_FLOAT("mp_leavejoin_msg", 2);
 }
 
 bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
@@ -602,9 +604,12 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 
 		if (bot) {
 			int eidx = ENTINDEX(bot);
-			if (ent)
+			if (ent && !(ent->v.flags & FL_CLIENT))
 				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
+
+			bot->v.flags |= FL_FAKECLIENT;
 			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot); // for scoreboard and HUD info only
+
 			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "name", info.name);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
@@ -620,7 +625,6 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			bot->v.takedamage = DAMAGE_NO;
 			bot->v.movetype = MOVETYPE_NOCLIP;
 			bot->v.solid = SOLID_SLIDEBOX;
-			bot->v.flags |= FL_FAKECLIENT;
 
 			CBasePlayer* plr = (CBasePlayer*)CBaseEntity::Instance(bot);
 			plr->m_isObserver = false;
@@ -713,7 +717,7 @@ bool DemoPlayer::createReplayEntities(int count) {
 void DemoPlayer::setupInterpolation(edict_t* ent, int i) {
 	InterpInfo& interp = replayEnts[i].interp;
 
-	if (fileedicts[i].deltaBitsLast & FL_DELTA_FLAGS_CHANGED) {
+	if (fileedicts[i].deltaBitsLast & FL_DELTA_ETYPE_CHANGED) {
 		// entity type changed. Don't interpolate first frame
 		interp.originStart = interp.originEnd = ent->v.origin;
 		interp.anglesStart = interp.anglesEnd = ent->v.angles;
@@ -793,10 +797,13 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 
 				CBaseEntity* ent = replayEnts[i].h_ent;
 				if (ent) {
-					ent->pev->effects |= EF_NODRAW; // in case it's a player and can't be removed
-					UTIL_Remove(ent);
+					if (ent->IsPlayer()) {
+						KickPlayer(ent->edict());
+					}
+					else {
+						UTIL_Remove(ent);
+					}
 				}
-				
 			}
 			continue;
 		}
@@ -1851,8 +1858,11 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 
 	DemoFrame header;
 	if (!replayData->read(&header, sizeof(DemoFrame))) {
-		UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Unexpected EOF\n");
 		closeReplayFile();
+		if (demoHeader.startTime + lastFrameDemoTime == demoHeader.endTime)
+			UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] End of demo\n");
+		else
+			UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Unexpected EOF\n");
 		return false;
 	}
 	uint32_t demoTime = 0;
