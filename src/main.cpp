@@ -344,11 +344,23 @@ HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edi
 		//ALERT(at_console, "Message %s sent with origin (dest %d)??\n", msgTypeStr(msg_type), msg_dest);
 	}
 
+	if (ed && !(ed->v.flags & FL_CLIENT)) {
+		ALERT(at_console, "Message %s sent to non-client\n", msgTypeStr(msg_type));
+		DEFAULT_HOOK_RETURN;
+	}
+
 	g_should_write_next_message = true;
 
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
 	msg.dest = msg_dest;
 	msg.type = msg_type;
+	msg.targets = 0;
+	msg.eidx = 0;
+	msg.sz = 0;
+	msg.hasLongOrigin = 0;
+	msg.hasOrigin = 0;
+	memset(msg.origin, 0, sizeof(uint32_t) * 3);
+
 	if (usesOrigin && pOrigin) {
 		msg.hasOrigin = 1;
 		if (abs(pOrigin[0]) > INT16_MAX || abs(pOrigin[1]) > INT16_MAX || abs(pOrigin[2]) > INT16_MAX) {
@@ -358,35 +370,48 @@ HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edi
 			msg.origin[2] = FLOAT_TO_FIXED(pOrigin[2], 19, 5);
 		}
 		else {
-			msg.hasLongOrigin = 0;
 			msg.origin[0] = (int16_t)pOrigin[0];
 			msg.origin[1] = (int16_t)pOrigin[1];
 			msg.origin[2] = (int16_t)pOrigin[2];
 		}
 	}
-	else {
-		msg.hasOrigin = 0;
-	}
 
 	if (ed) {
 		msg.eidx = ENTINDEX(ed);
-
-		if (msg.eidx > gpGlobals->maxClients) {
-			ALERT(at_console, "Message %s sent to non-player??\n", msgTypeStr(msg_type));
-			msg.eidx = 0;
-		}
 	}
-	else {
-		msg.eidx = 0;
-	}
-
-	msg.sz = 0;
 
 	DEFAULT_HOOK_RETURN;
 }
 
 HOOK_RET_VOID MessageEnd() {
 	if (g_should_write_next_message) {
+		NetMessageData& m1 = g_netmessages[g_netmessage_count];
+		
+		// individual message?
+		if (m1.eidx) {
+			// check to see if an identical message was captured already, then merge them
+			for (int i = 0; i < g_netmessage_count; i++) {
+				NetMessageData& m2 = g_netmessages[i];
+
+				bool matchingHeaders = m1.type == m2.type && m1.sz == m2.sz && m1.dest == m2.dest
+					&& m1.origin[0] == m2.origin[0] && m1.origin[1] == m2.origin[1] && m1.origin[2] == m2.origin[2];
+
+				if (matchingHeaders && (m2.eidx || m2.targets) && !memcmp(m1.data, m2.data, m1.sz)) {
+					// convert to a multi-target message
+					if (m2.eidx) {
+						m2.targets |= PLRBIT(m2.eidx);
+						m2.eidx = 0;
+					}
+
+					// add a new target to the existing message
+					m2.targets |= PLRBIT(m1.eidx);
+					
+					// don't write the duplicate
+					g_netmessage_count--; 
+				}
+			}
+		}
+
 		g_netmessage_count++;
 
 		if (g_netmessage_count >= MAX_NETMSG_FRAME) {
