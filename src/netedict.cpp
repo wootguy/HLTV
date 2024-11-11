@@ -474,7 +474,6 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 	Vector oldorigin;
 	memcpy(oldorigin, vars.origin, sizeof(Vector));
 
-	vars.modelindex = modelindex;
 	vars.skin = skin;
 	vars.body = body;
 	vars.effects = effects;
@@ -496,6 +495,10 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 	vars.playerclass = classify;
 	//vars.flags |= (edflags & EDFLAG_GOD) ? FL_GODMODE : 0;
 	vars.aiment = NULL;
+
+	if (!(ed->v.flags & FL_CLIENT)) {
+		vars.modelindex = modelindex;
+	}
 
 	CBaseEntity* baseent = (CBaseEntity*)GET_PRIVATE(ed);
 	if (baseent) {
@@ -547,7 +550,7 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 		if (aiment) {
 			edict_t* copyent = g_demoPlayer->getReplayEntity(aiment);
 			if (!copyent) {
-				ALERT(at_console, "Invalid aiment %d", aiment);
+				ALERT(at_console, "Invalid aiment %d\n", aiment);
 				vars.movetype = MOVETYPE_NONE;
 				return;
 			}
@@ -867,46 +870,46 @@ bool netedict::readDeltas(mstream& reader) {
 	if (etype == ETYPE_PLAYER && reader.readBit()) {
 		// player state
 		if (reader.readBit()) {
-			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, steamid64, 64);
-			READ_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, name);
-			READ_DELTA_STR(FL_DELTA_CAT_PLAYER_INFO, model);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, topColor, 8);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, bottomColor, 8);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, ping, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_INFO, frags, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, steamid64, 64);
+			READ_DELTA_STR(FL_DELTA_CAT_PLAYER, name);
+			READ_DELTA_STR(FL_DELTA_CAT_PLAYER, model);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, topColor, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, bottomColor, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, ping, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, frags, 16);
 		}
 
 		// player state fast (frequently updated)
 		if (reader.readBit()) {
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, button, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, armorvalue, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[0], 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[1], 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, punchangle[2], 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_FAST, playerFlags, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, button, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, armorvalue, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, punchangle[0], 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, punchangle[1], 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, punchangle[2], 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, playerFlags, 8);
 		}
 
 		// player state slow (infrequently updated)
 		if (reader.readBit()) {
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, viewEnt, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, viewmodel, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, weaponmodel, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, view_ofs, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, fov, 8);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, specTarget, 5);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, specMode, 3);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, weaponId, 8);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_STATE_SLOW, deadFlag, 4);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, viewEnt, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, viewmodel, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, weaponmodel, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, view_ofs, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, fov, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, specTarget, 5);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, specMode, 3);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, weaponId, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, deadFlag, 4);
 		}
 
 		// player weapon state (frequently updated together)
 		if (reader.readBit()) {
-			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, clip, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, clip2, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, ammo, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, ammo2, 16);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, weaponanim, 8);
-			READ_DELTA(FL_DELTA_CAT_PLAYER_WEAPON, weaponState, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, clip, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, clip2, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, ammo, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, ammo2, 16);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, weaponanim, 8);
+			READ_DELTA(FL_DELTA_CAT_PLAYER, weaponState, 8);
 		}
 	}
 

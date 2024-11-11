@@ -597,8 +597,8 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		if (bot) {
 			int eidx = ENTINDEX(bot);
 			if (ent && !(ent->v.flags & FL_CLIENT)) {
-				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
-				replayEnts[i].h_ent.GetEdict()->freetime = 0;
+				REMOVE_ENTITY(ent);
+				ent->freetime = 0;
 			}
 
 			bot->v.flags |= FL_FAKECLIENT;
@@ -638,8 +638,9 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 				KickPlayer(ent);
 			}
 			else {
-				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
-				replayEnts[i].h_ent.GetEdict()->freetime = 0;
+				edict_t* ent = replayEnts[i].h_ent.GetEdict();
+				REMOVE_ENTITY(ent);
+				ent->freetime = 0;
 			}
 		}
 
@@ -659,8 +660,9 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 				KickPlayer(ent);
 			}
 			else {
-				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
-				replayEnts[i].h_ent.GetEdict()->freetime = 0;
+				edict_t* ent = replayEnts[i].h_ent.GetEdict();
+				REMOVE_ENTITY(ent);
+				ent->freetime = 0;
 			}
 		}
 
@@ -680,27 +682,6 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 
 bool DemoPlayer::createReplayEntities(int count) {
 	while (count >= (int)replayEnts.size()) {
-		/*
-		unordered_map<string, string> keys;
-		keys["model"] = NOT_PRECACHED_MODEL;
-
-		CBaseEntity* ent = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, NULL, keys);
-		ent->pev->solid = SOLID_NOT;
-		ent->pev->effects |= EF_NODRAW;
-		ent->pev->movetype = MOVETYPE_NONE;
-		ent->pev->flags |= FL_MONSTER;
-
-		if (!ent) {
-			ALERT(at_console, "Entity overflow at %d\n", (int)replayEnts.size());
-			for (int i = 0; i < (int)replayEnts.size(); i++) {
-				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
-				replayEnts[i].h_ent.GetEdict()->freetime = 0;
-			}
-			closeReplayFile();
-			return false;
-		}
-		*/
-
 		ReplayEntity rent;
 		memset(&rent, 0, sizeof(ReplayEntity));
 		//rent.h_ent = ent;
@@ -2445,7 +2426,7 @@ void DemoPlayer::playDemo() {
 
 	static float lastStatusMsg = 0;
 
-	if (gpGlobals->time - lastStatusMsg < 0.2f) {
+	if (gpGlobals->time - lastStatusMsg < 0.2f || lastStatusMsg > gpGlobals->time) {
 		return;
 	}
 
@@ -2524,24 +2505,8 @@ void DemoPlayer::seek(int offsetSeconds, bool relative) {
 		nextFrameOffset = replayData ? replayData->tell() : 0;
 		nextFrameTime = 0;
 
+		memset(&g_stats, 0, sizeof(DemoStats));
 		memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
-		/*
-		for (int i = 0; i < (int)replayEnts.size(); i++) {
-			edict_t* ent = replayEnts[i].h_ent.GetEdict();
-			if (!ent) {
-				continue;
-			}
-
-			if (ent->v.flags & FL_FAKECLIENT) {
-				KickPlayer(ent);
-			}
-			else {
-				REMOVE_ENTITY(replayEnts[i].h_ent.GetEdict());
-				replayEnts[i].h_ent.GetEdict()->freetime = 0;
-			}
-		}
-		replayEnts.clear();
-		*/
 	}
 }
 
