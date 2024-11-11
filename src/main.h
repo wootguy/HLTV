@@ -95,6 +95,16 @@ extern DemoStats g_stats;
 #define TE_NAMES TE_USERTRACER+1
 extern const char* te_names[TE_NAMES];
 
+#define MAX_SPRAY_BYTES (1024*24) // for sven it look like the max is 20480 bytes (112x128). Being safe here
+
+struct PlayerSpray {
+	bool dirty; // true if demo write hasn't processed this spray yet
+	int sz; // length of the data
+	uint8_t data[MAX_SPRAY_BYTES];
+};
+
+extern PlayerSpray g_playerSprays[32];
+
 int bitoffset(uint32_t flag);
 
 void printEdSlots();

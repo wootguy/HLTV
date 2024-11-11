@@ -2012,6 +2012,43 @@ bool DemoPlayer::readClientCommands(mstream& reader, DemoDataTest* validate, boo
 	return true;
 }
 
+bool DemoPlayer::readPlayerSprays(mstream& reader, DemoDataTest* validate, bool seeking) {
+	uint64_t startOffset = reader.tell();
+
+	uint8_t numSprays = 0;
+	reader.read(&numSprays, 1);
+
+	static uint8_t sprayTemp[MAX_SPRAY_BYTES];
+
+	for (int i = 0; i < (int)numSprays; i++) {
+		uint8_t playerIndex = 0;
+		reader.read(&playerIndex, 1);
+
+		uint16_t spraySz = 0;
+		reader.read(&spraySz, 2);
+
+		if (playerIndex > 32) {
+			ALERT(at_console, "Invalid player index for spray (%d)\n", (int)playerIndex);
+			return false;
+		}
+		if (spraySz >= MAX_SPRAY_BYTES) {
+			ALERT(at_console, "Invalid player spray size %d\n", (int)spraySz);
+			return false;
+		}
+
+		reader.read(sprayTemp, spraySz);
+
+		//ALERT(at_console, "Read %d byte spray for %d\n", (int)spraySz, (int)playerIndex);
+		// TODO: give this spray to a bot, somehow
+	}
+
+	g_stats.sprayCurrentSz = reader.tell() - startOffset;
+	g_stats.sprayCount += numSprays;
+
+
+	return true;
+}
+
 bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	uint32_t t = (getEpochMillis() - replayStartTime) * replaySpeed;
 
@@ -2172,10 +2209,15 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		delete[] frameData;
 		return false;
 	}
+	if (header.isGiantFrame && !readPlayerSprays(reader, validate, seeking)) {
+		delete[] frameData;
+		return false;
+	}
 	if (!seeking && !validate && !simulate(header)) {
 		delete[] frameData;
 		return false;
 	}
+	
 
 	wasSeeking = seeking;
 

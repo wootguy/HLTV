@@ -65,6 +65,8 @@ bool g_should_write_next_message = false;
 bool g_pause_message_logging = false;
 bool g_can_autostart_demo = true;
 
+PlayerSpray g_playerSprays[32];
+
 char g_stringpool[STRING_POOL_SIZE]; // pool for storing misc strings used by the current map
 uint16_t g_stringpool_idx = 1; // points to the end of the string data, 0 index is for NULL strings
 unordered_map<string_t, uint16_t> g_stringtToClassIdx; // maps a string_t to an offset in g_stringpool
@@ -170,6 +172,8 @@ HOOK_RET_VOID Changelevel() {
 		g_server_frame_count = 0;
 		g_playerModels.clear();
 	}
+
+	memset(g_playerSprays, 0, sizeof(PlayerSpray)*32);
 
 	DEFAULT_HOOK_RETURN;
 }
@@ -891,6 +895,34 @@ HOOK_RET_VOID CmdStart(const edict_t* player, const struct usercmd_s* cmd, unsig
 	DEFAULT_HOOK_RETURN;
 }
 
+HOOK_RET_VOID PlayerCustomization(edict_t* pEntity, customization_t* pCust) {
+
+	CBasePlayer* pPlayer = (CBasePlayer*)GET_PRIVATE(pEntity);
+
+	if (!pPlayer || !pCust || pCust->resource.type != t_decal) {
+		DEFAULT_HOOK_RETURN;
+	}
+
+	if (pCust->resource.nDownloadSize > 65535) {
+		ALERT(at_console, "player uploaded huge invalid spray. ignoring.");
+		DEFAULT_HOOK_RETURN;
+	}
+
+	int eidx = pPlayer->entindex() - 1;
+	bool newSz = pCust->resource.nDownloadSize != g_playerSprays[eidx].sz;
+	
+	if (newSz || memcmp(g_playerSprays[eidx].data, pCust->pBuffer, pCust->resource.nDownloadSize)) {
+		g_playerSprays[eidx].dirty = true;
+		g_playerSprays[eidx].sz = pCust->resource.nDownloadSize;
+		memcpy(g_playerSprays[eidx].data, pCust->pBuffer, pCust->resource.nDownloadSize);
+	}
+	else {
+		ALERT(at_console, "player uploaded the same spray. ignoring.");
+	}
+
+	DEFAULT_HOOK_RETURN;
+}
+
 #ifdef HLCOOP_BUILD
 HLCOOP_PLUGIN_HOOKS g_hooks;
 
@@ -935,6 +967,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnClientCommand = ClientCommand;
 	g_hooks.pfnSendVoiceData = SendVoiceData;
 	g_hooks.pfnCmdStart = CmdStart;
+	g_hooks.pfnPlayerCustomization = PlayerCustomization;
 
 	g_hooks.pfnMessageBegin = MessageBegin;
 	g_hooks.pfnWriteAngle = WriteAngle;

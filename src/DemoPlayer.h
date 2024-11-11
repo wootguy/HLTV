@@ -190,6 +190,7 @@ private:
 	bool readEvents(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
 	bool readUserCmds(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
 	bool readClientCommands(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
+	bool readPlayerSprays(mstream& reader, DemoDataTest* validate = NULL, bool seeking = false);
 	
 	// converts a simulated entity into a class best suited for the demo entity
 	// i = index into replayEntities

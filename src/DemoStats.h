@@ -50,6 +50,10 @@ struct DemoStats {
 	uint32_t cmdCurrentSz;
 	uint32_t cmdCount; // number of commands sent
 
+	uint32_t sprayCount;
+	uint32_t sprayCurrentSz;
+	uint32_t sprayTotalSz;
+
 	// calculate current frame size and increment stats
 	// accounts for variable size time/framesize
 	void incTotals();
