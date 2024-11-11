@@ -4,20 +4,26 @@
 void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 	float forigin[3];
 
+	if ((msg_dest == MSG_ONE || msg_dest == MSG_ONE_UNRELIABLE) && !targetEnt) {
+		ALERT(at_console, "Dropped message %s mode %d (no target entity given)\n",
+			msgTypeStr(type), msg_dest);
+		return;
+	}
+
 	if (sz >= 512 - 3 ) {
 		if (g_RehldsApi) {
-			rehlds_SendBigMessage(msg_dest, header.type, data, sz, targetEnt ? ENTINDEX(targetEnt) : 0);
+			rehlds_SendBigMessage(msg_dest, type, data, sz, targetEnt ? ENTINDEX(targetEnt) : 0);
 		}
 		else {
 			ALERT(at_console, "Dropped %d byte %s message (rehlds API not available)\n",
-				sz, msgTypeStr(header.type));
+				sz, msgTypeStr(type));
 		}
 
 		return;
 	}
 
-	if (header.hasOrigin) {
-		if (header.hasLongOrigin) {
+	if (hasOrigin) {
+		if (hasLongOrigin) {
 			forigin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);
 			forigin[1] = FIXED_TO_FLOAT(origin[1], 19, 5);
 			forigin[2] = FIXED_TO_FLOAT(origin[2], 19, 5);
@@ -29,9 +35,9 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 		}
 	}
 
-	const float* ori = header.hasOrigin ? forigin : NULL;
+	const float* ori = hasOrigin ? forigin : NULL;
 
-	MESSAGE_BEGIN(msg_dest, header.type, ori, targetEnt);
+	MESSAGE_BEGIN(msg_dest, type, ori, targetEnt);
 
 	int numLongs = sz / 4;
 	int numBytes = sz % 4;

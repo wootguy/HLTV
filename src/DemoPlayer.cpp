@@ -1228,9 +1228,9 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 	byte* args = msg.data;
 	uint16_t* args16 = (uint16_t*)args;
 
-	g_stats.msgSz[msg.header.type] += msg.sz;
+	g_stats.msgSz[msg.type] += msg.sz;
 
-	switch (msg.header.type) {
+	switch (msg.type) {
 	case SVC_TEMPENTITY:
 		g_stats.msgSz[256 + msg.data[0]] += msg.sz;
 		return processTempEntityMessage(msg, validate) ? 1 : -1;
@@ -1341,25 +1341,25 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		return 1;
 	}
 	default:
-		if (msg.header.type == gmsgSayText) {
+		if (msg.type == gmsgSayText) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
 			return 1;
 		}
-		if (msg.header.type == gmsgScoreInfo) {
+		if (msg.type == gmsgScoreInfo) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
 			return 1;
 		}
-		if (msg.header.type == gmsgTeamInfo) {
+		if (msg.type == gmsgTeamInfo) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
 			return 1;
 		}
-		if (msg.header.type == gmsgDeathMsg) {
+		if (msg.type == gmsgDeathMsg) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
@@ -1369,10 +1369,10 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 			args[1] = entIdx2;
 			return 1;
 		}
-		if (msg.header.type == gmsgStatusText) {
+		if (msg.type == gmsgStatusText) {
 			return 0; // TODO: this is showing ***** name on screen at all times
 		}
-		if (msg.header.type == gmsgStatusValue) {
+		if (msg.type == gmsgStatusValue) {
 			uint8_t idx = *args;
 			if (idx == 1) {
 				// 1 idx is always the player index
@@ -1390,7 +1390,7 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 		return;
 	}
 
-	switch (msg.header.type) {
+	switch (msg.type) {
 	case SVC_TEMPENTITY: {
 		uint8_t type = msg.data[0];
 
@@ -1552,56 +1552,63 @@ void DemoPlayer::validateFrame(DemoDataStream& reader, DemoDataTest* results) {
 bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bool seeking) {
 	uint32_t startOffset = reader.tell();
 
-	uint16_t numMessages;
-	reader.read(&numMessages, 2);
+	uint16_t count = (reader.readBit() ? reader.readBits(9) : reader.readBits(4)) + 1;
 
-	if (validate) validate->msgCount = numMessages;
-
-	if (numMessages > MAX_NETMSG_FRAME) {
-		ALERT(at_console, "Invalid net msg count %d\n", (int)numMessages);
-		return false;
-	}
+	if (validate) validate->msgCount = count;
 
 	static NetMessageData msg;
+	memset(&msg, 0, sizeof(NetMessageData));
 
-	for (int i = 0; i < numMessages; i++) {
-		reader.read(&msg.header, sizeof(DemoNetMessage));
-		msg.sz = msg.header.sz;
+	for (int i = 0; i < count; i++) {
 
-		if (msg.header.longSz) {
-			uint8_t szHighBits = 0;
-			reader.read(&szHighBits, 1);
-			msg.sz |= (uint16_t)szHighBits << 8;
+		msg.type = reader.readBits(8);
+		msg.dest = reader.readBits(4);
+		msg.sz = reader.readBit() ? reader.readBits(12) : reader.readBits(5);
+		
+		msg.hasOrigin = msg.hasLongOrigin = false;
+
+		if (reader.readBit()) {
+			msg.hasOrigin = true;
+
+			if (reader.readBit()) {
+				msg.hasLongOrigin = true;
+				msg.origin[0] = reader.readBits(24);
+				msg.origin[1] = reader.readBits(24);
+				msg.origin[2] = reader.readBits(24);
+			}
+			else {
+				msg.origin[0] = reader.readBits(16);
+				msg.origin[1] = reader.readBits(16);
+				msg.origin[2] = reader.readBits(16);
+			}
 		}
-		if (msg.header.hasOrigin) {
-			int sz = msg.header.hasLongOrigin ? 3 : 2;
-			reader.read(&msg.origin[0], sz);
-			reader.read(&msg.origin[1], sz);
-			reader.read(&msg.origin[2], sz);
+
+		msg.eidx = 0;
+		if (reader.readBit()) {
+			msg.eidx = reader.readBits(5) + 1;
 		}
-		if (msg.header.hasEdict) {
-			reader.read(&msg.eidx, 2);
+
+		for (int i = 0; i < (int)msg.sz; i++) {
+			msg.data[i] = reader.readBits(8);
 		}
-		else {
-			msg.eidx = 0;
-		}
-		if (msg.sz > MAX_NETMSG_DATA) {
-			ALERT(at_console, "Invalid net msg size %d\n", (int)msg.sz);
-			return false; // data corrupted, abort before SVC_BAD
-		}
-		reader.read(msg.data, msg.sz);
 
 		if (seeking) {
 			continue;
 		}
 
 		if ((msg.eidx >= replayEnts.size() && !validate) || (validate && msg.eidx > MAX_EDICTS)) {
-			ALERT(at_console, "Invalid msg ent %d for %s\n", (int)msg.eidx, msgTypeStr(msg.header.type));
+			ALERT(at_console, "Invalid msg ent %d for %s\n", (int)msg.eidx, msgTypeStr(msg.type));
 			if (validate) return false;
 			continue;
 		}
 
-		if (!validate && msg.header.hasEdict && replayEnts[msg.eidx].h_ent.GetEdict() && !(replayEnts[msg.eidx].h_ent.GetEdict()->v.flags & FL_CLIENT)) {
+		uint16_t replayIdx = msg.eidx;
+		if (msg.eidx) {
+			convReplayEntIdx((byte*)&replayIdx, 0, 2);
+			ALERT(at_console, "REMAP %d -> %d\n", (int)msg.eidx, (int)replayIdx);
+		}
+
+		if (!validate && msg.eidx && replayEnts[replayIdx].h_ent.GetEdict() && !(replayEnts[replayIdx].h_ent.GetEdict()->v.flags & FL_CLIENT)) {
 			continue; // target is not a player (bots disabled probably)
 		}
 
@@ -1609,35 +1616,43 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 
 		if (validate) {
 			NetMessageData& expected = validate->expectedMsg[i];
-			if (memcmp(&expected.header, &msg.header, sizeof(DemoNetMessage))) {
-				ALERT(at_console, "Read unexpected header for %s!\n", msgTypeStr(expected.header.type));
+			if (expected.hasOrigin != msg.hasOrigin || expected.hasLongOrigin != msg.hasLongOrigin) {
+				ALERT(at_console, "Read unexpected origin flags for %s!\n", msgTypeStr(expected.type));
 				return false;
 			}
-			for (int z = 0; z < 3 && expected.header.hasOrigin; z++) {
-				if (expected.header.hasLongOrigin && !FIXED_EQUALS(expected.origin[z], msg.origin[z], 24)) {
-					ALERT(at_console, "Read unexpected long origin[%d] for %s!\n", (int)z, msgTypeStr(expected.header.type));
+			if (expected.dest != msg.dest) {
+				ALERT(at_console, "Read unexpected dest for %s!\n", msgTypeStr(expected.type));
+				return false;
+			}
+			if (expected.type != msg.type) {
+				ALERT(at_console, "Read unexpected type for %s!\n", msgTypeStr(expected.type));
+				return false;
+			}
+			for (int z = 0; z < 3 && expected.hasOrigin; z++) {
+				if (expected.hasLongOrigin && !FIXED_EQUALS(expected.origin[z], msg.origin[z], 24)) {
+					ALERT(at_console, "Read unexpected long origin[%d] for %s!\n", (int)z, msgTypeStr(expected.type));
 					return false;
 				}
 				else if ((int16_t)expected.origin[z] != (int16_t)msg.origin[z]) {
-					ALERT(at_console, "Read unexpected short origin[%d] for %s!\n", (int)z, msgTypeStr(expected.header.type));
+					ALERT(at_console, "Read unexpected short origin[%d] for %s!\n", (int)z, msgTypeStr(expected.type));
 					return false;
 				}
 			}
 			if (expected.sz != msg.sz) {
-				ALERT(at_console, "Read unexpected size for %s!\n", msgTypeStr(expected.header.type));
+				ALERT(at_console, "Read unexpected size for %s!\n", msgTypeStr(expected.type));
 				return false;
 			}
 			if (expected.eidx != msg.eidx) {
-				ALERT(at_console, "Read unexpected eidx for %s!\n", msgTypeStr(expected.header.type));
+				ALERT(at_console, "Read unexpected eidx for %s!\n", msgTypeStr(expected.type));
 				return false;
 			}
 			if (memcmp(expected.data, msg.data, expected.sz)) {
-				ALERT(at_console, "Read unexpected data for %s!\n", msgTypeStr(expected.header.type));
+				ALERT(at_console, "Read unexpected data for %s!\n", msgTypeStr(expected.type));
 				return false;
 			}
 		}
 
-		int parseResult = processDemoNetMessage(msg, validate);
+		int parseResult = validate ? 0 : processDemoNetMessage(msg, validate);
 
 		if (parseResult == -1) {
 			return false;
@@ -1647,9 +1662,9 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 		}
 
 		if (!validate) {
-			edict_t* ent = msg.header.hasEdict ? replayEnts[msg.eidx].h_ent.GetEdict() : NULL;
+			edict_t* ent = replayIdx ? INDEXENT(replayIdx) : NULL;
 
-			if (CBaseEntity::Instance(ent)->IsPlayer()) {
+			if (ent && (ent->v.flags & FL_CLIENT)) {
 				 // send individual messages to anyone who is observing this player
 				for (int i = 1; i < gpGlobals->maxClients; i++) {
 					CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
@@ -1657,19 +1672,21 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 						continue;
 					}
 
-					if (spec->m_hObserverTarget.GetEdict() == ent || (!spec->IsObserver() && msg.eidx == 1)) {
-						msg.send(msg.header.dest, spec->edict());
+					if (spec->m_hObserverTarget.GetEdict() == ent || (!spec->IsObserver() && replayIdx == 1)) {
+						msg.send(msg.dest, spec->edict());
 					}
 				}
 			}
 			else {
-				msg.send(msg.header.dest, ent);
+				msg.send(msg.dest, ent);
 			}
 		}
 	}
 
+	reader.endBitReading();
+
 	g_stats.msgCurrentSz = reader.tell() - startOffset;
-	g_stats.msgCount += numMessages;
+	g_stats.msgCount += count;
 
 	return true;
 }
