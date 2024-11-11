@@ -474,9 +474,20 @@ mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
 			}
 		}
 
-		buffer.writeBit(dat.eidx != 0);
-		if (dat.eidx != 0) {
-			buffer.writeBits(dat.eidx-1, 5); // 0-based player index
+		if (dat.targets >= (1 << 16)) {
+			buffer.writeBits(3, 2);
+			buffer.writeBits(dat.targets, 32);
+		}
+		else if (dat.targets) {
+			buffer.writeBits(2, 2);
+			buffer.writeBits(dat.targets, 16);
+		}
+		else if (dat.eidx) {
+			buffer.writeBits(1, 2);
+			buffer.writeBits(dat.eidx-1, 5); // use 0-based player index
+		}
+		else {
+			buffer.writeBits(0, 2);
 		}
 
 		for (int i = 0; i < dat.sz; i++) {

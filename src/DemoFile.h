@@ -118,7 +118,8 @@ struct NetMessageData {
 	uint8_t type;
 	uint16_t sz; // length of data
 	uint32_t origin[3]; // 19.5 fixed point, or 16bit integers, depending on hasLongOrigin
-	uint8_t eidx; // should only ever be a player index
+	uint32_t targets; // bitfield of players to send the message to
+	uint8_t eidx; // player index to send gthe message to, if there is only one target, else 0
 	uint8_t data[2048]; // most messages are 512 max, but SVC_VOICEDATA can be much larger
 
 	void send(int msg_dst, edict_t* targetEnt);

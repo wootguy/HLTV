@@ -1583,10 +1583,12 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 			}
 		}
 
-		msg.eidx = 0;
-		if (reader.readBit()) {
-			msg.eidx = reader.readBits(5) + 1;
-		}
+		uint8_t tarSz = reader.readBits(2);
+		msg.targets = msg.eidx = 0;
+			
+		if (tarSz == 3)		 { msg.targets = reader.readBits(32); }
+		else if (tarSz == 2) { msg.targets = reader.readBits(16); }
+		else if (tarSz == 1) { msg.eidx = reader.readBits(5) + 1; }
 
 		for (int i = 0; i < (int)msg.sz; i++) {
 			msg.data[i] = reader.readBits(8);
@@ -1594,22 +1596,6 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 
 		if (seeking) {
 			continue;
-		}
-
-		if ((msg.eidx >= replayEnts.size() && !validate) || (validate && msg.eidx > MAX_EDICTS)) {
-			ALERT(at_console, "Invalid msg ent %d for %s\n", (int)msg.eidx, msgTypeStr(msg.type));
-			if (validate) return false;
-			continue;
-		}
-
-		uint16_t replayIdx = msg.eidx;
-		if (msg.eidx) {
-			convReplayEntIdx((byte*)&replayIdx, 0, 2);
-			ALERT(at_console, "REMAP %d -> %d\n", (int)msg.eidx, (int)replayIdx);
-		}
-
-		if (!validate && msg.eidx && replayEnts[replayIdx].h_ent.GetEdict() && !(replayEnts[replayIdx].h_ent.GetEdict()->v.flags & FL_CLIENT)) {
-			continue; // target is not a player (bots disabled probably)
 		}
 
 		decompressNetMessage(msg);
@@ -1646,6 +1632,10 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 				ALERT(at_console, "Read unexpected eidx for %s!\n", msgTypeStr(expected.type));
 				return false;
 			}
+			if (expected.targets != msg.targets) {
+				ALERT(at_console, "Read unexpected targets for %s!\n", msgTypeStr(expected.type));
+				return false;
+			}
 			if (memcmp(expected.data, msg.data, expected.sz)) {
 				ALERT(at_console, "Read unexpected data for %s!\n", msgTypeStr(expected.type));
 				return false;
@@ -1654,31 +1644,53 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 
 		int parseResult = validate ? 0 : processDemoNetMessage(msg, validate);
 
-		if (parseResult == -1) {
+		if (parseResult == 0) {
+			continue;
+		}
+		else if (parseResult == -1) {
 			return false;
 		}
-		else if (parseResult == 0) {
+
+		if (msg.targets == 0 && msg.eidx) {
+			msg.targets = PLRBIT(msg.eidx);
+		}
+
+		if (msg.targets == 0) {
+			// probably a broadcast message
+			msg.send(msg.dest, NULL);
 			continue;
 		}
 
-		if (!validate) {
-			edict_t* ent = replayIdx ? INDEXENT(replayIdx) : NULL;
+		if (msg.targets == 0xffffffff) {
+			ALERT(at_console, "Individual %s sent to everyone?\n", msgTypeStr(msg.type));
+		}
 
-			if (ent && (ent->v.flags & FL_CLIENT)) {
-				 // send individual messages to anyone who is observing this player
-				for (int i = 1; i < gpGlobals->maxClients; i++) {
-					CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
-					if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
-						continue;
-					}
+		for (uint32_t i = 1; i <= gpGlobals->maxClients; i++) {
+			uint32_t plrbit = PLRBIT(i);
 
-					if (spec->m_hObserverTarget.GetEdict() == ent || (!spec->IsObserver() && replayIdx == 1)) {
-						msg.send(msg.dest, spec->edict());
-					}
-				}
+			if (!(msg.targets & plrbit)) {
+				continue;
 			}
-			else {
-				msg.send(msg.dest, ent);
+			
+			uint16_t eidx = i;
+			convReplayEntIdx((byte*)&eidx, 0, 2);
+			edict_t* ent = eidx ? INDEXENT(eidx) : NULL;
+
+			if (!ent) {
+				ALERT(at_console, "Message sent to invalid bot %d (remap idx %d)\n", i, eidx);
+				continue;
+			}
+
+			// send this individual message to anyone who is spectating this player
+			for (int k = 1; k < gpGlobals->maxClients; k++) {
+				CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(k);
+				if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
+					continue;
+				}
+
+				if (spec->m_hObserverTarget.GetEdict() == ent) {
+					msg.send(msg.dest, spec->edict());
+				}
 			}
 		}
 	}
