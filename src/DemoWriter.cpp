@@ -830,11 +830,28 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	}
 
 	bool anyUsercmds = false;
+	int sprayBytes = 0;
+	uint8_t sprayCount = 0;
 	for (int i = 0; i < MAX_PLAYERS; i++) {
 		g_stats.usercmdCount += frame.usercmd_count[i];
 		if (frame.usercmd_count[i]) {
 			anyUsercmds = true;
 		}
+		if (g_playerSprays[i].dirty) {
+			if (!UTIL_PlayerByIndex(i + 1)) {
+				// player left before demo started, rewrite the spray if the player rejoins
+				g_playerSprays[i].dirty = false; 
+				g_playerSprays[i].sz = 0;
+			}
+			else {
+				sprayBytes += g_playerSprays[i].sz + sizeof(uint8_t) + sizeof(uint16_t);
+				sprayCount++;
+			}
+			
+		}
+	}
+	if (sprayBytes) {
+		sprayBytes += sizeof(uint8_t);
 	}
 
 	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
@@ -852,9 +869,11 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 1 : 0);
 	g_stats.eventCurrentSz = evtbuffer.tell() + (evtbuffer.tell() ? 1 : 0);
 	g_stats.usercmdCurrentSz = usrbuffer.tell();
+	g_stats.sprayCurrentSz = sprayBytes;
 	g_stats.msgCount += frame.netmessage_count;
 	g_stats.cmdCount += frame.cmds_count;
 	g_stats.eventCount += frame.event_count;
+	g_stats.sprayCount += sprayCount;
 	
 	g_stats.calcFrameSize();
 
@@ -869,13 +888,20 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	header.hasCommands = frame.cmds_count > 0;
 	header.hasUsercmds = anyUsercmds;
 	header.isKeyFrame = isKeyframe;
-	header.isGiantFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (65535-3) || isKeyframe;
+	header.isGiantFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (65535-3) || isKeyframe || sprayBytes;
 	header.isBigFrame = frameTimeDelta > 255 || g_stats.currentWriteSz > (255 - 3) || isKeyframe;
 	if (header.isGiantFrame) {
 		header.isBigFrame = 0;
+
+		if (!g_stats.sprayCurrentSz) {
+			// spray count is always written for giant frames
+			g_stats.sprayCurrentSz++;
+			g_stats.currentWriteSz++;
+		}
 	}
 
-	bool hasAnyDeltas = header.hasEntityDeltas + header.hasNetworkMessages + header.hasEvents + header.hasCommands;
+	bool hasAnyDeltas = header.hasEntityDeltas + header.hasNetworkMessages + header.hasEvents
+		+ header.hasCommands + sprayBytes;
 	if (!hasAnyDeltas) {
 		if (validateOutput) {
 			delete testData;
@@ -938,6 +964,20 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (header.hasUsercmds) {
 		fwrite(usrbuffer.getBuffer(), usrbuffer.tell(), 1, demoFile);
 	}
+	if (header.isGiantFrame) {
+		// giant frames are rare, so not bothering with a flag for sprays
+		fwrite(&sprayCount, 1, 1, demoFile);
+		for (int i = 0; i < MAX_PLAYERS; i++) {
+			if (g_playerSprays[i].dirty) {
+				g_playerSprays[i].dirty = false;
+				uint8_t playerIndex = i + 1;
+				uint16_t sz = g_playerSprays[i].sz;
+				fwrite(&playerIndex, 1, 1, demoFile);
+				fwrite(&sz, 2, 1, demoFile);
+				fwrite(g_playerSprays[i].data, sz, 1, demoFile);
+			}
+		}
+	}
 
 	if (lastStringPoolIdx != g_stringpool_idx) {
 		uint32_t currentOffset = ftell(demoFile);
@@ -954,6 +994,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		uint32_t expectedEvtSz = g_stats.eventCurrentSz;
 		uint32_t expectedCmdSz = g_stats.cmdCurrentSz;
 		uint32_t expectedUsrSz = g_stats.usercmdCurrentSz;
+		uint32_t expectedSpraySz = g_stats.sprayCurrentSz;
 		uint32_t expectedFrameSz = g_stats.currentWriteSz;
 
 		DemoStats oldStats = g_stats;
@@ -993,6 +1034,9 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		}
 		ASSERT_FRAME("usr bytes", g_stats.usercmdCurrentSz, expectedUsrSz);
 
+		ASSERT_FRAME("spray count", g_stats.sprayCount, sprayCount);
+		ASSERT_FRAME("spray bytes", g_stats.sprayCurrentSz, expectedSpraySz);
+
 		ASSERT_FRAME("frame bytes", g_stats.currentWriteSz, expectedFrameSz);
 
 		if (!valid) {
@@ -1000,6 +1044,9 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 			memset(&g_stats, 0, sizeof(DemoStats));
 			testStream.seek(frameStartOffset);
 			testPlayer->validateFrame(testStream, testData); // now debug it!
+		}
+		else {
+			//ALERT(at_console, "good frame\n");
 		}
 
 		testStream.seek(oldOffset);
@@ -1031,6 +1078,10 @@ void DemoWriter::closeDemoFile() {
 	fwrite(&lastDemoFrameTime, sizeof(uint64_t), 1, demoFile);
 	fclose(demoFile);
 	demoFile = NULL;
+
+	for (int i = 0; i < 32; i++) {
+		g_playerSprays[i].dirty = true; // rewrite sprays as soon as the next demo starts
+	}
 
 	g_engfuncs.pfnServerPrint(UTIL_VarArgs("Closed demo file: %s\n", fpath.c_str()));
 

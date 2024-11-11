@@ -73,14 +73,15 @@ void DemoStats::incTotals() {
 	cmdTotalSz += cmdCurrentSz;
 	eventTotalSz += eventCurrentSz;
 	usercmdTotalSz += usercmdCurrentSz;
+	sprayTotalSz += sprayCurrentSz;
 
 	calcFrameSize();
 	totalWriteSz += currentWriteSz;
 }
 
 void DemoStats::calcFrameSize() {
-	currentWriteSz = entDeltaCurrentSz + msgCurrentSz
-		+ cmdCurrentSz + eventCurrentSz + usercmdCurrentSz + sizeof(DemoFrame);
+	currentWriteSz = entDeltaCurrentSz + msgCurrentSz + cmdCurrentSz + eventCurrentSz 
+		+ usercmdCurrentSz + sprayCurrentSz + sizeof(DemoFrame);
 }
 
 const char* formatSize(uint32_t bytes) {
@@ -139,6 +140,7 @@ void DemoStats::showStats(edict_t* edt) {
 	string evTotal = formatSize(g_stats.eventTotalSz);
 	string cmdTotal = formatSize(g_stats.cmdTotalSz);
 	string usrTotal = formatSize(g_stats.usercmdTotalSz);
+	string sprayTotal = formatSize(g_stats.sprayTotalSz);
 	string totalSz = formatSize(g_stats.totalWriteSz);
 
 	bool recording = !g_demoPlayer->isPlaying();
@@ -156,6 +158,7 @@ void DemoStats::showStats(edict_t* edt) {
 	txt += UTIL_VarArgs("evt: %s (%d)\n", evTotal.c_str(), g_stats.eventCurrentSz);
 	txt += UTIL_VarArgs("cmd: %s (%d)\n", cmdTotal.c_str(), g_stats.cmdCount);
 	txt += UTIL_VarArgs("usr: %s (%d)\n", usrTotal.c_str(), g_stats.usercmdCount);
+	txt += UTIL_VarArgs("spray: %s (%d)\n", sprayTotal.c_str(), g_stats.sprayCount);
 
 	if (recording) {
 		txt += UTIL_VarArgs("str: %d / %d\n", g_stringpool_idx, STRING_POOL_SIZE);
