@@ -111,36 +111,15 @@ struct CommandData {
 	uint8_t data[128];
 };
 
-struct DemoNetMessage {
-	uint8_t sz; // network message data bytes
-	uint8_t type;
+struct NetMessageData {
 	uint8_t dest : 4;
-	uint8_t hasEdict : 1;
 	uint8_t hasOrigin : 1;
 	uint8_t hasLongOrigin : 1;
-	uint8_t longSz : 1;
-	// if longSz:
-	//     uint8_t = high bits of sz
-	// if hasLongOrigin:
-	//     uint24[3] = origin (stored as 19.5 fixed point)
-	// if hasOrigin:
-	//     int16[3] = origin (stored as integers)
-	// if hasEdict:
-	//     uint16_t = edict index
-	// byte[] = message bytes
-};
-
-struct NetMessageData {
-	DemoNetMessage header;
-	uint16_t sz; // header.sz + high bits, for ease of use
+	uint8_t type;
+	uint16_t sz; // length of data
 	uint32_t origin[3]; // 19.5 fixed point, or 16bit integers, depending on hasLongOrigin
-	uint16_t eidx;
+	uint8_t eidx; // should only ever be a player index
 	uint8_t data[2048]; // most messages are 512 max, but SVC_VOICEDATA can be much larger
-
-	int getSize() { 
-		return sizeof(DemoNetMessage) + (header.hasOrigin*3*sizeof(float)) 
-			+ (header.hasEdict*sizeof(uint16_t)) + header.sz;
-	}
 
 	void send(int msg_dst, edict_t* targetEnt);
 

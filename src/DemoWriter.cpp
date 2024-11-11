@@ -255,7 +255,7 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 		return;
 	}
 	
-	switch (msg.header.type) {
+	switch (msg.type) {
 	case SVC_TEMPENTITY: {
 		uint8_t type = msg.data[0];
 
@@ -412,60 +412,84 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 }
 
 mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
-	mstream msgbuffer(netmessagesBuffer, netmessagesBufferSize);
-	for (int i = 0; i < (int)frame.netmessage_count; i++) {
+	mstream buffer(netmessagesBuffer, netmessagesBufferSize);
+
+	if (frame.netmessage_count == 0) {
+		return buffer;
+	}
+
+	uint16_t count = V_min(frame.netmessage_count, MAX_NETMSG_FRAME);
+
+	if (count >= 16) {
+		buffer.writeBit(1);
+		buffer.writeBits(count-1, 9);
+	}
+	else {
+		buffer.writeBit(0);
+		buffer.writeBits(count-1, 4);
+	}
+
+	for (int i = 0; i < (int)count; i++) {
 		NetMessageData& dat = frame.netmessages[i];
 
 		if (testData) {
-			if (!dat.header.hasOrigin) {
-				memset(dat.origin, 0, 3 * sizeof(uint32_t));
-			}
 			memcpy(&testData->expectedMsg[i], &dat, sizeof(NetMessageData));
 		}
 
 		compressNetMessage(frame, dat);
 
-		dat.header.sz = dat.sz & 0xff;
-		dat.header.longSz = (dat.sz & 0xff00) ? 1 : 0;
-
 		if (testData) {
-			testData->expectedMsg[i].header.sz = dat.header.sz;
-			testData->expectedMsg[i].header.longSz = dat.header.longSz;
 			testData->expectedMsg[i].sz = dat.sz;
 		}
 
-		if (dat.header.type == SVC_BAD)
-			ALERT(at_console, "Wrote SVC_BAD!!\n", 0);
-
-		msgbuffer.write(&dat.header, sizeof(DemoNetMessage));
-
-		g_stats.msgSz[dat.header.type] += dat.sz;
-		if (dat.header.type == SVC_TEMPENTITY) {
+		g_stats.msgSz[dat.type] += dat.sz;
+		if (dat.type == SVC_TEMPENTITY) {
 			g_stats.msgSz[256 + dat.data[0]] += dat.sz;
 		}
 
-		if (dat.header.longSz) {
-			uint8_t szUpperBits = dat.sz >> 8;
-			msgbuffer.write(&szUpperBits, 1);
+		buffer.writeBits(dat.type, 8);
+		buffer.writeBits(dat.dest, 4);
+
+		if (dat.sz >= 32) {
+			buffer.writeBit(1);
+			buffer.writeBits(dat.sz, 12);
+		}
+		else {
+			buffer.writeBit(0);
+			buffer.writeBits(dat.sz, 5);
 		}
 
-		if (dat.header.hasOrigin) {
-			int sz = dat.header.hasLongOrigin ? 3 : 2;
-			msgbuffer.write(&dat.origin[0], sz);
-			msgbuffer.write(&dat.origin[1], sz);
-			msgbuffer.write(&dat.origin[2], sz);
+		buffer.writeBit(dat.hasOrigin);
+		if (dat.hasOrigin) {
+			buffer.writeBit(dat.hasLongOrigin);
+			if (dat.hasLongOrigin) {
+				buffer.writeBits(dat.origin[0], 24);
+				buffer.writeBits(dat.origin[1], 24);
+				buffer.writeBits(dat.origin[2], 24);
+			}
+			else {
+				buffer.writeBits(dat.origin[0], 16);
+				buffer.writeBits(dat.origin[1], 16);
+				buffer.writeBits(dat.origin[2], 16);
+			}
 		}
 
-		if (dat.header.hasEdict) {
-			msgbuffer.write(&dat.eidx, sizeof(uint16_t));
+		buffer.writeBit(dat.eidx != 0);
+		if (dat.eidx != 0) {
+			buffer.writeBits(dat.eidx-1, 5); // 0-based player index
 		}
-		msgbuffer.write(dat.data, dat.sz);
+
+		for (int i = 0; i < dat.sz; i++) {
+			buffer.writeBits(dat.data[i], 8);
+		}
 	}
-	if (msgbuffer.eom()) {
+	if (buffer.eom()) {
 		ALERT(at_console, "ERROR: Demo file network message buffer overflowed (%d > %d). Use a bigger buffer!\n", frame.netmessage_count, MAX_NETMSG_FRAME);
 	}
 
-	return msgbuffer;
+	buffer.endBitWriting();
+
+	return buffer;
 }
 
 mstream DemoWriter::writeCmdDeltas(FrameData& frame) {
@@ -813,7 +837,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
 
 	g_stats.entDeltaCurrentSz = entbuffer.tell() + (entbuffer.tell() ? 2 : 0);
-	g_stats.msgCurrentSz = msgbuffer.tell() + (msgbuffer.tell() ? 2 : 0);
+	g_stats.msgCurrentSz = msgbuffer.tell();
 	g_stats.cmdCurrentSz = cmdbuffer.tell() + (cmdbuffer.tell() ? 1 : 0);
 	g_stats.eventCurrentSz = evtbuffer.tell() + (evtbuffer.tell() ? 1 : 0);
 	g_stats.usercmdCurrentSz = usrbuffer.tell();
@@ -890,7 +914,6 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		fwrite(entbuffer.getBuffer(), entbuffer.tell(), 1, demoFile);
 	}
 	if (header.hasNetworkMessages) {
-		fwrite(&frame.netmessage_count, sizeof(uint16_t), 1, demoFile);
 		fwrite(msgbuffer.getBuffer(), msgbuffer.tell(), 1, demoFile);
 	}
 	if (header.hasEvents) {

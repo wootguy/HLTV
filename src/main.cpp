@@ -328,39 +328,58 @@ HOOK_RET_VOID MessageBegin(int msg_dest, int msg_type, const float* pOrigin, edi
 		DEFAULT_HOOK_RETURN;
 	}
 
+	bool usesOrigin = false;
+	switch (msg_dest) {
+	case MSG_PVS:
+	case MSG_PVS_R:
+	case MSG_PAS:
+	case MSG_PAS_R:
+		usesOrigin = true;
+		break;
+	default:
+		break;
+	}
+
+	if (pOrigin && !usesOrigin) {
+		//ALERT(at_console, "Message %s sent with origin (dest %d)??\n", msgTypeStr(msg_type), msg_dest);
+	}
+
 	g_should_write_next_message = true;
 
 	NetMessageData& msg = g_netmessages[g_netmessage_count];
-	msg.header.dest = msg_dest;
-	msg.header.type = msg_type;
-	if (pOrigin) {
-		msg.header.hasOrigin = 1;
+	msg.dest = msg_dest;
+	msg.type = msg_type;
+	if (usesOrigin && pOrigin) {
+		msg.hasOrigin = 1;
 		if (abs(pOrigin[0]) > INT16_MAX || abs(pOrigin[1]) > INT16_MAX || abs(pOrigin[2]) > INT16_MAX) {
-			msg.header.hasLongOrigin = 1;
+			msg.hasLongOrigin = 1;
 			msg.origin[0] = FLOAT_TO_FIXED(pOrigin[0], 19, 5);
 			msg.origin[1] = FLOAT_TO_FIXED(pOrigin[1], 19, 5);
 			msg.origin[2] = FLOAT_TO_FIXED(pOrigin[2], 19, 5);
 		}
 		else {
-			msg.header.hasLongOrigin = 0;
+			msg.hasLongOrigin = 0;
 			msg.origin[0] = (int16_t)pOrigin[0];
 			msg.origin[1] = (int16_t)pOrigin[1];
 			msg.origin[2] = (int16_t)pOrigin[2];
 		}
 	}
 	else {
-		msg.header.hasOrigin = 0;
+		msg.hasOrigin = 0;
 	}
+
 	if (ed) {
-		msg.header.hasEdict = 1;
 		msg.eidx = ENTINDEX(ed);
+
+		if (msg.eidx > gpGlobals->maxClients) {
+			ALERT(at_console, "Message %s sent to non-player??\n", msgTypeStr(msg_type));
+			msg.eidx = 0;
+		}
 	}
 	else {
-		msg.header.hasEdict = 0;
 		msg.eidx = 0;
 	}
-	msg.header.sz = 0;
-	msg.header.longSz = 0;
+
 	msg.sz = 0;
 
 	DEFAULT_HOOK_RETURN;
