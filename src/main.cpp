@@ -411,7 +411,7 @@ HOOK_RET_VOID MessageEnd() {
 					m2.targets |= PLRBIT(m1.eidx);
 					
 					// don't write the duplicate
-					g_netmessage_count--; 
+					DEFAULT_HOOK_RETURN;
 				}
 			}
 		}
@@ -930,6 +930,10 @@ HOOK_RETURN_DATA SendVoiceData(int senderidx, int receiveridx, uint8_t* data, in
 	if (sz >= MAX_NETMSG_DATA) {
 		ALERT(at_error, "Dropped huge voice packet (%d bytes)\n", sz);
 		return HOOK_CONTINUE;
+	}
+
+	if (!g_engfuncs.pfnVoice_GetClientListening(receiveridx, senderidx)) {
+		return HOOK_CONTINUE; // mod will not send the voice packet to this player
 	}
 
 	// save to the demo as a normal message

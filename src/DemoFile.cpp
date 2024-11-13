@@ -10,6 +10,23 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 		return;
 	}
 
+	if (type == SVC_SPAWNSTATICSOUND && sz != 14) {
+		// TODO: why is this happening
+		ALERT(at_console, "Dropped static sound message with bad size %d\n", (int)sz);
+		DEBUG_MSG(at_console, "Payload: ");
+		for (int i = 0; i < sz; i++) {
+			DEBUG_MSG(at_console, "%02x ", (int)data[i]);
+		}
+		DEBUG_MSG(at_console, "\n");
+		return;
+	}
+
+	int expectedSz = 0;
+	if (GetUserMsgInfo(type, &expectedSz) && expectedSz != -1 && sz != expectedSz) {
+		ALERT(at_console, "Dropped %s with bad size (%d != %d)\n", msgTypeStr(type), (int)sz, expectedSz);
+		return;
+	}
+
 	if (sz >= 512 - 3 ) {
 		if (g_RehldsApi) {
 			rehlds_SendBigMessage(msg_dest, type, data, sz, targetEnt ? ENTINDEX(targetEnt) : 0);
