@@ -778,7 +778,10 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 					edict_t* ed = ent->edict();
 
 					if (ent->IsPlayer()) {
-						KickPlayer(ed);
+						if (IsValidPlayer(ed)) {
+							KickPlayer(ed);
+							replayEnts[i].h_ent = NULL; // prevent pointer sharing with other slot
+						}
 					}
 					else {
 						REMOVE_ENTITY(ed);
@@ -1240,6 +1243,15 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		uint16_t idx = args[0]+1;
 		convReplayEntIdx((byte*)&idx, 0, msg.sz);
 		args[0] = idx-1;
+
+		uint16_t* sendLen = (uint16_t*)(args + 1);
+
+		if (*sendLen != msg.sz - 3) {
+			*sendLen = msg.sz - 3;
+			ALERT(at_console, "Fixed bad size in voice data\n");
+			return 0;
+		}
+
 		return 1;
 	}
 	case SVC_SOUND: {
@@ -1337,6 +1349,12 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 	case SVC_UPDATEUSERINFO: {
 		uint16_t entIdx = *args + 1;
 		convReplayEntIdx((byte*)&entIdx, 0, 2);
+		
+		if (!UTIL_PlayerByIndex(entIdx)) {
+			ALERT(at_console, "Invalid SVC_UPDATEUSERINFO player idx %d\n", entIdx);
+			return 0;
+		}
+		
 		*args = entIdx - 1;
 		return 1;
 	}
@@ -2045,7 +2063,6 @@ bool DemoPlayer::readPlayerSprays(mstream& reader, DemoDataTest* validate, bool 
 	g_stats.sprayCurrentSz = reader.tell() - startOffset;
 	g_stats.sprayCount += numSprays;
 
-
 	return true;
 }
 
@@ -2170,7 +2187,8 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
 	}
 
-	g_stats.entDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = g_stats.eventCurrentSz = 0;
+	g_stats.entDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = g_stats.eventCurrentSz 
+		= g_stats.sprayCurrentSz = 0;
 
 	for (int i = 0; i < MAX_EDICTS; i++) {
 		fileedicts[i].deltaBitsLast = 0;
@@ -2497,7 +2515,7 @@ void DemoPlayer::playDemo() {
 
 	static float lastStatusMsg = 0;
 
-	if (gpGlobals->time - lastStatusMsg < 0.2f || lastStatusMsg > gpGlobals->time) {
+	if (gpGlobals->time - lastStatusMsg < 0.2f && lastStatusMsg <= gpGlobals->time) {
 		return;
 	}
 
