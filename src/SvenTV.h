@@ -11,7 +11,7 @@
 #include "mstream.h"
 
 #define SVENTV_PORT 28015
-#define MAX_CLIENTS 64
+#define MAX_HLTV_CLIENTS 64
 
 #define SVC_PACKETENTITIES 40
 #define SVC_DELTAPACKETENTITIES 41
@@ -57,7 +57,7 @@ private:
 
 	// tvThread vars
 	uint64_t lastTvThink; // for single-threaded mode
-	NetClient clients[MAX_CLIENTS]; // lock mutex before using!
+	NetClient clients[MAX_HLTV_CLIENTS]; // lock mutex before using!
 	float timeoutSeconds = 0.5; // how long to wait for a client to respond before disconnecting them
 	uint16_t updateId = 0; // incremented on each edict refresh
 	Socket* socket = NULL;

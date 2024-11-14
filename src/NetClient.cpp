@@ -4,7 +4,7 @@
 
 NetClient::NetClient() {
 	isFree = true;
-	baselines = new netedict[MAX_EDICTS];
+	baselines = new netedict[MAX_DEMO_EDICTS];
 }
 
 void NetClient::init(IPV4 addr) {
@@ -15,7 +15,7 @@ void NetClient::init(IPV4 addr) {
 	baselineId = 0;
 	sentDeltas.clear();
 	sentBytesHistory.clear();
-	memset(baselines, 0, sizeof(netedict) * MAX_EDICTS);
+	memset(baselines, 0, sizeof(netedict) * MAX_DEMO_EDICTS);
 }
 
 int NetClient::getBytesSentPerSecond() {
@@ -69,9 +69,9 @@ int NetClient::applyDeltaToBaseline(Packet& packet, bool debugMode) {
 			fullIndex += offset;
 		}
 
-		if (fullIndex >= MAX_EDICTS) {
+		if (fullIndex >= MAX_DEMO_EDICTS) {
 			ALERT(at_console, "ERROR: Invalid delta packet wants to update edict %d at %d\n", (int)fullIndex, loop);
-			ALERT(at_console, "TODO: rollback changes made so far, because now client and server are desynced\n");
+			ALERT(at_console, "TODO: rollback changes made so far, because now client and server are desynced\n", 0);
 			return lastSuccessEdict;
 		}
 
@@ -88,7 +88,7 @@ int NetClient::applyDeltaToBaseline(Packet& packet, bool debugMode) {
 
 		if (reader.eom()) {
 			ALERT(at_console, "ERROR: Invalid delta hit unexpected eom at %d\n", loop);
-			ALERT(at_console, "TODO: rollback changes made so far, because now client and server are desynced\n");
+			ALERT(at_console, "TODO: rollback changes made so far, because now client and server are desynced\n", 0);
 			return lastSuccessEdict;
 		}
 

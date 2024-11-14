@@ -78,7 +78,7 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 
 void NetMessageData::compressCoords(int offset, int count, bool keepFrac) {
 	if (count > 12) {
-		ALERT(at_console, "Can't compress 13+ coords!\n");
+		ALERT(at_console, "Can't compress 13+ coords!\n", 0);
 		return;
 	}
 	int32_t* oldorigin = (int32_t*)(data + offset);
@@ -100,7 +100,7 @@ void NetMessageData::compressCoords(int offset, int count, bool keepFrac) {
 
 void NetMessageData::decompressCoords(int offset, int count, bool keepFrac) {
 	if (count > 12) {
-		ALERT(at_console, "Can't decompress 13+ coords!\n");
+		ALERT(at_console, "Can't decompress 13+ coords!\n", 0);
 		return;
 	}
 	int16_t* oldorigin = (int16_t*)(data + offset);

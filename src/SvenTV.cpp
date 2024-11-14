@@ -13,9 +13,9 @@ SvenTV::SvenTV(bool singleThreadMode) {
 
 	demoWriter = new DemoWriter();
 
-	debugEdict = new netedict[MAX_EDICTS];
+	debugEdict = new netedict[MAX_DEMO_EDICTS];
 
-	frame.netedicts = new netedict[MAX_EDICTS];
+	frame.netedicts = new netedict[MAX_DEMO_EDICTS];
 
 	if (!singleThreadMode) {
 		frame.netmessages = new NetMessageData[MAX_NETMSG_FRAME];
@@ -29,7 +29,7 @@ SvenTV::SvenTV(bool singleThreadMode) {
 	deltaPacketBuffer = new char[deltaPacketBufferSz];
 
 	if (!singleThreadMode || true) {
-		edicts = new edict_t[MAX_EDICTS];
+		edicts = new edict_t[MAX_DEMO_EDICTS];
 		edictCopyState.setValue(EDICT_COPY_REQUESTED);
 
 		if (!singleThreadMode)
@@ -46,7 +46,7 @@ SvenTV::~SvenTV() {
 
 	delete demoWriter;
 
-	for (int i = 0; i < MAX_CLIENTS; i++) {
+	for (int i = 0; i < MAX_HLTV_CLIENTS; i++) {
 		delete[] clients[i].baselines;
 	}
 
@@ -73,7 +73,7 @@ void SvenTV::think_mainThread() {
 		if (TimeDifference(lastTvThink, now) >= 0.05f) {
 			lastTvThink = now;
 
-			for (int i = 0; i < MAX_EDICTS; i++) {
+			for (int i = 0; i < MAX_DEMO_EDICTS; i++) {
 				frame.netedicts[i].load(edicts[i]);
 			}
 
@@ -103,7 +103,7 @@ void SvenTV::think_mainThread() {
 			else {
 				// need to duplicate because the server thread will be running in parallel to the
 				// tv thread which is working on these ents
-				memcpy(edicts, INDEXENT(0), sizeof(edict_t) * MAX_EDICTS);
+				memcpy(edicts, INDEXENT(0), sizeof(edict_t) * MAX_DEMO_EDICTS);
 				memcpy(frame.netmessages, g_netmessages, g_netmessage_count * sizeof(NetMessageData));
 				memcpy(frame.cmds, g_cmds, g_command_count * sizeof(CommandData));
 				memcpy(frame.events, g_events, g_event_count * sizeof(DemoEventData));
@@ -123,7 +123,7 @@ void SvenTV::think_mainThread() {
 			g_command_count = 0;
 			g_event_count = 0;
 
-			//int copySz = (sizeof(edict_t) * MAX_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
+			//int copySz = (sizeof(edict_t) * MAX_DEMO_EDICTS) + (gpGlobals->maxClients * sizeof(DemoPlayerEnt)) + (g_netmessage_count * sizeof(NetMessageData)) + (g_command_count * sizeof(CommandData));
 			edictCopyState.setValue(EDICT_COPY_FINISHED);
 			g_copyTime = getEpochMillis() - startMillis;
 			
@@ -167,14 +167,14 @@ void SvenTV::handleDeltaAck(mstream& reader, NetClient& client) {
 	DeltaUpdate& update = client.sentDeltas[deltaIdx];
 
 	if (update.packets.empty()) {
-		ALERT(at_console, "Ignoring duplicate ack\n");
+		ALERT(at_console, "Ignoring duplicate ack\n", 0);
 		return;
 	}
 
 	for (int i = 0; i < (int)update.packets.size(); i++) {
 		int bit = reader.readBit();
 		if (bit == -1) {
-			ALERT(at_console, "Failed to read ack, invalid number of bits sent\n");
+			ALERT(at_console, "Failed to read ack, invalid number of bits sent\n", 0);
 			return;
 		}
 
@@ -199,7 +199,7 @@ void SvenTV::handleClientPackets() {
 		}
 
 		if (packet.sz == 0) {
-			ALERT(at_console, "Ignore 0 size packet\n");
+			ALERT(at_console, "Ignore 0 size packet\n", 0);
 			continue;
 		}
 
@@ -208,7 +208,7 @@ void SvenTV::handleClientPackets() {
 		reader.read(&packetType, 1);
 
 		int clientIdx = -1;
-		for (int i = 0; i < MAX_CLIENTS; i++) {
+		for (int i = 0; i < MAX_HLTV_CLIENTS; i++) {
 			if (!clients[i].isFree && clients[i].addr == packet.addr) {
 				clientIdx = i;
 				break;
@@ -217,13 +217,13 @@ void SvenTV::handleClientPackets() {
 
 		if (packetType == CLC_CONNECT) {
 			if (clientIdx != -1) {
-				ALERT(at_console, "Ignore connect packet for existing client\n");
+				ALERT(at_console, "Ignore connect packet for existing client\n", 0);
 				continue;
 			}
 			ALERT(at_console, "New client connected from %s\n", packet.addr.getString().c_str());
 
 			bool foundFree = false;
-			for (int i = 0; i < MAX_CLIENTS; i++) {
+			for (int i = 0; i < MAX_HLTV_CLIENTS; i++) {
 				if (clients[i].isFree) {
 					clients[i].init(packet.addr);
 					foundFree = true;
@@ -249,7 +249,7 @@ void SvenTV::handleClientPackets() {
 		}
 
 		if (clientIdx == -1) {
-			ALERT(at_console, "Ignore packet from unknown client\n");
+			ALERT(at_console, "Ignore packet from unknown client\n", 0);
 			continue;
 		}
 
@@ -257,10 +257,10 @@ void SvenTV::handleClientPackets() {
 		client.lastPacketTime = getEpochMillis();
 
 		if (packetType == CLC_DELTA_RESET) {
-			ALERT(at_console, "Client reset delta state to null\n");
+			ALERT(at_console, "Client reset delta state to null\n", 0);
 			client.baselineId = 0;
 			client.sentDeltas.clear();
-			memset(client.baselines, 0, MAX_EDICTS * sizeof(netedict));
+			memset(client.baselines, 0, MAX_DEMO_EDICTS * sizeof(netedict));
 		}
 		if (packetType == CLC_DELTA_ACK) {
 			handleDeltaAck(reader, client);
@@ -288,7 +288,7 @@ void SvenTV::broadcastEntityStates() {
 	int debugFrag = -1;
 	int debugEnt = -1;
 
-	for (int k = 0; k < MAX_CLIENTS; k++) {
+	for (int k = 0; k < MAX_HLTV_CLIENTS; k++) {
 		if (clients[k].isFree && (k != 0 || !debugMode)) {
 			continue;
 		}
@@ -320,7 +320,7 @@ void SvenTV::broadcastEntityStates() {
 
 		vector<Packet> deltaPackets;
 
-		for (uint16_t i = 0; i < MAX_EDICTS; i++) {
+		for (uint16_t i = 0; i < MAX_DEMO_EDICTS; i++) {
 			netedict& now = frame.netedicts[i];
 
 			uint64_t startOffset = buffer.tell();
@@ -393,7 +393,7 @@ void SvenTV::broadcastEntityStates() {
 		if (debugMode) {
 			bool redoWrite = false;
 
-			memcpy(debugEdict, clients[k].baselines, MAX_EDICTS * sizeof(netedict));
+			memcpy(debugEdict, clients[k].baselines, MAX_DEMO_EDICTS * sizeof(netedict));
 
 			for (int i = 0; i < (int)deltaPackets.size(); i++) {
 				Packet& deltaPacket = deltaPackets[i];
@@ -412,21 +412,21 @@ void SvenTV::broadcastEntityStates() {
 			}
 
 			if (redoWrite) {
-				memcpy(clients[k].baselines, debugEdict, MAX_EDICTS * sizeof(netedict));
-				ALERT(at_console, "OK DO IT AGAIN\n");
+				memcpy(clients[k].baselines, debugEdict, MAX_DEMO_EDICTS * sizeof(netedict));
+				ALERT(at_console, "OK DO IT AGAIN\n", 0);
 				k--;
 				continue;
 			}
 
 			/*
-			for (int i = 0; i < MAX_EDICTS; i++) {
+			for (int i = 0; i < MAX_DEMO_EDICTS; i++) {
 				if (!clients[k].baselines[i].matches(netedicts[i])) {
 					ALERT(at_console, "ZOMG BAD\n");
 				}
 			}
 			*/
 			
-			//memcpy(clients[k].baselines, netedicts, MAX_EDICTS * sizeof(netedict));
+			//memcpy(clients[k].baselines, netedicts, MAX_DEMO_EDICTS * sizeof(netedict));
 		}
 
 		
@@ -459,7 +459,7 @@ void SvenTV::broadcastEntityStates() {
 		}
 
 		if (TimeDifference(clients[k].lastPacketTime, now) > timeoutSeconds && !debugMode) {
-			ALERT(at_console, "Disconnecting unresponsive client\n");
+			ALERT(at_console, "Disconnecting unresponsive client\n", 0);
 			clients[k].isFree = true;
 			clients[k].sentDeltas.clear();
 			clients[k].sentBytesHistory.clear();

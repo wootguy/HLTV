@@ -131,7 +131,7 @@ uint16_t getPoolOffsetForString(string_t classname) {
 
 	int len = strlen(STRING(classname));
 	if (len + g_stringpool_idx + 1 >= STRING_POOL_SIZE) {
-		ALERT(at_console, "Overflowed string pool!\n");
+		ALERT(at_console, "Overflowed string pool!\n", 0);
 		return 0;
 	}
 
@@ -420,7 +420,7 @@ HOOK_RET_VOID MessageEnd() {
 
 		if (g_netmessage_count >= MAX_NETMSG_FRAME) {
 			g_netmessage_count--; // overwrite last message
-			ALERT(at_console, "Network message capture overflow!\n");
+			ALERT(at_console, "Network message capture overflow!\n", 0);
 		}
 	}
 	
@@ -614,7 +614,7 @@ HOOK_RET_VOID ClientCommand(edict_t* pEntity)
 
 		g_command_count++;
 		if (g_command_count >= MAX_CMD_FRAME) {
-			ALERT(at_console, "Command capture overflow!\n");
+			ALERT(at_console, "Command capture overflow!\n", 0);
 			g_command_count--; // overwrite last command
 		}
 	}	
@@ -688,7 +688,7 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 
 	g_event_count++;
 	if (g_event_count >= MAX_EVENT_FRAME) {
-		ALERT(at_console, "Event capture overflow!\n");
+		ALERT(at_console, "Event capture overflow!\n", 0);
 		g_event_count--; // overwrite last event
 	}
 
@@ -711,8 +711,6 @@ HOOK_RET_VOID EMIT_SOUND_HOOK(edict_t* entity, int channel, const char* sample, 
 	if (fFlags & SND_FL_PREDICTED) {
 		// sound is predicted by the client that emitted it, but the demo player doesn't run any
 		// movement prediction code for the dummy player entities, so let the emitter hear it too
-		uint32_t targets = PLRBIT(entity);
-
 		MessageBegin(MSG_ONE, SVC_SOUND, NULL, entity);
 		for (int i = 0; i < sz; i++) {
 			WriteByte(buffer[i]);
@@ -837,7 +835,7 @@ HOOK_RET_VOID PlayerCustomization(edict_t* pEntity, customization_t* pCust) {
 	}
 
 	if (pCust->resource.nDownloadSize > 65535) {
-		ALERT(at_console, "player uploaded huge invalid spray. ignoring.");
+		ALERT(at_console, "player uploaded huge invalid spray. ignoring.", 0);
 		DEFAULT_HOOK_RETURN;
 	}
 
@@ -850,7 +848,7 @@ HOOK_RET_VOID PlayerCustomization(edict_t* pEntity, customization_t* pCust) {
 		memcpy(g_playerSprays[eidx].data, pCust->pBuffer, pCust->resource.nDownloadSize);
 	}
 	else {
-		ALERT(at_console, "player uploaded the same spray. ignoring.");
+		ALERT(at_console, "player uploaded the same spray. ignoring.", 0);
 	}
 
 	DEFAULT_HOOK_RETURN;

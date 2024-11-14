@@ -36,7 +36,7 @@ using namespace std;
 #define WRITE_DELTA_STR(cat, field) \
 	if (strcmp(old.field, field)) { \
 		MARK_CATEGORY_FILLED(cat) \
-		uint8_t len = strlen(field); \
+		uint8_t len = (uint8_t)V_min(255, strlen(field)); \
 		writer.writeBit(1); \
 		writer.writeBits(len, 8); \
 		for (int z = 0; z < len; z++) { \
