@@ -445,7 +445,7 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 
 	if (steamid64 == 0) {
 		playerFlags |= PLR_FL_CONNECTED;
-		steamid64 = getPlayerCommunityId(ent);
+		steamid64 = plr->GetSteamID64();
 	}
 	else if (!IsValidPlayer(ent)) {
 		playerFlags = 0;

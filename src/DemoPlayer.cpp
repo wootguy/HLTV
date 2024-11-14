@@ -126,14 +126,14 @@ DemoPlayer::~DemoPlayer() {
 	closeReplayFile();
 }
 
-void show_message(edict_t* plr, int mode, const char* msg) {
+void show_message(CBasePlayer* plr, PRINT_TYPE mode, const char* msg) {
 	if (plr)
 		UTIL_ClientPrint(plr, mode, msg);
 	else
 		g_engfuncs.pfnServerPrint(msg);
 }
 
-bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache) {
+bool DemoPlayer::openDemo(CBasePlayer* plr, string path, float offsetSeconds, bool skipPrecache) {
 	this->offsetSeconds = offsetSeconds;
 	stopReplay();
 	unknownSpam.clear();
@@ -147,31 +147,31 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	memset(usrstates, 0, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 
 	if (!replayData->valid()) {
-		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
+		show_message(plr, print_chat, UTIL_VarArgs("Failed to open demo file: %s\n", path.c_str()));
 		return false;
 	}
 
 	if (!replayData->read(&demoHeader, sizeof(DemoHeader))) {
-		show_message(plr, HUD_PRINTTALK, "Invalid demo file: EOF before header read\n");
+		show_message(plr, print_chat, "Invalid demo file: EOF before header read\n");
 		closeReplayFile();
 		return false;
 	}
 
 	if (demoHeader.version != DEMO_VERSION) {
-		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", demoHeader.version, DEMO_VERSION));
+		show_message(plr, print_chat, UTIL_VarArgs("Invalid demo version: %d (expected %d)\n", demoHeader.version, DEMO_VERSION));
 		closeReplayFile();
 		return false;
 	}
 
 	string mapname = string(demoHeader.mapname, 64);
 	if (!g_engfuncs.pfnIsMapValid((char*)mapname.c_str())) {
-		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
+		show_message(plr, print_chat, UTIL_VarArgs("Invalid demo map: %s\n", mapname.c_str()));
 		closeReplayFile();
 		return false;
 	}
 
 	if (demoHeader.modelLen > 1024 * 1024 * 32 || demoHeader.soundLen > 1024 * 1024 * 32) {
-		show_message(plr, HUD_PRINTTALK, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", demoHeader.modelLen, demoHeader.soundLen));
+		show_message(plr, print_chat, UTIL_VarArgs("Invalid demo file: %u + %u byte model/sound data (too big)\n", demoHeader.modelLen, demoHeader.soundLen));
 		closeReplayFile();
 		return false;
 	}
@@ -181,7 +181,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 	}
 	stringPool = new char[demoHeader.stringPoolSize];
 	if (!replayData->read(stringPool, demoHeader.stringPoolSize)) {
-		show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete string pool data\n");
+		show_message(plr, print_chat, "Invalid demo file: incomplete string pool data\n");
 		closeReplayFile();
 		return false;
 	}
@@ -195,12 +195,12 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		char* modelData = new char[demoHeader.modelLen];
 
 		if (!replayData->read(modelIndexes, demoHeader.modelCount*sizeof(uint16_t))) {
-			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
+			show_message(plr, print_chat, "Invalid demo file: incomplete model data\n");
 			closeReplayFile();
 			return false;
 		}
 		if (!replayData->read(modelData, demoHeader.modelLen)) {
-			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete model data\n");
+			show_message(plr, print_chat, "Invalid demo file: incomplete model data\n");
 			closeReplayFile();
 			return false;
 		}
@@ -225,12 +225,12 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		char* soundData = new char[demoHeader.soundLen];
 
 		if (!replayData->read(soundIndexes, demoHeader.soundCount*sizeof(uint16_t))) {
-			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
+			show_message(plr, print_chat, "Invalid demo file: incomplete sound data\n");
 			closeReplayFile();
 			return false;
 		}
 		if (!replayData->read(soundData, demoHeader.soundLen)) {
-			show_message(plr, HUD_PRINTTALK, "Invalid demo file: incomplete sound data\n");
+			show_message(plr, print_chat, "Invalid demo file: incomplete sound data\n");
 			closeReplayFile();
 			return false;
 		}
@@ -254,7 +254,7 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		ALERT(at_console, "WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.\n");
 	}
 
-	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
+	show_message(plr, print_console, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
 	{
 		time_t rawtime;
 		struct tm* timeinfo;
@@ -264,32 +264,32 @@ bool DemoPlayer::openDemo(edict_t* plr, string path, float offsetSeconds, bool s
 		timeinfo = localtime(&rawtime);
 
 		strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
-		show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("date       : %s\n", buffer));
+		show_message(plr, print_console, UTIL_VarArgs("date       : %s\n", buffer));
 	}
 	{
 		int duration = demoHeader.endTime ? TimeDifference(demoHeader.startTime, demoHeader.endTime) : 0;
 
 		if (duration) {
 			std::string timeStr = formatTime(duration);
-			show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("duration   : %s\n", timeStr.c_str()));
+			show_message(plr, print_console, UTIL_VarArgs("duration   : %s\n", timeStr.c_str()));
 		}
 		else {
-			show_message(plr, HUD_PRINTCONSOLE, "duration   : unknown\n");
+			show_message(plr, print_console, "duration   : unknown\n");
 		}
 	}
 
 	std::string modelPrecacheStr = notPrecachedModels ? UTIL_VarArgs(" (%d not precached)", notPrecachedModels) : "";
 	std::string soundPrecacheStr = notPrecachedSounds ? UTIL_VarArgs(" (%d not precached)", notPrecachedSounds) : "";
 
-	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
-	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
-	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("models     : %d%s\n", precacheModels.size(), modelPrecacheStr.c_str()));
-	show_message(plr, HUD_PRINTCONSOLE, UTIL_VarArgs("sounds     : %d%s\n", precacheSounds.size(), soundPrecacheStr.c_str()));
+	show_message(plr, print_console, UTIL_VarArgs("map        : %s\n", mapname.c_str()));
+	show_message(plr, print_console, UTIL_VarArgs("maxplayers : %d\n", demoHeader.maxPlayers));
+	show_message(plr, print_console, UTIL_VarArgs("models     : %d%s\n", precacheModels.size(), modelPrecacheStr.c_str()));
+	show_message(plr, print_console, UTIL_VarArgs("sounds     : %d%s\n", precacheSounds.size(), soundPrecacheStr.c_str()));
 
-	UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[HLTV] Opened: %s\n", path.c_str()));
+	UTIL_ClientPrintAll(print_chat, UTIL_VarArgs("[HLTV] Opened: %s\n", path.c_str()));
 	
 	if (notPrecachedModels + notPrecachedSounds)
-		UTIL_ClientPrintAll(HUD_PRINTTALK, UTIL_VarArgs("[HLTV] %d files need precaching. Restart the map to precache them\n", notPrecachedModels + notPrecachedSounds));
+		UTIL_ClientPrintAll(print_chat, UTIL_VarArgs("[HLTV] %d files need precaching. Restart the map to precache them\n", notPrecachedModels + notPrecachedSounds));
 
 	g_stats.totalWriteSz = sizeof(DemoHeader) + demoHeader.modelLen + demoHeader.soundLen;
 	firstFrameOffset = replayData->tell();
@@ -2105,9 +2105,9 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 
 		closeReplayFile();
 		if (demoHeader.startTime + lastFrameDemoTime == demoHeader.endTime)
-			UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] End of demo\n");
+			UTIL_ClientPrintAll(print_chat, "[HLTV] End of demo\n");
 		else
-			UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Unexpected EOF\n");
+			UTIL_ClientPrintAll(print_chat, "[HLTV] Unexpected EOF\n");
 		return false;
 	}
 	uint32_t demoTime = 0;
@@ -2152,7 +2152,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	lastFrameDemoTime = demoTime;
 
 	if (frameSize > 1024 * 1024 * 32 || frameSize == 0) {
-		UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Invalid frame size\n");
+		UTIL_ClientPrintAll(print_chat, "[HLTV] Invalid frame size\n");
 		closeReplayFile();
 		return false;
 	}
@@ -2176,7 +2176,7 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	char* frameData = new char[frameSize];
 	if (!replayData->read(frameData, frameSize)) {
 		delete[] frameData;
-		UTIL_ClientPrintAll(HUD_PRINTTALK, "[HLTV] Unexpected EOF\n");
+		UTIL_ClientPrintAll(print_chat, "[HLTV] Unexpected EOF\n");
 		closeReplayFile();
 		return false;
 	}
@@ -2660,7 +2660,7 @@ void DemoPlayer::OverrideClientData(const edict_t* ent, int sendweapons, clientd
 	cd->fov = fileedicts[originalEntIdx].fov;
 }
 
-void DemoPlayer::searchCommand(edict_t* searcher, string searchStr) {
+void DemoPlayer::searchCommand(CBasePlayer* searcher, string searchStr) {
 	if (!replayData) {
 		string path = g_demo_file_path->string + string(STRING(gpGlobals->mapname)) + ".demo";
 		g_demoPlayer->stopReplay();

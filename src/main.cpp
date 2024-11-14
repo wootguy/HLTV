@@ -157,8 +157,8 @@ std::string formatTime(int seconds, bool forceHours) {
 	}
 }
 
-HOOK_RET_VOID ClientLeaveHook(edict_t* ent) {
-	demoStatPlayers[ENTINDEX(ent)] = false;
+HOOK_RET_VOID ClientLeaveHook(CBasePlayer* ent) {
+	demoStatPlayers[ent->entindex()] = false;
 	
 	DEFAULT_HOOK_RETURN;
 }
@@ -553,7 +553,7 @@ bool replay_demo(CBasePlayer* plr, const CommandArgs& args) {
 
 	g_demoPlayer->stopReplay();
 	g_demoPlayer->prepareDemo();
-	g_demoPlayer->openDemo(plr ? plr->edict() : NULL, path, offsetSeconds, true);
+	g_demoPlayer->openDemo(plr, path, offsetSeconds, true);
 	
 	g_sventv->enableDemoFile = false;
 
@@ -588,7 +588,7 @@ bool set_demo_speed(CBasePlayer* plr, const CommandArgs& args) {
 }
 
 bool search_demo(CBasePlayer* plr, const CommandArgs& args) {
-	g_demoPlayer->searchCommand(plr ? plr->edict() : NULL, args.ArgV(1));
+	g_demoPlayer->searchCommand(plr, args.ArgV(1));
 	return true;
 }
 
@@ -892,7 +892,7 @@ HOOK_RETURN_DATA SendVoiceData(int senderidx, int receiveridx, uint8_t* data, in
 	return HOOK_CONTINUE;
 }
 
-extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
+extern "C" int DLLEXPORT PluginInit() {
 	g_plugin_exiting = false;
 
 	g_hooks.pfnMapInit = MapInitHook;
@@ -923,22 +923,22 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnGetWeaponData = GetWeaponData;
 	g_hooks.pfnUpdateClientDataPost = UpdateClientDataPost;
 	
-	RegisterPluginCommand(plugin, ".demo", record_demo, FL_CMD_ANY | FL_CMD_ADMIN);
-	RegisterPluginCommand(plugin, ".replay", replay_demo, FL_CMD_ANY | FL_CMD_ADMIN);
-	RegisterPluginCommand(plugin, ".seek", seek_demo, FL_CMD_ANY | FL_CMD_ADMIN);
-	RegisterPluginCommand(plugin, ".speed", set_demo_speed, FL_CMD_ANY | FL_CMD_ADMIN);
-	RegisterPluginCommand(plugin, ".search", search_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(".demo", record_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(".replay", replay_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(".seek", seek_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(".speed", set_demo_speed, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(".search", search_demo, FL_CMD_ANY | FL_CMD_ADMIN);
 
 #ifdef HLCOOP_BUILD
 	// start writing demo file automatically when map starts, if 1
-	g_auto_demo_file = RegisterPluginCVar(plugin, "hltv.auto_demo", "0", 0, 0);
-	g_min_storage_megabytes = RegisterPluginCVar(plugin, "hltv.min_storage_mb", "500", 500, 0);
-	g_max_demo_megabytes = RegisterPluginCVar(plugin, "hltv.max_demo_mb", "100", 100, 0);
-	g_compress_demos = RegisterPluginCVar(plugin, "hltv.compress", "1", 1, 0);
-	g_demo_file_path = RegisterPluginCVar(plugin, "hltv.path", "hltv/", 0, 0);
-	g_validate_output = RegisterPluginCVar(plugin, "hltv.validate", "0", 0, 0);
-	g_write_debug_info = RegisterPluginCVar(plugin, "hltv.debug_info", "1", 0, 0);
-	g_write_user_cmds = RegisterPluginCVar(plugin, "hltv.write_user_cmds", "0", 0, 0);
+	g_auto_demo_file = RegisterPluginCVar("hltv.auto_demo", "0", 0, 0);
+	g_min_storage_megabytes = RegisterPluginCVar("hltv.min_storage_mb", "500", 500, 0);
+	g_max_demo_megabytes = RegisterPluginCVar("hltv.max_demo_mb", "100", 100, 0);
+	g_compress_demos = RegisterPluginCVar("hltv.compress", "1", 1, 0);
+	g_demo_file_path = RegisterPluginCVar("hltv.path", "hltv/", 0, 0);
+	g_validate_output = RegisterPluginCVar("hltv.validate", "0", 0, 0);
+	g_write_debug_info = RegisterPluginCVar("hltv.debug_info", "1", 0, 0);
+	g_write_user_cmds = RegisterPluginCVar("hltv.write_user_cmds", "0", 0, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 
@@ -961,7 +961,7 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 		g_usercmds[i] = new DemoUserCmdData[MAX_USERCMD_FRAME];
 	memset(lastGaussCharge, 0, sizeof(GaussChargeEvt) * MAX_PLAYERS);
 
-	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
+	return RegisterPlugin(&g_hooks);
 }
 
 extern "C" void DLLEXPORT PluginExit() {
@@ -970,7 +970,8 @@ extern "C" void DLLEXPORT PluginExit() {
 	delete[] g_netmessages;
 	delete[] g_cmds;
 	delete[] g_events;
-	delete[] g_usercmds;
+	for (int i = 0; i < MAX_PLAYERS; i++)
+		delete[] g_usercmds[i];
 }
 #else
 

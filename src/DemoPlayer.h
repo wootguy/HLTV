@@ -111,7 +111,7 @@ public:
 
 	// validates and prepares demo file for playback
 	// plr = player who opened the file
-	bool openDemo(edict_t* plr, string path, float offsetSeconds, bool skipPrecache = false);
+	bool openDemo(CBasePlayer* plr, string path, float offsetSeconds, bool skipPrecache = false);
 
 	// call this every frame to replay the demo
 	void playDemo();
@@ -142,7 +142,7 @@ public:
 	void setPlaybackSpeed(float speed);
 
 	// search the demo file for a player command
-	void searchCommand(edict_t* searcher, string searchStr);
+	void searchCommand(CBasePlayer* searcher, string searchStr);
 
 	// return playback position in milliseconds
 	uint32_t getPlaybackTime();
@@ -165,7 +165,7 @@ private:
 	DemoFrame lastReplayFrame;
 	char* stringPool = NULL;
 	string cmdSearchStr;
-	edict_t* searchingPlayer = NULL;
+	CBasePlayer* searchingPlayer = NULL;
 	vector<string> searchResults;
 	bool wasSeeking;
 
