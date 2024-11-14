@@ -523,10 +523,7 @@ HOOK_RET_VOID WriteString(const char* s) {
 	DEFAULT_HOOK_RETURN;
 }
 
-void replay_demo(edict_t* plr) {
-	CommandArgs args = CommandArgs();
-	args.loadArgs();
-
+bool replay_demo(CBasePlayer* plr, const CommandArgs& args) {
 	string path = g_demo_file_path->string + args.ArgV(2);
 	if (args.ArgV(2).empty()) {
 		path += string(STRING(gpGlobals->mapname)) + ".demo";
@@ -556,84 +553,43 @@ void replay_demo(edict_t* plr) {
 
 	g_demoPlayer->stopReplay();
 	g_demoPlayer->prepareDemo();
-	g_demoPlayer->openDemo(plr, path, offsetSeconds, true);
+	g_demoPlayer->openDemo(plr ? plr->edict() : NULL, path, offsetSeconds, true);
 	
 	g_sventv->enableDemoFile = false;
+
+	return true;
 }
 
-bool doCommand(edict_t* plr) {
-	bool isAdmin = AdminLevel(plr) >= ADMIN_YES;
-	CommandArgs args = CommandArgs();
-	args.loadArgs();
-	string lowerArg = toLowerCase(args.ArgV(0));
+bool record_demo(CBasePlayer* plr, const CommandArgs& args) {
+	g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
+	if (!g_sventv->enableDemoFile)
+		g_can_autostart_demo = false;
+	return true;
+}
 
-	if (!isAdmin) {
-		return false;
-	}
+bool show_demo_stats(CBasePlayer* plr, const CommandArgs& args) {
+	demoStatPlayers[plr->entindex()] = !demoStatPlayers[plr->entindex()];
+	return true;
+}
 
-	if (args.ArgC() > 0 && lowerArg == ".replay") {
-		if (args.ArgC() > 1 || true) {
-			replay_demo(plr);
-		}
-		else {
-			UTIL_ClientPrint(plr, HUD_PRINTTALK, "Usage: .demo [demo file path]\n");
-		}
+bool seek_demo(CBasePlayer* plr, const CommandArgs& args) {
+	std::string offset = args.ArgV(1);
+	int seekPos = atoi(offset.c_str());
+	bool relative = offset[0] == '-' || offset[0] == '+';
+	g_demoPlayer->seek(seekPos, relative);
+	return true;
+}
 
-		return true;
-	}
-	if (args.ArgC() > 0 && lowerArg == ".demo") {
-		g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
-		if (!g_sventv->enableDemoFile)
-			g_can_autostart_demo = false;
-		return true;
-	}
-	if (args.ArgC() > 0 && lowerArg == ".demostats") {
-		demoStatPlayers[ENTINDEX(plr)] = !demoStatPlayers[ENTINDEX(plr)];
-		return true;
-	}
-	if (args.ArgC() > 0 && lowerArg == ".seek") {
-		std::string offset = args.ArgV(1);
-		int seekPos = atoi(offset.c_str());
-		bool relative = offset[0] == '-' || offset[0] == '+';
-		g_demoPlayer->seek(seekPos, relative);
-		return true;
-	}
-	if (args.ArgC() > 0 && lowerArg == ".speed") {
-		float speed = atof(args.ArgV(1).c_str());
-		g_demoPlayer->setPlaybackSpeed(speed);
-		UTIL_ClientPrintAll(print_center, UTIL_VarArgs("Playback speed: %.2fx\n", speed));
-		return true;
-	}
-	if (args.ArgC() > 0 && lowerArg == ".search") {
-		g_demoPlayer->searchCommand(plr, args.ArgV(1));
-		return true;
-	}
-	/*
-	if (args.ArgC() > 0 && lowerArg == ".bot") {
-		edict_t* bot = g_engfuncs.pfnCreateFakeClient("botguy");
-		if (bot) {
-			gpGamedllFuncs->dllapi_table->pfnClientPutInServer(bot);
-			char* infoBuffer = g_engfuncs.pfnGetInfoKeyBuffer(bot);
-			g_engfuncs.pfnSetClientKeyValue(ENTINDEX(bot), infoBuffer, "model", "player");
-			//g_Scheduler.SetInterval(updateBot, 0.1, -1, EHandle(plr), EHandle(bot));
-			h_plr = plr;
-			h_bot = bot;
-		}
-		return true;
-	}
-	*/
-	if (args.ArgC() > 0 && lowerArg == ".kick") {
-		for (int i = 1; i <= 32; i++) {
-			edict_t* ent = INDEXENT(i);
-			if (ent) {
-				int userid = g_engfuncs.pfnGetPlayerUserId(ent);
-				g_engfuncs.pfnServerCommand(UTIL_VarArgs("kick #%d\n", userid));
-			}
-		}
-		g_engfuncs.pfnServerExecute();
-		return true;
-	}
-	return false;
+bool set_demo_speed(CBasePlayer* plr, const CommandArgs& args) {
+	float speed = atof(args.ArgV(1).c_str());
+	g_demoPlayer->setPlaybackSpeed(speed);
+	UTIL_ClientPrintAll(print_center, UTIL_VarArgs("Playback speed: %.2fx\n", speed));
+	return true;
+}
+
+bool search_demo(CBasePlayer* plr, const CommandArgs& args) {
+	g_demoPlayer->searchCommand(plr ? plr->edict() : NULL, args.ArgV(1));
+	return true;
 }
 
 #ifdef HLCOOP_BUILD
@@ -644,9 +600,6 @@ HOOK_RET_VOID ClientCommand(edict_t* pEntity)
 {
 #ifdef HLCOOP_BUILD
 	edict_t* pEntity = pPlayer->edict();
-	bool ret = doCommand(pEntity);
-#else
-	META_RES ret = doCommand(pEntity) ? MRES_SUPERCEDE : MRES_IGNORED;
 #endif
 
 	if (g_sventv->enableDemoFile || g_sventv->enableServer) {
@@ -666,17 +619,7 @@ HOOK_RET_VOID ClientCommand(edict_t* pEntity)
 		}
 	}	
 
-#ifdef HLCOOP_BUILD
-	if (ret) {
-		return HOOK_HANDLED_OVERRIDE(0);
-	}
-	else {
-		return HOOK_CONTINUE;
-	}
-#else
-	RETURN_META(ret);
-#endif
-	
+	DEFAULT_HOOK_RETURN;
 }
 
 HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short eventindex, float delay, 
@@ -750,16 +693,6 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 	}
 
 	DEFAULT_HOOK_RETURN;
-}
-
-void demo_command() {
-	g_sventv->enableDemoFile = !g_sventv->enableDemoFile;
-	if (!g_sventv->enableDemoFile)
-		g_can_autostart_demo = false;
-}
-
-void replay_command() {
-	replay_demo(NULL);
 }
 
 HOOK_RET_VOID EMIT_SOUND_HOOK(edict_t* entity, int channel, const char* sample, float fvolume,
@@ -990,8 +923,11 @@ extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnGetWeaponData = GetWeaponData;
 	g_hooks.pfnUpdateClientDataPost = UpdateClientDataPost;
 	
-	RegisterPluginCommand(plugin, "demo", demo_command);
-	RegisterPluginCommand(plugin, "replay", replay_command);
+	RegisterPluginCommand(plugin, ".demo", record_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(plugin, ".replay", replay_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(plugin, ".seek", seek_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(plugin, ".speed", set_demo_speed, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(plugin, ".search", search_demo, FL_CMD_ANY | FL_CMD_ADMIN);
 
 #ifdef HLCOOP_BUILD
 	// start writing demo file automatically when map starts, if 1

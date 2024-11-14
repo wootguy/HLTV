@@ -275,7 +275,7 @@ void DemoStats::showStats(edict_t* edt) {
 		}
 
 		params.x = 0;
-		params.y = 1;
+		params.y = -1;
 		params.channel = 3;
 		UTIL_HudMessage(ent, params, txt.c_str(), MSG_ONE_UNRELIABLE);
 	}
