@@ -8,16 +8,16 @@
 using namespace std;
 
 DemoWriter::DemoWriter() {
-	fileedicts = new netedict[MAX_EDICTS];
+	fileedicts = new netedict[MAX_DEMO_EDICTS];
 
-	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+	memset(fileedicts, 0, MAX_DEMO_EDICTS * sizeof(netedict));
 	memset(usrstates, 0, MAX_PLAYERS * sizeof(DemoUserCmdData));
 
 	// size of full delta on every edict + byte for each index delta + 2 bytes for each delta bits on edict
 	int fullDeltaMaxSize = sizeof(netedict) + 4;
 	int indexBytes = 1; // 2 for full index writes but on a max size update there will be no 255+ edict gaps
 	int headerBytes = 1; // 1 for first full index
-	fileDeltaBufferSize = headerBytes + (fullDeltaMaxSize + indexBytes) * MAX_EDICTS;
+	fileDeltaBufferSize = headerBytes + (fullDeltaMaxSize + indexBytes) * MAX_DEMO_EDICTS;
 	fileDeltaBuffer = new char[fileDeltaBufferSize];
 
 	netmessagesBufferSize = sizeof(NetMessageData) * MAX_NETMSG_FRAME + 2;
@@ -118,7 +118,7 @@ void DemoWriter::initDemoFile() {
 		return;
 	}
 
-	memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+	memset(fileedicts, 0, MAX_DEMO_EDICTS * sizeof(netedict));
 	memset(usrstates, 0, MAX_PLAYERS * sizeof(DemoUserCmdData));
 	memset(g_userInfoDirty, 1, sizeof(bool) * 33);
 
@@ -191,7 +191,7 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, Dem
 
 	numEntDeltas = 0;
 	uint32_t indexWriteSz = 0;
-	for (uint16_t i = 0; i < MAX_EDICTS; i++) {
+	for (uint16_t i = 0; i < MAX_DEMO_EDICTS; i++) {
 		netedict& now = frame.netedicts[i];
 
 		uint64_t startOffset = entbuffer.tellBits();
@@ -220,7 +220,7 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, Dem
 		int ret = now.writeDeltas(entbuffer, fileedicts[i]);
 
 		if (ret == EDELTA_OVERFLOW) {
-			ALERT(at_console, "ERROR: Demo file entity delta buffer overflowed. Use a bigger buffer! The demo file is now broken\n");
+			ALERT(at_console, "ERROR: Demo file entity delta buffer overflowed. Use a bigger buffer! The demo file is now broken\n", 0);
 			break;
 		}
 		else if (ret == EDELTA_NONE) {
@@ -380,7 +380,7 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 				msg.sz -= 2;
 				*(uint16_t*)msg.data = flags & ~SND_ENT;
 			}
-			else if (entidx < MAX_EDICTS) {
+			else if (entidx < MAX_DEMO_EDICTS) {
 				netedict& ed = frame.netedicts[entidx];
 				uint16_t soundIdx = *(uint16_t*)(msg.data + (msg.sz - 2));
 
@@ -515,7 +515,7 @@ mstream DemoWriter::writeCmdDeltas(FrameData& frame) {
 		cmdbuffer.write(dat.data, dat.len);
 	}
 	if (cmdbuffer.eom()) {
-		ALERT(at_console, "ERROR: Demo file command buffer overflowed. Use a bigger buffer!\n");
+		ALERT(at_console, "ERROR: Demo file command buffer overflowed. Use a bigger buffer!\n", 0);
 	}
 
 	return cmdbuffer;
@@ -807,11 +807,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 
 	if (isKeyframe) {
 		nextDemoKeyframe = now + (1000ULL * KEYFRAME_INTERVAL);
-		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+		memset(fileedicts, 0, MAX_DEMO_EDICTS * sizeof(netedict));
 	}
 
 	uint16_t numEntDeltas = 0;
-	uint32_t plrDeltaBits = 0;
 
 	bool validateOutput = g_validate_output->value;
 
@@ -823,8 +822,8 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		testPlayer = new DemoPlayer();
 		testPlayer->isValidating = true;
 		memset(testData, 0, sizeof(DemoDataTest));
-		memcpy(testData->oldEntState, fileedicts, sizeof(netedict) * MAX_EDICTS);
-		memcpy(testPlayer->fileedicts, fileedicts, sizeof(netedict) * MAX_EDICTS);
+		memcpy(testData->oldEntState, fileedicts, sizeof(netedict) * MAX_DEMO_EDICTS);
+		memcpy(testPlayer->fileedicts, fileedicts, sizeof(netedict) * MAX_DEMO_EDICTS);
 		memcpy(testData->oldUsercmdState, usrstates, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 		memcpy(testPlayer->usrstates, usrstates, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 	}
@@ -862,7 +861,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	if (anyUsercmds)
 		usrbuffer = writeUserCmdDeltas(frame);
 
-	memcpy(fileedicts, frame.netedicts, MAX_EDICTS * sizeof(netedict));
+	memcpy(fileedicts, frame.netedicts, MAX_DEMO_EDICTS * sizeof(netedict));
 
 	g_stats.entDeltaCurrentSz = entbuffer.tell() + (entbuffer.tell() ? 2 : 0);
 	g_stats.msgCurrentSz = msgbuffer.tell();
@@ -1000,7 +999,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 		DemoStats oldStats = g_stats;
 		memset(&g_stats, 0, sizeof(DemoStats));
 
-		memcpy(testData->newEntState, frame.netedicts, sizeof(netedict) * MAX_EDICTS);
+		memcpy(testData->newEntState, frame.netedicts, sizeof(netedict) * MAX_DEMO_EDICTS);
 		memcpy(testData->newUsercmdState, usrstates, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 
 		DemoDataStream testStream(demoFile);

@@ -116,7 +116,7 @@ void delayRenamePlayer(EHANDLE h_plr, string name) {
 }
 
 DemoPlayer::DemoPlayer() {
-	fileedicts = new netedict[MAX_EDICTS];
+	fileedicts = new netedict[MAX_DEMO_EDICTS];
 	memset(usrstates, 0, sizeof(DemoUserCmdData) * MAX_PLAYERS);
 }
 
@@ -251,7 +251,7 @@ bool DemoPlayer::openDemo(CBasePlayer* plr, string path, float offsetSeconds, bo
 		delete[] soundIndexes;
 	}
 	if (demoHeader.modelLen == 0) {
-		ALERT(at_console, "WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.\n");
+		ALERT(at_console, "WARNING: Demo has no model list. The plugin may have been reloaded before the demo started.\n", 0);
 	}
 
 	show_message(plr, print_console, UTIL_VarArgs("\nfile       : %s\n", path.c_str()));
@@ -379,7 +379,7 @@ void DemoPlayer::stopReplay() {
 	closeReplayFile();
 	replayModelPath.clear();
 	replayEnts.clear();
-	memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
+	memset(fileedicts, 0, sizeof(netedict) * MAX_DEMO_EDICTS);
 }
 
 bool DemoPlayer::isPlaying() {
@@ -474,7 +474,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 			fullIndex++;
 		}
 
-		if (fullIndex >= MAX_EDICTS) {
+		if (fullIndex >= MAX_DEMO_EDICTS) {
 			ALERT(at_console, "ERROR: Invalid delta wants to update edict %d at %d\n", (int)fullIndex, loop);
 			closeReplayFile();
 			return false;
@@ -627,7 +627,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			replayEnts[i].h_ent = ent = bot;
 		}
 		else {
-			ALERT(at_console, "Failed to create bot\n");
+			ALERT(at_console, "Failed to create bot\n", 0);
 		}
 	}
 	else if (isBeam && !entIsBeam) {
@@ -769,7 +769,7 @@ edict_t* DemoPlayer::getReplayEntity(int idx) {
 bool DemoPlayer::simulate(DemoFrame& header) {
 	int errorSprIdx = g_engfuncs.pfnModelIndex(NOT_PRECACHED_MODEL);
 
-	for (int i = 1; i < MAX_EDICTS; i++) {
+	for (int i = 1; i < MAX_DEMO_EDICTS; i++) {
 		if (!fileedicts[i].etype) {
 			if (i < (int)replayEnts.size()) {
 
@@ -804,7 +804,6 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 		}
 		
 		int oldModelIdx = ent->v.modelindex;
-		int oldRenderfx = ent->v.renderfx;
 
 		fileedicts[i].apply(ent, stringPool);
 
@@ -918,6 +917,8 @@ bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 			errorSpam.insert(error);
 		}
 	}
+
+	return false;
 }
 
 bool DemoPlayer::processTempEntityMessage(NetMessageData& msg, DemoDataTest* validate) {
@@ -1248,7 +1249,7 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 
 		if (*sendLen != msg.sz - 3) {
 			*sendLen = msg.sz - 3;
-			ALERT(at_console, "Fixed bad size in voice data\n");
+			ALERT(at_console, "Fixed bad size in voice data\n", 0);
 			return 0;
 		}
 
@@ -1519,7 +1520,7 @@ void DemoPlayer::decompressNetMessage(NetMessageData& msg) {
 			// It doesn't seem necesary otherwise because the sounds still work.
 			// The messages seem random too which is weird, they come and go with the same replay.
 			uint16_t entidx = *(uint16_t*)(msg.data + 2);
-			if (entidx < MAX_EDICTS && fileedicts[entidx].edflags & EDFLAG_VALID) {
+			if (entidx < MAX_DEMO_EDICTS && fileedicts[entidx].edflags & EDFLAG_VALID) {
 				netedict& ed = fileedicts[entidx];
 				int32_t neworigin[3];
 				for (int i = 0; i < 3; i++) {
@@ -1683,7 +1684,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 			ALERT(at_console, "Individual %s sent to everyone?\n", msgTypeStr(msg.type));
 		}
 
-		for (uint32_t i = 1; i <= gpGlobals->maxClients; i++) {
+		for (int i = 1; i <= gpGlobals->maxClients; i++) {
 			uint32_t plrbit = PLRBIT(i);
 
 			if (!(msg.targets & plrbit)) {
@@ -1780,7 +1781,7 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate, bool seekin
 
 		uint16_t eidx = ev.header.entindex;
 		if (validate) {
-			if (eidx > MAX_EDICTS) {
+			if (eidx > MAX_DEMO_EDICTS) {
 				ALERT(at_console, "Invalid event edict %d\n", (int)ev.header.entindex);
 				return false;
 			}
@@ -1814,8 +1815,6 @@ bool DemoPlayer::readEvents(mstream& reader, DemoDataTest* validate, bool seekin
 }
 
 void DemoPlayer::processUserCmd(int playerindex) {
-	DemoUserCmdData& cmd = usrstates[playerindex];
-
 	netedict& plr = fileedicts[playerindex+1];
 
 	string legacySteamId = "STEAM_ID_INVALID";
@@ -1831,11 +1830,13 @@ void DemoPlayer::processUserCmd(int playerindex) {
 		legacySteamId = UTIL_VarArgs("STEAM_0:%u:%u", accountIdLowBit, accountIdHighBits);
 	}
 
+	/*
+	DemoUserCmdData& cmd = usrstates[playerindex];
+	
 	float viewx = cmd.viewangles[0] * (360.0f / 65535.0f);
 	float viewy = cmd.viewangles[1] * (360.0f / 65535.0f);
 	float viewz = cmd.viewangles[2] * (360.0f / 65535.0f);
-
-	/*
+	
 	ALERT(at_console, "[usercmd][%s][%s] %d %d (%.2f %.2f %.2f) (%.2f %.2f %.2f) %d %d %d %d\n",
 		legacySteamId.c_str(), plr.name, (int)cmd.lerp_msec, (int)cmd.msec, viewx, viewy, viewz,
 		cmd.forwardmove, cmd.sidemove, cmd.upmove, (int)cmd.lightlevel, (int)cmd.buttons,
@@ -2184,17 +2185,15 @@ bool DemoPlayer::readDemoFrame(DemoDataTest* validate) {
 	mstream reader = mstream(frameData, frameSize);
 
 	if (header.isKeyFrame) {
-		memset(fileedicts, 0, MAX_EDICTS * sizeof(netedict));
+		memset(fileedicts, 0, MAX_DEMO_EDICTS * sizeof(netedict));
 	}
 
 	g_stats.entDeltaCurrentSz = g_stats.msgCurrentSz = g_stats.cmdCurrentSz = g_stats.eventCurrentSz 
 		= g_stats.sprayCurrentSz = 0;
 
-	for (int i = 0; i < MAX_EDICTS; i++) {
+	for (int i = 0; i < MAX_DEMO_EDICTS; i++) {
 		fileedicts[i].deltaBitsLast = 0;
 	}
-
-	static bool wasSeeking = false;
 
 	double fileTime = demoTime / 1000.0;
 	double viewTime = t / 1000.0;
@@ -2376,11 +2375,11 @@ void DemoPlayer::updateVisibility() {
 		int numVis = 0;
 		int numHide = 0;
 
-		for (int e = 0; e < replayEnts.size(); e++) {
+		for (int e = 0; e < (int)replayEnts.size(); e++) {
 			CBaseEntity* ent = replayEnts[e].h_ent.GetEntity();
 			uint32_t originalIdx = ent ? ent->pev->iuser4 : -1;
 
-			if (!ent || originalIdx >= MAX_EDICTS) {
+			if (!ent || originalIdx >= (uint32_t)MAX_DEMO_EDICTS) {
 				continue;
 			}
 
@@ -2555,7 +2554,7 @@ void DemoPlayer::playDemo() {
 
 void DemoPlayer::seek(int offsetSeconds, bool relative) {
 	if (!replayData) {
-		ALERT(at_console, "Can't seek. No demo open\n");
+		ALERT(at_console, "Can't seek. No demo open\n", 0);
 		return;
 	}
 	
@@ -2595,7 +2594,7 @@ void DemoPlayer::seek(int offsetSeconds, bool relative) {
 		nextFrameTime = 0;
 
 		memset(&g_stats, 0, sizeof(DemoStats));
-		memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
+		memset(fileedicts, 0, sizeof(netedict) * MAX_DEMO_EDICTS);
 	}
 }
 
@@ -2668,7 +2667,7 @@ void DemoPlayer::searchCommand(CBasePlayer* searcher, string searchStr) {
 		g_demoPlayer->openDemo(searcher, path, 0, true);
 	}
 	if (trimSpaces(searchStr).empty()) {
-		ALERT(at_console, "Can't search for an empty string.\n");
+		ALERT(at_console, "Can't search for an empty string.\n", 0);
 		return;
 	}
 
@@ -2678,7 +2677,7 @@ void DemoPlayer::searchCommand(CBasePlayer* searcher, string searchStr) {
 	nextFrameOffset = replayData ? replayData->tell() : 0;
 	nextFrameTime = 0;
 
-	memset(fileedicts, 0, sizeof(netedict) * MAX_EDICTS);
+	memset(fileedicts, 0, sizeof(netedict) * MAX_DEMO_EDICTS);
 	replayStartTime = 0; // seek to the end
 	
 	cmdSearchStr = searchStr;
