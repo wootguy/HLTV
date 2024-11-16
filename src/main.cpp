@@ -696,7 +696,7 @@ HOOK_RET_VOID PlaybackEvent(int flags, const edict_t* pInvoker, unsigned short e
 }
 
 HOOK_RET_VOID EMIT_SOUND_HOOK(edict_t* entity, int channel, const char* sample, float fvolume,
-	float attenuation, int fFlags, int pitch, const float* origin, uint32_t recipients, bool reliable) {
+	float attenuation, int fFlags, int pitch, const float* origin, uint32_t recipients) {
 
 	mstream* stream = BuildStartSoundMessage(entity, channel, sample, fvolume, attenuation, fFlags, pitch, origin);
 
@@ -922,6 +922,7 @@ extern "C" int DLLEXPORT PluginInit() {
 	g_hooks.pfnUpdateClientDataPost = UpdateClientDataPost;
 	
 	RegisterPluginCommand(".demo", record_demo, FL_CMD_ANY | FL_CMD_ADMIN);
+	RegisterPluginCommand(".demostats", show_demo_stats, FL_CMD_CLIENT | FL_CMD_ADMIN);
 	RegisterPluginCommand(".replay", replay_demo, FL_CMD_ANY | FL_CMD_ADMIN);
 	RegisterPluginCommand(".seek", seek_demo, FL_CMD_ANY | FL_CMD_ADMIN);
 	RegisterPluginCommand(".speed", set_demo_speed, FL_CMD_ANY | FL_CMD_ADMIN);
