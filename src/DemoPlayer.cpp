@@ -1659,6 +1659,18 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 				ALERT(at_console, "Read unexpected data for %s!\n", msgTypeStr(expected.type));
 				return false;
 			}
+
+			if (msg.type == SVC_SPAWNSTATICSOUND && msg.sz != 14) {
+				// TODO: why is this happening
+				ALERT(at_console, "Read invalid size %d for SVC_SPAWNSTATICSOUND\n", (int)msg.sz);
+				return false;
+			}
+
+			int expectedSz = 0;
+			if (GetUserMsgInfo(msg.type, &expectedSz) && expectedSz != -1 && msg.sz != expectedSz) {
+				ALERT(at_console, "%s with bad size (%d != %d)\n", msgTypeStr(msg.type), (int)msg.sz, expectedSz);
+				return false;
+			}
 		}
 
 		int parseResult = validate ? 0 : processDemoNetMessage(msg, validate);
@@ -2506,7 +2518,7 @@ void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 }
 
 void DemoPlayer::playDemo() {
-	if (!replayData) {
+	if (!replayData || !replayData->valid()) {
 		return;
 	}
 
