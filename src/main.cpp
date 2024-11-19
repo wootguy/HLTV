@@ -770,7 +770,7 @@ HOOK_RET_VOID EMIT_AMBIENT_SOUND_HOOK(edict_t* entity, const float* pos, const c
 	DEFAULT_HOOK_RETURN;
 }
 
-HOOK_RET_VOID GetWeaponData(edict_t* player, weapon_data_t* info) {	
+HOOK_RET_VOID GetWeaponDataHook(edict_t* player, weapon_data_t* info) {	
 	CBasePlayer* pl = (CBasePlayer*)CBasePlayer::Instance(player);
 
 	if (!g_demoPlayer || !g_demoPlayer->isPlaying() || !pl)
@@ -794,7 +794,7 @@ HOOK_RET_VOID UpdateClientDataPost(const edict_t* ent, int sendweapons, clientda
 	return HOOK_CONTINUE;
 }
 
-HOOK_RET_VOID CmdStart(const edict_t* player, const struct usercmd_s* cmd, unsigned int random_seed) {
+HOOK_RET_VOID CmdStartHook(const edict_t* player, const struct usercmd_s* cmd, unsigned int random_seed) {
 	if (!g_write_user_cmds->value || (!g_sventv->enableDemoFile && !g_sventv->enableServer)) {
 		DEFAULT_HOOK_RETURN;
 	}
@@ -826,7 +826,7 @@ HOOK_RET_VOID CmdStart(const edict_t* player, const struct usercmd_s* cmd, unsig
 	DEFAULT_HOOK_RETURN;
 }
 
-HOOK_RET_VOID PlayerCustomization(edict_t* pEntity, customization_t* pCust) {
+HOOK_RET_VOID PlayerCustomizationHook(edict_t* pEntity, customization_t* pCust) {
 
 	CBasePlayer* pPlayer = (CBasePlayer*)GET_PRIVATE(pEntity);
 
@@ -901,8 +901,8 @@ extern "C" int DLLEXPORT PluginInit() {
 	g_hooks.pfnClientUserInfoChanged = ClientUserInfoChangedHook;
 	g_hooks.pfnClientCommand = ClientCommand;
 	g_hooks.pfnSendVoiceData = SendVoiceData;
-	g_hooks.pfnCmdStart = CmdStart;
-	g_hooks.pfnPlayerCustomization = PlayerCustomization;
+	g_hooks.pfnCmdStart = CmdStartHook;
+	g_hooks.pfnPlayerCustomization = PlayerCustomizationHook;
 
 	g_hooks.pfnMessageBegin = MessageBegin;
 	g_hooks.pfnWriteAngle = WriteAngle;
@@ -918,7 +918,7 @@ extern "C" int DLLEXPORT PluginInit() {
 	g_hooks.pfnPlaybackEvent = PlaybackEvent;
 	g_hooks.pfnEmitSound = EMIT_SOUND_HOOK;
 	g_hooks.pfnEmitAmbientSound = EMIT_AMBIENT_SOUND_HOOK;
-	g_hooks.pfnGetWeaponData = GetWeaponData;
+	g_hooks.pfnGetWeaponData = GetWeaponDataHook;
 	g_hooks.pfnUpdateClientDataPost = UpdateClientDataPost;
 	
 	RegisterPluginCommand(".demo", record_demo, FL_CMD_ANY | FL_CMD_ADMIN);

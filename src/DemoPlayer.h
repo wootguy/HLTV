@@ -2,7 +2,7 @@
 #ifdef HLCOOP_BUILD
 #include "extdll.h"
 #include "util.h"
-#include "cbase.h"
+#include "CBaseEntity.h"
 #define MAX_PLAYERS 32
 #else
 #include "meta_init.h"

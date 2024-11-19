@@ -3,6 +3,7 @@
 #include "DemoPlayer.h"
 #include "SvenTV.h"
 #include "pm_shared.h"
+#include "hlds_hooks.h"
 
 //const char* model_entity = "env_sprite";
 const char* model_entity = "cycler";
@@ -1696,12 +1697,16 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 			ALERT(at_console, "Individual %s sent to everyone?\n", msgTypeStr(msg.type));
 		}
 
+		bool sentToAnyone = false;
+
 		for (int i = 1; i <= gpGlobals->maxClients; i++) {
 			uint32_t plrbit = PLRBIT(i);
 
 			if (!(msg.targets & plrbit)) {
 				continue;
 			}
+
+			sentToAnyone++;
 			
 			uint16_t eidx = i;
 			convReplayEntIdx((byte*)&eidx, 0, 2);
@@ -1723,6 +1728,10 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 					msg.send(msg.dest, spec->edict());
 				}
 			}
+		}
+
+		if (!sentToAnyone) {
+			ALERT(at_console, "%s not sent to anyone!\n", msgTypeStr(msg.type));
 		}
 	}
 
