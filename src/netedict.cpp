@@ -566,7 +566,7 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 							GET_ATTACHMENT(copyent, vars.body - 1, vars.origin, vars.angles);
 						}
 						else {
-							ALERT(at_console, "Failed to get attachment %d on model %s\n", vars.body - 1, STRING(copyent->v.model));
+							ALERT(at_aiconsole, "Failed to get attachment %d on model %s\n", vars.body - 1, STRING(copyent->v.model));
 						}
 					}
 
@@ -615,7 +615,7 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 			if (!mon->m_pSchedule) {
 				ALERT(at_console, "Schedule %d does not exist for %s (%d schedules total)\n", (int)schedule, stringpool + classname, tempmon->GetScheduleTableSize());
 			}
-			mon->m_iScheduleIndex = mon->m_iScheduleIndex;
+			mon->m_iScheduleIndex = task;
 			mon->pev->iuser3 = 1337; // HACK: this entity is a normal monster, not just a cycler
 			mon->pev->nextthink = 0;
 			
