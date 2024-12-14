@@ -369,7 +369,7 @@ void DemoPlayer::prepareDemo() {
 void DemoPlayer::precacheLastDemo() {
 	for (int i = 0; i < (int)precacheModels.size(); i++) {
 		if (precacheModels[i][0] != '*')
-			PRECACHE_MODEL(precacheModels[i].c_str());
+			PRECACHE_MODEL_ENT(NULL, precacheModels[i].c_str());
 	}
 	for (int i = 0; i < (int)precacheSounds.size(); i++) {
 		PRECACHE_SOUND_NULLENT(precacheSounds[i].c_str());
@@ -1706,7 +1706,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 				continue;
 			}
 
-			sentToAnyone++;
+			sentToAnyone = true;
 			
 			uint16_t eidx = i;
 			convReplayEntIdx((byte*)&eidx, 0, 2);
