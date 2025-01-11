@@ -331,6 +331,9 @@ void DemoPlayer::prepareDemo() {
 				ent->freetime = 0; // allow using this slow immediately
 			}
 		}
+		
+		// create a single spawn so bot players don't spawn as observers
+		CBaseEntity::Create("info_player_deathmatch", g_vecZero, g_vecZero);
 	}
 	else {
 		// just remove the monsters
@@ -632,7 +635,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		}
 	}
 	else if (isBeam && !entIsBeam) {
-		CBaseEntity* newEnt = CBaseEntity::Create("beam", g_vecZero, g_vecZero, NULL);
+		CBaseEntity* newEnt = CBaseEntity::Create("beam", g_vecZero, g_vecZero);
 
 		if (ent) {
 			if (ent->v.flags & FL_CLIENT) {
@@ -654,7 +657,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		unordered_map<string, string> keys;
 		keys["model"] = NOT_PRECACHED_MODEL;
 
-		CBaseEntity* newEnt = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, NULL, keys);
+		CBaseEntity* newEnt = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, true, NULL, keys);
 
 		if (ent) {
 			if (ent->v.flags & FL_CLIENT) {
@@ -670,7 +673,10 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		replayEnts[i].h_ent = ent = newEnt->edict();
 		ent->v.solid = SOLID_NOT;
 		//ent->v.effects |= EF_NODRAW;
-		ent->v.movetype = MOVETYPE_NONE;
+		
+		// for client-side interpolation
+		ent->v.movetype = MOVETYPE_NOCLIP;
+
 		ent->v.flags |= FL_MONSTER;
 	}
 
@@ -820,6 +826,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 			ALERT(at_console, "Invalid model set on beam: %s\n", newModel.c_str());
 			ent->v.effects |= EF_NODRAW; // prevent client crash
 		}
+		ent->v.velocity.z = 0.0001f; // for interpolation
 
 		setupInterpolation(ent, i);
 
