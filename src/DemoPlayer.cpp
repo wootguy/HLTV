@@ -212,7 +212,7 @@ bool DemoPlayer::openDemo(CBasePlayer* plr, string path, float offsetSeconds, bo
 			std::string model = toLowerCase(precacheModels[i]);
 			replayModelPath[modelIndexes[i]] = model;
 
-			if (precacheModels[i][0] != '*' && !g_precachedModels.count(model)) {
+			if (precacheModels[i][0] != '*' && !g_precachedModels.hasKey(model.c_str())) {
 				notPrecachedModels++;
 				ALERT(at_console, "Not precached: %s\n", model.c_str());
 			}
@@ -242,7 +242,7 @@ bool DemoPlayer::openDemo(CBasePlayer* plr, string path, float offsetSeconds, bo
 			std::string sound = toLowerCase(precacheSounds[i]);
 			replaySoundPath[soundIndexes[i]] = sound;
 
-			if (!g_precachedSounds.count(sound)) {
+			if (!g_precachedSounds.get(sound.c_str())) {
 				notPrecachedSounds++;
 				ALERT(at_console, "Not precached: %s\n", sound.c_str());
 			}
@@ -654,8 +654,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		SET_MODEL(ent, NOT_PRECACHED_MODEL);
 	}
 	else if (!isBeam && (entIsBeam || !ent)) {
-		unordered_map<string, string> keys;
-		keys["model"] = NOT_PRECACHED_MODEL;
+		StringMap keys = { {"model", NOT_PRECACHED_MODEL} };
 
 		CBaseEntity* newEnt = CBaseEntity::Create(model_entity, g_vecZero, g_vecZero, true, NULL, keys);
 
@@ -773,6 +772,19 @@ edict_t* DemoPlayer::getReplayEntity(int idx) {
 	return NULL;
 }
 
+const char* specModeStr(int mode) {
+	switch (mode) {
+	case OBS_NONE: return "NONE";
+	case OBS_CHASE_LOCKED: return "CHASE_LOCKED";
+	case OBS_CHASE_FREE: return "CHASE_FREE";
+	case OBS_ROAMING: return "ROAMING";
+	case OBS_IN_EYE: return "IN_EYE";
+	case OBS_MAP_FREE: return "MAP_FREE";
+	case OBS_MAP_CHASE: return "MA_CHASE";
+	}
+	return "???";
+}
+
 bool DemoPlayer::simulate(DemoFrame& header) {
 	int errorSprIdx = g_engfuncs.pfnModelIndex(NOT_PRECACHED_MODEL);
 
@@ -813,6 +825,12 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 		int oldModelIdx = ent->v.modelindex;
 
 		fileedicts[i].apply(ent, stringPool);
+		if (fileedicts[i].specMode != 0) {
+			edict_t* ed = replayEnts[fileedicts[i].specTarget].h_ent.GetEdict();
+			
+			//ALERT(at_console, "%s SPEC MODE %s TARGET %s\n", fileedicts[i].name,
+			//	specModeStr(fileedicts[i].specMode), ed ? STRING(ed->v.netname) : "\\NONE\\");
+		}
 
 		string newModel = getReplayModel(ent->v.modelindex);
 
@@ -854,7 +872,7 @@ const char* DemoPlayer::getReplayModel(uint16_t modelIdx) {
 	else if (replayModelPath.count(modelIdx)) {
 		// Demo file model path
 		std::string& replayModel = replayModelPath[modelIdx];
-		if (g_precachedModels.find(replayModel) != g_precachedModels.end()) {
+		if (g_precachedModels.hasKey(replayModel.c_str())) {
 			return replayModel.c_str();
 		}
 		else {
@@ -914,7 +932,7 @@ bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
 	}
 
 	std::string replaySound = replaySoundPath[soundIdx];
-	if (g_precachedSounds.find(replaySound) != g_precachedSounds.end()) {
+	if (g_precachedSounds.get(replaySound.c_str())) {
 		soundIdx = SOUND_INDEX(replaySoundPath[soundIdx].c_str());
 		return true;
 	}
@@ -1264,7 +1282,8 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		return 1;
 	}
 	case SVC_SOUND: {
-		mstream bitbuffer((char*)msg.data, msg.sz);
+		//mstream bitbuffer((char*)msg.data, msg.sz);
+		mstream bitbuffer((char*)msg.data, sizeof(msg.data));
 		uint16_t field_mask = bitbuffer.readBits(9);
 		uint8_t volume = 0;
 		uint8_t attenuation = 0;
@@ -1290,6 +1309,9 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		if (field_mask & SND_FL_PITCH)
 			pitch = bitbuffer.readBits(8);
 
+		//ALERT(at_console, "SVC_SOUND: vol=%d, att=%d, pitch=%d, mask=%d, chan=%d, ient=%d, num=%d->%d\n",
+		//	(int)volume, (int)attenuation, (int)pitch, (int)field_mask, (int)channel, (int)ient, (int)old_sound_num, (int)sound_num);
+
 		// rewrite with the new index
 		bitbuffer.seek(0);
 		bitbuffer.writeBits(field_mask, 9);
@@ -1303,7 +1325,9 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		bitbuffer.writeBitVec3Coord(origin);
 		if (field_mask & SND_FL_PITCH)
 			bitbuffer.writeBits(pitch, 8);
-		msg.sz = bitbuffer.tell() + 1;
+		bitbuffer.endBitWriting();
+
+		msg.sz = bitbuffer.tell();
 
 		return 1;
 	}
