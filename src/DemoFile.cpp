@@ -39,6 +39,8 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 		return;
 	}
 
+	//ALERT(at_console, "SEND NET MSG %s sz %d\n", msgTypeStr(type), sz);
+
 	if (hasOrigin) {
 		if (hasLongOrigin) {
 			forigin[0] = FIXED_TO_FLOAT(origin[0], 19, 5);

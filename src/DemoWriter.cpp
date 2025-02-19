@@ -143,18 +143,21 @@ void DemoWriter::initDemoFile() {
 	uint16_t soundCount = 0;
 	uint16_t* modelIndexes = new uint16_t[max_indexes];
 	uint16_t* soundIndexes = new uint16_t[max_indexes];
-	for (const string& item : g_precachedModels) {
-		if (item.empty()) {
+
+	StringSet::iterator_t iter;
+	while (g_precachedModels.iterate(iter)) {
+		if (!iter.key[0]) {
 			continue;
 		}
-		modelData += item + "\n";
-		modelIndexes[modelCount++] = MODEL_INDEX(item.c_str());
+		modelData += std::string(iter.key) + "\n";
+		modelIndexes[modelCount++] = MODEL_INDEX(iter.key);
 	}
 
 	string soundData;
-	for (const std::string& sound : g_precachedSounds) {
-		soundData += sound + "\n";
-		soundIndexes[soundCount++] = SOUND_INDEX(sound.c_str());
+	HashMap<int>::iterator_t iter2;
+	while (g_precachedSounds.iterate(iter2)) {
+		soundData += string(iter2.key) + "\n";
+		soundIndexes[soundCount++] = SOUND_INDEX(iter2.key);
 	}
 
 	header.modelCount = modelCount;
@@ -712,7 +715,7 @@ void initAmbientSounds() {
 		CAmbientGeneric* ambient = (CAmbientGeneric*)GET_PRIVATE(ent);
 		if (ambient && ambient->m_isWav && ambient->m_fActive && ambient->m_fLooping) {
 			std::string ambientSound = toLowerCase(STRING(ambient->pev->message));
-			if (!g_precachedSounds.count(ambientSound)) {
+			if (!g_precachedSounds.get(ambientSound.c_str())) {
 				ALERT(at_console, "Ambient using sound which isn't precached: %s\n", ambientSound.c_str());
 				continue;
 			}
@@ -737,7 +740,7 @@ void initAmbientSounds() {
 		CAmbientGeneric* ambient = (CAmbientGeneric*)GET_PRIVATE(ent);
 		if (ambient) {
 			std::string ambientSound = toLowerCase(STRING(ambient->pev->message));
-			if (!g_precachedSounds.count(ambientSound)) {
+			if (!g_precachedSounds.get(ambientSound.c_str())) {
 				ALERT(at_console, "Ambient using sound which isn't precached: %s\n", ambientSound.c_str());
 				continue;
 			}
