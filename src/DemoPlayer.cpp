@@ -480,8 +480,9 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 
 		if (fullIndex >= MAX_DEMO_EDICTS) {
 			ALERT(at_console, "ERROR: Invalid delta wants to update edict %d at %d\n", (int)fullIndex, loop);
-			closeReplayFile();
-			return false;
+			//closeReplayFile();
+			//return false;
+			continue;
 		}
 
 		uint64_t startPos = reader.tellBits();
@@ -786,7 +787,7 @@ const char* specModeStr(int mode) {
 }
 
 bool DemoPlayer::simulate(DemoFrame& header) {
-	int errorSprIdx = g_engfuncs.pfnModelIndex(NOT_PRECACHED_MODEL);
+	int errorSprIdx = MODEL_INDEX(NOT_PRECACHED_MODEL);
 
 	for (int i = 1; i < MAX_DEMO_EDICTS; i++) {
 		if (!fileedicts[i].etype) {
@@ -921,7 +922,7 @@ void DemoPlayer::convReplayModelIdx(byte* dat, int offset, int dataSz) {
 	}
 
 	uint16_t* modelIdx = (uint16_t*)(dat + offset);
-	*modelIdx = g_engfuncs.pfnModelIndex(getReplayModel(*modelIdx));
+	*modelIdx = MODEL_INDEX(getReplayModel(*modelIdx));
 }
 
 bool DemoPlayer::convReplaySoundIdx(uint16_t& soundIdx) {
@@ -1615,6 +1616,10 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 		msg.type = reader.readBits(8);
 		msg.dest = reader.readBits(4);
 		msg.sz = reader.readBit() ? reader.readBits(12) : reader.readBits(5);
+		if (msg.sz >= 2048) {
+			ALERT(at_console, "Invalid network message size read: %d\n", msg.sz);
+			return false;
+		}
 		
 		msg.hasOrigin = msg.hasLongOrigin = false;
 
@@ -1641,8 +1646,8 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 		else if (tarSz == 2) { msg.targets = reader.readBits(16); }
 		else if (tarSz == 1) { msg.eidx = reader.readBits(5) + 1; }
 
-		for (int i = 0; i < (int)msg.sz; i++) {
-			msg.data[i] = reader.readBits(8);
+		for (int k = 0; k < (int)msg.sz; k++) {
+			msg.data[k] = reader.readBits(8);
 		}
 
 		if (seeking) {

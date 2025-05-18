@@ -890,6 +890,37 @@ HOOK_RETURN_DATA SendVoiceData(int senderidx, int receiveridx, uint8_t* data, in
 	return HOOK_CONTINUE;
 }
 
+HOOK_RETURN_DATA SendBigMessage(int msgMode, int msgType, void* data, int sz, int playerindex) {
+	if (sz >= MAX_NETMSG_DATA) {
+		ALERT(at_error, "Dropped huge packet (%d bytes)\n", sz);
+		return HOOK_CONTINUE;
+	}
+
+	if (msgType == SVC_VOICEDATA) {
+		return HOOK_CONTINUE; // the other hook handler will catch this message
+	}
+
+	// save to the demo as a normal message
+	MessageBegin(msgMode, SVC_VOICEDATA, NULL, INDEXENT(playerindex));
+	int longCount = sz / 4;
+	int byteCount = sz % 4;
+
+	int32_t* longPtr = (int32_t*)data;
+	for (int i = 0; i < longCount; i++) {
+		WriteLong(*longPtr);
+		longPtr++;
+	}
+
+	uint8_t* bytePtr = (uint8_t*)data + longCount * 4;
+	for (int i = 0; i < byteCount; i++) {
+		WriteByte(*bytePtr);
+		bytePtr++;
+	}
+	MessageEnd();
+
+	return HOOK_CONTINUE;
+}
+
 extern "C" int DLLEXPORT PluginInit() {
 	g_plugin_exiting = false;
 
@@ -901,6 +932,7 @@ extern "C" int DLLEXPORT PluginInit() {
 	g_hooks.pfnClientUserInfoChanged = ClientUserInfoChangedHook;
 	g_hooks.pfnClientCommand = ClientCommand;
 	g_hooks.pfnSendVoiceData = SendVoiceData;
+	g_hooks.pfnSendBigMessage = SendBigMessage;
 	g_hooks.pfnCmdStart = CmdStartHook;
 	g_hooks.pfnPlayerCustomization = PlayerCustomizationHook;
 
