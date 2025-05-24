@@ -835,7 +835,7 @@ HOOK_RET_VOID PlayerCustomizationHook(edict_t* pEntity, customization_t* pCust) 
 	}
 
 	if (pCust->resource.nDownloadSize > 65535) {
-		ALERT(at_console, "player uploaded huge invalid spray. ignoring.", 0);
+		ALERT(at_console, "player uploaded huge invalid spray. ignoring.\n", 0);
 		DEFAULT_HOOK_RETURN;
 	}
 
@@ -848,7 +848,7 @@ HOOK_RET_VOID PlayerCustomizationHook(edict_t* pEntity, customization_t* pCust) 
 		memcpy(g_playerSprays[eidx].data, pCust->pBuffer, pCust->resource.nDownloadSize);
 	}
 	else {
-		ALERT(at_console, "player uploaded the same spray. ignoring.", 0);
+		ALERT(at_console, "player uploaded the same spray. ignoring.\n", 0);
 	}
 
 	DEFAULT_HOOK_RETURN;
@@ -863,7 +863,7 @@ HOOK_RETURN_DATA SendVoiceData(int senderidx, int receiveridx, uint8_t* data, in
 		return HOOK_CONTINUE;
 	}
 
-	if (!g_engfuncs.pfnVoice_GetClientListening(receiveridx, senderidx)) {
+	if (!Voice_GetClientListening(receiveridx, senderidx)) {
 		return HOOK_CONTINUE; // mod will not send the voice packet to this player
 	}
 
