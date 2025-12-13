@@ -614,8 +614,8 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "model", info.model);
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "topcolor", UTIL_VarArgs("%d", info.topColor));
 			g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", info.bottomColor));
-			bot->v.weaponmodel = MAKE_STRING(getReplayModel(info.weaponmodel));
-			bot->v.viewmodel = MAKE_STRING(getReplayModel(info.viewmodel));
+			bot->v.weaponmodel = ALLOC_STRING(getReplayModel(info.weaponmodel));
+			bot->v.viewmodel = ALLOC_STRING(getReplayModel(info.viewmodel));
 			bot->v.frags = info.frags;
 			bot->v.weaponanim = info.weaponanim;
 			bot->v.armorvalue = info.armorvalue;

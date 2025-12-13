@@ -602,12 +602,12 @@ void netedict::apply(edict_t* ed, char* stringpool) {
 	if (etype == ETYPE_PLAYER)
 		vars.velocity = (vars.origin - oldorigin);
 
-	vars.noise = MAKE_STRING(stringpool + classname);
+	vars.noise = ALLOC_STRING(stringpool + classname);
 
 	if (baseent->IsMonster() && (etype == ETYPE_MONSTER) && classname) {
 		CBaseMonster* mon = baseent->MyMonsterPointer();
 		
-		edict_t* temp = CREATE_NAMED_ENTITY(MAKE_STRING(stringpool + classname));
+		edict_t* temp = CREATE_NAMED_ENTITY(ALLOC_STRING(stringpool + classname));
 		CBaseEntity* ent = CBaseEntity::Instance(temp);
 		if (ent && ent->IsNormalMonster() && schedule != 127) {
 			CBaseMonster* tempmon = ent->MyMonsterPointer();
@@ -655,10 +655,10 @@ void netedict::applyPlayer(CBasePlayer* plr) {
 		g_engfuncs.pfnSetClientKeyValue(eidx, infoBuffer, "bottomcolor", UTIL_VarArgs("%d", bottomColor));
 	//}
 	//if (deltas & FL_DELTA_WEAPONMODEL) {
-		plr->pev->weaponmodel = MAKE_STRING(g_demoPlayer->getReplayModel(weaponmodel));
+		plr->pev->weaponmodel = ALLOC_STRING(g_demoPlayer->getReplayModel(weaponmodel));
 	//}
 	//if (deltas & FL_DELTA_VIEWMODEL) {
-		plr->pev->viewmodel = MAKE_STRING(g_demoPlayer->getReplayModel(viewmodel));
+		plr->pev->viewmodel = ALLOC_STRING(g_demoPlayer->getReplayModel(viewmodel));
 	//}
 	plr->pev->frags = frags;
 	plr->pev->weaponanim = weaponanim;
