@@ -21,6 +21,24 @@ void NetMessageData::send(int msg_dest, edict_t* targetEnt) {
 		return;
 	}
 
+	switch (msg_dest) {
+	case MSG_BROADCAST:
+	case MSG_ALL:
+	case MSG_INIT:
+	case MSG_PVS:
+	case MSG_PAS:
+	case MSG_PVS_R:
+	case MSG_PAS_R:
+	case MSG_SPEC:
+		if (targetEnt) {
+			ALERT(at_console, "Dropped message %s mode %d (can't have target entity)\n", msgTypeStr(type), msg_dest);
+			return;
+		}
+		break;
+	default:
+		break;
+	}
+
 	int expectedSz = 0;
 	if (GetUserMsgInfo(type, &expectedSz) && expectedSz != -1 && sz != expectedSz) {
 		ALERT(at_console, "Dropped %s with bad size (%d != %d)\n", msgTypeStr(type), (int)sz, expectedSz);

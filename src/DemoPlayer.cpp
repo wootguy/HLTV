@@ -423,7 +423,7 @@ void DemoPlayer::closeReplayFile() {
 	}
 	replayEnts.clear();
 
-	for (int i = 1; i < gpGlobals->maxClients; i++) {
+	for (int i = 1; i <= gpGlobals->maxClients; i++) {
 		edict_t* ent = INDEXENT(i);
 		if (!IsValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
 			continue;
@@ -547,7 +547,7 @@ void DemoPlayer::writePings() {
 	mstream pingStream(pingBuffer, 101);
 	memset(pingBuffer, 0, 101);
 
-	for (int i = 1; i < gpGlobals->maxClients; i++) {
+	for (int i = 1; i <= gpGlobals->maxClients; i++) {
 		CBasePlayer* plr = UTIL_PlayerByIndex(i);
 		if (!plr || !plr->IsBot()) {
 			continue;
@@ -581,7 +581,7 @@ edict_t* DemoPlayer::convertEdictType(edict_t* ent, int i) {
 		netedict& info = fileedicts[i];
 
 		// rename real players so that chat colors work for the bots
-		for (int i = 1; i < gpGlobals->maxClients; i++) {
+		for (int i = 1; i <= gpGlobals->maxClients; i++) {
 			edict_t* ent = INDEXENT(i);
 			if (!IsValidPlayer(ent) || (ent->v.flags & FL_FAKECLIENT)) {
 				continue;
@@ -1754,7 +1754,7 @@ bool DemoPlayer::readNetworkMessages(mstream& reader, DemoDataTest* validate, bo
 			}
 
 			// send this individual message to anyone who is spectating this player
-			for (int k = 1; k < gpGlobals->maxClients; k++) {
+			for (int k = 1; k <= gpGlobals->maxClients; k++) {
 				CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(k);
 				if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
 					continue;

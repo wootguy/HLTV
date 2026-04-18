@@ -683,7 +683,7 @@ void netedict::applyPlayer(CBasePlayer* plr) {
 	}
 
 	// update spectator views
-	for (int i = 1; i < gpGlobals->maxClients; i++) {
+	for (int i = 1; i <= gpGlobals->maxClients; i++) {
 		CBasePlayer* spec = (CBasePlayer*)UTIL_PlayerByIndex(i);
 		if (!spec || (spec->pev->flags & FL_FAKECLIENT)) {
 			continue;
