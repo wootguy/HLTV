@@ -248,6 +248,10 @@ mstream DemoWriter::writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, Dem
 
 	entbuffer.endBitWriting();
 
+	if (entbuffer.eom()) {
+		ALERT(at_console, "Ent delta bit stream overflow\n");
+	}
+
 	g_stats.entIndexTotalSz += indexWriteSz;
 
 	return entbuffer;

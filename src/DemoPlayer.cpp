@@ -543,7 +543,7 @@ bool DemoPlayer::readEntDeltas(mstream& reader, DemoDataTest* validate) {
 
 void DemoPlayer::writePings() {
 	MESSAGE_BEGIN(MSG_BROADCAST, SVC_PINGS);
-	static char pingBuffer[101]; // (25 bits per player * 32) + 1 = 101 bytes
+	static char pingBuffer[101 + 8]; // (25 bits per player * 32) + 1 = 101 bytes
 	mstream pingStream(pingBuffer, 101);
 	memset(pingBuffer, 0, 101);
 
@@ -560,6 +560,10 @@ void DemoPlayer::writePings() {
 		pingStream.writeBits(0, 7); // packet loss
 	}
 	pingStream.writeBits(0, 1);
+
+	if (pingStream.eom()) {
+		ALERT(at_console, "Ping bit stream overflow\n");
+	}
 
 	WRITE_BYTES((uint8_t*)pingStream.getBuffer(), pingStream.tell() + 1);
 	MESSAGE_END();
@@ -1284,7 +1288,7 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 	}
 	case SVC_SOUND: {
 		//mstream bitbuffer((char*)msg.data, msg.sz);
-		mstream bitbuffer((char*)msg.data, sizeof(msg.data));
+		mstream bitbuffer((char*)msg.data, sizeof(msg.data) + 8);
 		uint16_t field_mask = bitbuffer.readBits(9);
 		uint8_t volume = 0;
 		uint8_t attenuation = 0;
@@ -1327,6 +1331,10 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		if (field_mask & SND_FL_PITCH)
 			bitbuffer.writeBits(pitch, 8);
 		bitbuffer.endBitWriting();
+
+		if (bitbuffer.eom()) {
+			ALERT(at_console, "Sound bit stream rewrite overflow\n");
+		}
 
 		msg.sz = bitbuffer.tell();
 
