@@ -3,6 +3,7 @@
 #include "main.h"
 #include "DemoPlayer.h"
 #include "pm_shared.h"
+#include "hlds_hooks.h"
 
 using namespace std;
 
@@ -210,13 +211,15 @@ bool netedict::matches(netedict& other) {
 	return true;
 }
 
-void netedict::load(const edict_t& ed) {
+void netedict::load(const edict_t& ed, int idx) {
 	const entvars_t& vars = ed.v;
 
 	bool isValid = false;
+	bool isPlayer = false;
 
 	if (ed.v.flags & FL_CLIENT) {
 		isValid = IsValidPlayer((edict_t*)&ed);
+		isPlayer = true;
 	}
 	else {
 		isValid = !ed.free && ed.pvPrivateData && (vars.effects & EF_NODRAW) == 0 && vars.modelindex;
@@ -248,28 +251,17 @@ void netedict::load(const edict_t& ed) {
 	aiment = vars.aiment ? ENTINDEX(vars.aiment) : 0;
 	colormap = vars.colormap;
 
-	CBaseEntity* ent = CBaseEntity::Instance(&ed); 
-	CBaseAnimating* anim = ent ? ent->MyAnimatingPointer() : NULL; // TODO: not thread safe
-	//CBaseAnimating* anim = NULL;
-	bool isBspModel = anim && anim->IsBSPModel();
-
-	bool animationReset = framerate != newFramerate || newSequence != sequence || newModelindex != modelindex;
-	if (anim) {
-		// probably set in other cases than ResetSequenceInfo, but not in the HLSDK
-		// using this you can catch cases where only the frame has changed (e.g. restarting an attack anim)
-		// monsters update this every think so only checking for 0 frame resets for those ents
-		// players reset to non-zero for things like crowbars or the emotes plugin
-		animationReset |= lastAnimationReset < anim->m_flLastEventCheck && (vars.frame == 0 || (ed.v.flags & FL_CLIENT));
-		lastAnimationReset = anim->m_flLastEventCheck;
-	}
+	bool isBspModel = vars.model && STRING(vars.model)[0] == '*';
+	bool animChanged = vars.animtime != lastAnimTime;
+	lastAnimTime = vars.animtime;
 	
 	uint8_t oldFrame = frame;
-	if (animationReset || isBspModel || framerate == 0) {
+	if (animChanged || isBspModel || framerate == 0) {
 		// clients can no longer predict the current frame
 		frame = vars.frame;
 	}
 
-	forceNextFrame = animationReset || (isBspModel && oldFrame != frame);
+	forceNextFrame |= animChanged || (isBspModel && oldFrame != frame);
 	framerate = newFramerate;
 	sequence = newSequence;
 	modelindex = newModelindex;
@@ -323,10 +315,12 @@ void netedict::load(const edict_t& ed) {
 	}
 	*/
 
-	if (g_write_debug_info->value && ent && (ed.v.flags & (FL_CLIENT | FL_MONSTER))) {
+	CBaseEntity* ent = (CBaseEntity*)ed.pvPrivateData;
+
+	if (g_write_debug_info->value && (ed.v.flags & (FL_CLIENT | FL_MONSTER))) {
 		health = vars.health > 0 ? V_min(vars.health, UINT32_MAX) : 0;
-		
-		if (g_write_debug_info->value && ent->IsNormalMonster()) {
+
+		if (ent->IsNormalMonster()) {
 			CBaseMonster* mon = ent->MyMonsterPointer();
 
 			monsterstate = mon->m_MonsterState;
@@ -358,14 +352,13 @@ void netedict::load(const edict_t& ed) {
 		classname = getPoolOffsetForString(vars.classname);
 	}
 
-	if (ent) {
-		visibility[0] = ent->m_netPlayers >> 0;
-		visibility[1] = ent->m_netPlayers >> 8;
-		visibility[2] = ent->m_netPlayers >> 16;
-		visibility[3] = ent->m_netPlayers >> 24;
-	}
+	uint32_t netPlayers = g_edictVis[idx];
+	visibility[0] = netPlayers >> 0;
+	visibility[1] = netPlayers >> 8;
+	visibility[2] = netPlayers >> 16;
+	visibility[3] = netPlayers >> 24;
 
-	if (ent->IsPlayer()) {
+	if (isPlayer) {
 		loadPlayer((CBasePlayer*)ent);
 	}
 }
@@ -815,9 +808,17 @@ bool netedict::readDeltas(mstream& reader) {
 			READ_DELTA(FL_DELTA_CAT_ANIM, gait, 8);
 			READ_DELTA(FL_DELTA_CAT_ANIM, blend, 8);
 			READ_DELTA(FL_DELTA_CAT_ANIM, framerate, 8);
-			READ_DELTA(FL_DELTA_CAT_ANIM, frame, 8);
 
-			if (oldFrame != frame || oldSequence != sequence || oldFramerate != framerate) {
+			// when an animation resets, the frame is sent even if unchanged
+			//READ_DELTA(FL_DELTA_CAT_ANIM, frame, 8);
+			bool hasFrame = reader.readBit();
+			g_stats.entDeltaCatSz[FL_DELTA_CAT_ANIM] += 1;
+			if (hasFrame) {
+				frame = reader.readBits(8);
+				g_stats.entDeltaCatSz[FL_DELTA_CAT_ANIM] += 8;
+			}
+
+			if (hasFrame || oldSequence != sequence || oldFramerate != framerate) {
 				deltaBitsLast |= FL_DELTA_ANIM_CHANGED;
 			}
 		}
@@ -1073,6 +1074,8 @@ int netedict::writeDeltas(mstream& writer, netedict& old) {
 			WRITE_DELTA(FL_DELTA_CAT_ANIM, framerate, 8);
 			WRITE_DELTA_COND(FL_DELTA_CAT_ANIM, frame, 8, old.frame != frame || forceNextFrame);
 		END_DELTA_CATEGROY_NESTED(FL_DELTA_CAT_ANIM, FL_DELTA_CAT_DISPLAY)
+
+		forceNextFrame = false;
 
 		// rendering deltas category
 		BEGIN_DELTA_CATEGORY(FL_DELTA_CAT_RENDER)

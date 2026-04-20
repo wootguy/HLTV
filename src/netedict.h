@@ -155,9 +155,10 @@ struct netedict {
 	bool		forceNextFrame;		// force sending the next frame value, even if unchanged (for animation resets)
 	string_t	classname_stringt;	// quickly test if the classname has changed
 	float		lastPingTime;		// last time ping was updated
+	float		lastAnimTime;
 
 	netedict();
-	void load(const edict_t& ed);
+	void load(const edict_t& ed, int idx);
 	void apply(edict_t* ed, char* stringpool);
 	bool matches(netedict& other);
 

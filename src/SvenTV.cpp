@@ -475,11 +475,19 @@ void SvenTV::think_tvThread() {
 	bool loadNewData = demoWriter->isFileOpen();
 
 	while (!threadShouldExit) {
-		while (!singleThreadMode && edictCopyState.getValue() != EDICT_COPY_FINISHED && !threadShouldExit) {
-			if (demoWriter->isFileOpen() && !enableDemoFile) {
-				demoWriter->closeDemoFile();
+
+		if (!singleThreadMode) {
+			while (edictCopyState.getValue() != EDICT_COPY_FINISHED && !threadShouldExit) {
+				if (demoWriter->isFileOpen() && !enableDemoFile) {
+					demoWriter->closeDemoFile();
+				}
+				this_thread::sleep_for(chrono::milliseconds(1));
 			}
-			this_thread::sleep_for(chrono::milliseconds(1));
+		}
+		else {
+			if (!demoWriter->shouldWriteDemoFrame()) {
+				break;
+			}
 		}
 		uint64_t startMillis = getEpochMillis();
 
@@ -489,7 +497,7 @@ void SvenTV::think_tvThread() {
 					frame.netedicts[i].reset();
 					continue;
 				}
-				frame.netedicts[i].load(edicts[i]);
+				frame.netedicts[i].load(edicts[i], i);
 			}
 			loadNewData = false;
 		}
@@ -497,7 +505,7 @@ void SvenTV::think_tvThread() {
 		bool wantMoreData = false;
 
 		if (enableDemoFile) {
-			wantMoreData = wantMoreData || demoWriter->writeDemoFile(frame);
+			wantMoreData = demoWriter->writeDemoFile(frame);
 		}
 		else if (demoWriter->isFileOpen()) {
 			demoWriter->closeDemoFile();
