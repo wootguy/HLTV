@@ -55,9 +55,9 @@ void DemoWriter::initDemoFile() {
 	fpath = "";
 	std::string rootPath = g_demo_file_path->string;
 
-	if (!folderExists(rootPath)) {
-		createFolder(rootPath);
-		if (!folderExists(rootPath)) {
+	if (!UTIL_FolderExists(rootPath)) {
+		UTIL_CreateFolder(rootPath);
+		if (!UTIL_FolderExists(rootPath)) {
 			ALERT(at_error, "Failed to create demo folder: %s\n", rootPath.c_str());
 			g_can_autostart_demo = false;
 			g_sventv->enableDemoFile = false;
@@ -86,9 +86,9 @@ void DemoWriter::initDemoFile() {
 		strftime(bufferday, sizeof(bufferday), "%Y-%m-%d", timeinfo);
 		
 		std::string dayPath = rootPath + std::string(bufferday) + "/";
-		if (!folderExists(dayPath)) {
-			createFolder(dayPath);
-			if (!folderExists(dayPath)) {
+		if (!UTIL_FolderExists(dayPath)) {
+			UTIL_CreateFolder(dayPath);
+			if (!UTIL_FolderExists(dayPath)) {
 				ALERT(at_error, "Failed to create demo folder: %s\n", dayPath.c_str());
 				g_can_autostart_demo = false;
 				g_sventv->enableDemoFile = false;

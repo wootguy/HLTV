@@ -831,7 +831,7 @@ bool DemoPlayer::simulate(DemoFrame& header) {
 
 		fileedicts[i].apply(ent, stringPool);
 		if (fileedicts[i].specMode != 0) {
-			edict_t* ed = replayEnts[fileedicts[i].specTarget].h_ent.GetEdict();
+			//edict_t* ed = replayEnts[fileedicts[i].specTarget].h_ent.GetEdict();
 			
 			//ALERT(at_console, "%s SPEC MODE %s TARGET %s\n", fileedicts[i].name,
 			//	specModeStr(fileedicts[i].specMode), ed ? STRING(ed->v.netname) : "\\NONE\\");
@@ -1401,25 +1401,25 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 		return 1;
 	}
 	default:
-		if (msg.type == gmsgSayText) {
+		if (msg.type == g_umsg.SayText) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
 			return 1;
 		}
-		if (msg.type == gmsgScoreInfo) {
+		if (msg.type == g_umsg.ScoreInfo) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
 			return 1;
 		}
-		if (msg.type == gmsgTeamInfo) {
+		if (msg.type == g_umsg.TeamInfo) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
 			return 1;
 		}
-		if (msg.type == gmsgDeathMsg) {
+		if (msg.type == g_umsg.DeathMsg) {
 			uint16_t entIdx = *args;
 			convReplayEntIdx((byte*)&entIdx, 0, 2);
 			*args = entIdx;
@@ -1429,10 +1429,10 @@ int DemoPlayer::processDemoNetMessage(NetMessageData& msg, DemoDataTest* validat
 			args[1] = entIdx2;
 			return 1;
 		}
-		if (msg.type == gmsgStatusText) {
+		if (msg.type == g_umsg.StatusText) {
 			return 0; // TODO: this is showing ***** name on screen at all times
 		}
-		if (msg.type == gmsgStatusValue) {
+		if (msg.type == g_umsg.StatusValue) {
 			uint8_t idx = *args;
 			if (idx == 1) {
 				// 1 idx is always the player index
