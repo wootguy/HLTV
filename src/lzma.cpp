@@ -20,6 +20,8 @@
 #include <errno.h>
 #include <lzma.h>
 #include <string>
+#include <thread>
+#include <chrono>
 
 
 static bool
@@ -69,8 +71,10 @@ init_encoder(lzma_stream* strm, uint32_t preset)
 	return false;
 }
 
+#define LZMA_BUFSIZE 256 // small to framerate up. Default was 512
+
 static bool
-compress(lzma_stream* strm, FILE* infile, FILE* outfile)
+compress(lzma_stream* strm, FILE* infile, FILE* outfile, int sleepMillis)
 {
 	// This will be LZMA_RUN until the end of the input file is reached.
 	// This tells lzma_code() when there will be no more input.
@@ -78,8 +82,8 @@ compress(lzma_stream* strm, FILE* infile, FILE* outfile)
 
 	// Buffers to temporarily hold uncompressed input
 	// and compressed output.
-	uint8_t inbuf[BUFSIZ];
-	uint8_t outbuf[BUFSIZ];
+	uint8_t inbuf[LZMA_BUFSIZE];
+	uint8_t outbuf[LZMA_BUFSIZE];
 
 	// Initialize the input and output pointers. Initializing next_in
 	// and avail_in isn't really necessary when we are going to encode
@@ -97,9 +101,17 @@ compress(lzma_stream* strm, FILE* infile, FILE* outfile)
 	strm->next_out = outbuf;
 	strm->avail_out = sizeof(outbuf);
 
+	if (sleepMillis > 100) {
+		sleepMillis = 100;
+	}
+
 	// Loop until the file has been successfully compressed or until
 	// an error occurs.
 	while (true) {
+		if (sleepMillis > 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(sleepMillis));
+		}
+
 		// Fill the input buffer if it is empty.
 		if (strm->avail_in == 0 && !feof(infile)) {
 			strm->next_in = inbuf;
@@ -223,7 +235,7 @@ compress(lzma_stream* strm, FILE* infile, FILE* outfile)
 	}
 }
 
-bool lzmaCompress(std::string inPath, std::string outPath, uint32_t preset) {
+bool lzmaCompress(std::string inPath, std::string outPath, uint32_t preset, int sleepMillis) {
 	FILE* infile = fopen(inPath.c_str(), "rb");
 	FILE* outfile = fopen(outPath.c_str(), "wb");
 
@@ -242,7 +254,7 @@ bool lzmaCompress(std::string inPath, std::string outPath, uint32_t preset) {
 	// stdin to stdout.
 	bool success = init_encoder(&strm, preset);
 	if (success)
-		success = compress(&strm, infile, outfile);
+		success = compress(&strm, infile, outfile, sleepMillis);
 
 	// Free the memory allocated for the encoder. If we were encoding
 	// multiple files, this would only need to be done after the last

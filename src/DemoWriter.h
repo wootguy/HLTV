@@ -23,7 +23,7 @@ public:
 
 	bool isFileOpen();
 
-	void compressDemo(std::string inPath, std::string outPath);
+	void compressDemo(std::string inPath, std::string outPath, int sleepMillis);
 
 	// get millis since recording started
 	uint32_t getRecordingTime();
