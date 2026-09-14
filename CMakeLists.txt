@@ -33,4 +33,7 @@ add_library(${PROJECT_NAME} SHARED
 
 hlcoop_setup_plugin("plugins/server/")
 
+set_target_properties(libgnu PROPERTIES FOLDER "External")
+set_target_properties(liblzma PROPERTIES FOLDER "External")
+
 target_link_libraries(${PROJECT_NAME} PRIVATE liblzma)

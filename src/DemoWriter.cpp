@@ -1065,8 +1065,8 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 	return true;
 }
 
-void DemoWriter::compressDemo(std::string inPath, std::string outPath) {
-	if (lzmaCompress(inPath, outPath, 9)) {
+void DemoWriter::compressDemo(std::string inPath, std::string outPath, int sleepMillis) {
+	if (lzmaCompress(inPath, outPath, 9, sleepMillis)) {
 		remove(inPath.c_str());
 		g_engfuncs.pfnServerPrint(UTIL_VarArgs("Compressed demo file: %s\n", outPath.c_str()));
 	}
@@ -1097,7 +1097,12 @@ void DemoWriter::closeDemoFile() {
 			compress_thread->join();
 			delete compress_thread;
 		}
-		compress_thread = new thread(&DemoWriter::compressDemo, this, fpath, fpath + ".xz");
+		int sleepMillis = 0;
+		if (g_compress_demos->value > 1) {
+			sleepMillis = g_compress_demos->value - 1;
+		}
+
+		compress_thread = new thread(&DemoWriter::compressDemo, this, fpath, fpath + ".xz", sleepMillis);
 	}
 }
 
