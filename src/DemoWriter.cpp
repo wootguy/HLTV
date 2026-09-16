@@ -41,12 +41,6 @@ DemoWriter::~DemoWriter() {
 	delete[] eventsBuffer;
 
 	closeDemoFile();
-
-	if (compress_thread) {
-		ALERT(at_console, "Waiting for demo compression to finish...\n", 0);
-		compress_thread->join();
-		delete compress_thread;
-	}
 }
 
 void DemoWriter::initDemoFile() {
@@ -1092,17 +1086,12 @@ void DemoWriter::closeDemoFile() {
 	g_engfuncs.pfnServerPrint(UTIL_VarArgs("Closed demo file: %s\n", fpath.c_str()));
 
 	if (g_auto_demo_file->value && g_compress_demos->value && fileExists(fpath.c_str())) {
-		if (compress_thread) {
-			ALERT(at_console, "Waiting for previous compression to finish...\n", 0);
-			compress_thread->join();
-			delete compress_thread;
-		}
 		int sleepMillis = 0;
 		if (g_compress_demos->value > 1) {
 			sleepMillis = g_compress_demos->value - 1;
 		}
 
-		compress_thread = new thread(&DemoWriter::compressDemo, this, fpath, fpath + ".xz", sleepMillis);
+		std::thread(&DemoWriter::compressDemo, this, fpath, fpath + ".xz", sleepMillis).detach();
 	}
 }
 

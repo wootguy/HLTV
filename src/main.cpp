@@ -308,15 +308,6 @@ HOOK_RET_VOID StartFrameHook() {
 		DEFAULT_HOOK_RETURN;
 	}
 
-	for (int i = 1; i <= gpGlobals->maxClients; i++) {
-		edict_t* ent = INDEXENT(i);
-		CBasePlayer* plr = (CBasePlayer*)GET_PRIVATE(ent);
-
-		if (!IsValidPlayer(ent) || !plr) {
-			continue;
-		}
-	}
-
 	if (g_sventv) {
 		g_sventv->think_mainThread();
 	}

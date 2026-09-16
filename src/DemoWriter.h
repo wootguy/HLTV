@@ -29,7 +29,6 @@ public:
 	uint32_t getRecordingTime();
 
 private:
-	std::thread* compress_thread = NULL;
 	void compressNetMessage(FrameData& frame, NetMessageData& msg);
 
 	mstream writeEntDeltas(FrameData& frame, uint16_t& numEntDeltas, DemoDataTest* testData);
