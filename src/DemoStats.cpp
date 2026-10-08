@@ -4,6 +4,7 @@
 #include "DemoFile.h"
 #include "DemoPlayer.h"
 #include "SvenTV.h"
+#include <algorithm>
 
 string getMessageName(int messageType) {
 #ifndef HLCOOP_BUILD
