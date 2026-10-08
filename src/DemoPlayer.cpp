@@ -2565,7 +2565,7 @@ void DemoPlayer::updatePlayerModelGait(edict_t* ent, float dt) {
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 240-255
 	};
 
-	if (crouching_anims[clamp(ent->v.gaitsequence, 0, 255)]) {
+	if (crouching_anims[V_clamp(ent->v.gaitsequence, 0, 255)]) {
 		ent->v.origin.z += 18;
 	}
 }

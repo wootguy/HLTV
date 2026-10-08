@@ -235,13 +235,13 @@ void netedict::load(const edict_t& ed, int idx) {
 	effects = vars.effects;
 	gait = vars.gaitsequence;
 	blend = vars.blending[0];
-	int8_t newFramerate = clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
+	int8_t newFramerate = V_clamp(vars.framerate * 16.0f, INT8_MIN, INT8_MAX);
 	uint8_t newSequence = vars.sequence;
 	uint16_t newModelindex = vars.modelindex & ((1 << MODEL_BITS) - 1);
 
 	memcpy(&controller_lo, vars.controller, 4);
 
-	scale = clamp(vars.scale * 256.0f, 0, UINT16_MAX);
+	scale = V_clamp(vars.scale * 256.0f, 0, UINT16_MAX);
 	rendermode = vars.rendermode & 0x7; // only first 3 bits are valid modes
 	renderfx = vars.renderfx & 0x31; // only first 5 bits are valid modes
 	renderamt = vars.renderamt;
@@ -370,16 +370,16 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 	const char* vmodel = STRING(ent->v.viewmodel);
 	const char* pmodel = STRING(ent->v.weaponmodel);
 
-	armorvalue = clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
-	fov = clamp(ent->v.fov + 0.5f, 0, 255);
-	frags = clamp(ent->v.frags, INT16_MIN, INT16_MAX);
-	punchangle[0] = clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
-	punchangle[1] = clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
-	punchangle[2] = clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
+	armorvalue = V_clamp(ent->v.armorvalue + 0.5f, 0, UINT16_MAX);
+	fov = V_clamp(ent->v.fov + 0.5f, 0, 255);
+	frags = V_clamp(ent->v.frags, INT16_MIN, INT16_MAX);
+	punchangle[0] = V_clamp(ent->v.punchangle[0] * 8, INT16_MIN, INT16_MAX);
+	punchangle[1] = V_clamp(ent->v.punchangle[1] * 8, INT16_MIN, INT16_MAX);
+	punchangle[2] = V_clamp(ent->v.punchangle[2] * 8, INT16_MIN, INT16_MAX);
 	viewmodel = pmodel[0] ? MODEL_INDEX(STRING(ent->v.viewmodel)) : PLR_NO_WEAPON_MODEL;
 	weaponmodel = vmodel[0] ? MODEL_INDEX(STRING(ent->v.weaponmodel)) : PLR_NO_WEAPON_MODEL;
 	weaponanim = ent->v.weaponanim;
-	view_ofs = clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
+	view_ofs = V_clamp(ent->v.view_ofs[2] * 16, INT16_MIN, INT16_MAX);
 	specMode = ent->v.iuser1;
 	specTarget = ent->v.iuser2;
 	viewEnt = plr->m_hViewEntity ? ENTINDEX(plr->m_hViewEntity.GetEdict()) : 0;
@@ -433,7 +433,7 @@ void netedict::loadPlayer(CBasePlayer* plr) {
 		int iping;
 		int iloss;
 		g_engfuncs.pfnGetPlayerStats(ent, &iping, &iloss);
-		ping = clamp(iping, 0, 65535);
+		ping = V_clamp(iping, 0, 65535);
 	}
 
 	if (steamid64 == 0) {
