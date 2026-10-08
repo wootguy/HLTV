@@ -1060,6 +1060,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame) {
 }
 
 void DemoWriter::compressDemo(std::string inPath, std::string outPath, int sleepMillis) {
+#ifdef USE_XZ
 	if (lzmaCompress(inPath, outPath, 9, sleepMillis)) {
 		remove(inPath.c_str());
 		g_engfuncs.pfnServerPrint(UTIL_VarArgs("Compressed demo file: %s\n", outPath.c_str()));
@@ -1067,6 +1068,7 @@ void DemoWriter::compressDemo(std::string inPath, std::string outPath, int sleep
 	else {
 		ALERT(at_error, "Failed to compress %s\n", inPath.c_str());
 	}
+#endif
 }
 
 void DemoWriter::closeDemoFile() {
@@ -1091,7 +1093,11 @@ void DemoWriter::closeDemoFile() {
 			sleepMillis = g_compress_demos->value - 1;
 		}
 
+#ifdef USE_XZ
 		std::thread(&DemoWriter::compressDemo, this, fpath, fpath + ".xz", sleepMillis).detach();
+#else
+		ALERT(at_error, "Demo compression requires to USE_XZ flag in CMake\n");
+#endif
 	}
 }
 
