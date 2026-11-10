@@ -54,6 +54,9 @@ public:
 	void endStreamSession();
 
 	void setStreamPassword(const char* password);
+	void setStreamTokenLogins(bool enable);
+	std::vector<StreamTokenCheck> takeStreamTokenChecks();
+	void finishStreamTokenChecks(const std::vector<StreamTokenCheck>& results);
 	std::vector<StreamClientInfo> getStreamClients();
 
 private:

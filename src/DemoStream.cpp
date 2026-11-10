@@ -27,7 +27,7 @@
 
 #define MAX_STREAM_CLIENTS 16
 #define MAX_SEND_PER_THINK (1024 * 256) // per client, to keep a backlog from stalling the server frame
-#define MAX_PASSWORD_LEN 128
+#define MAX_PASSWORD_LEN 256 // website session tokens are 172 characters
 #define AUTH_TIMEOUT_MS 5000
 #define AUTH_FAIL_DELAY_MS 2000 // with the client limit, this caps how fast passwords can be guessed
 
@@ -217,6 +217,64 @@ void DemoStream::setPassword(const char* newPassword) {
 	password = newPassword;
 }
 
+void DemoStream::setTokenLogins(bool enable) {
+	std::lock_guard<std::mutex> guard(infoMutex);
+	tokenLogins = enable;
+}
+
+std::vector<StreamTokenCheck> DemoStream::takeTokenChecks() {
+	std::lock_guard<std::mutex> guard(infoMutex);
+	std::vector<StreamTokenCheck> checks;
+	checks.swap(tokenChecks);
+	return checks;
+}
+
+void DemoStream::finishTokenChecks(const std::vector<StreamTokenCheck>& results) {
+	std::lock_guard<std::mutex> guard(infoMutex);
+	tokenResults.insert(tokenResults.end(), results.begin(), results.end());
+}
+
+void DemoStream::applyTokenResults() {
+	std::vector<StreamTokenCheck> results;
+	{
+		std::lock_guard<std::mutex> guard(infoMutex);
+		results.swap(tokenResults);
+	}
+
+	uint64_t now = getEpochMillis();
+	for (const StreamTokenCheck& result : results) {
+		for (Client& client : clients) {
+			if (client.id != result.clientId || !client.checkingToken) {
+				continue;
+			}
+
+			client.checkingToken = false;
+			if (result.steamid64) {
+				client.steamid64 = result.steamid64;
+				ALERT(at_console, "HLTV stream: %s logged in with a website token (steam ID %llu)\n",
+					client.address.c_str(), (unsigned long long)result.steamid64);
+				acceptClient(client);
+			}
+			else {
+				rejectClient(client, now);
+			}
+		}
+	}
+}
+
+void DemoStream::acceptClient(Client& client) {
+	client.authed = true;
+	if (sessionActive) {
+		joinSession(client);
+	}
+}
+
+void DemoStream::rejectClient(Client& client, uint64_t now) {
+	client.rejected = true;
+	client.authDeadline = now + AUTH_FAIL_DELAY_MS;
+	ALERT(at_console, "HLTV stream: wrong password from %s\n", client.address.c_str());
+}
+
 std::vector<StreamClientInfo> DemoStream::getClients() {
 	std::lock_guard<std::mutex> guard(infoMutex);
 	return clientInfo;
@@ -231,6 +289,8 @@ void DemoStream::updateClientInfo() {
 		StreamClientInfo info;
 		info.address = client.address;
 		info.state = client.joined ? "watching" : (client.authed ? "waiting" : "logging in");
+		info.steamid64 = client.steamid64;
+		info.authed = client.authed;
 		info.seconds = (uint32_t)((now - client.connectTime) / 1000);
 		info.bytesSent = client.bytesSent;
 		info.behind = client.joined ? (firstSeq + ring.size()) - client.nextSeq : 0;
@@ -246,6 +306,14 @@ bool DemoStream::readAuth(Client& client) {
 			Segment seg = makeSegment(STREAM_PKT_AUTH_FAILED, NULL, 0, "", 0);
 			client.prefix.insert(client.prefix.end(), seg->begin(), seg->end());
 			client.closing = true;
+		}
+		return true;
+	}
+
+	if (client.checkingToken) {
+		if (now >= client.authDeadline) {
+			client.checkingToken = false; // the main thread never answered
+			rejectClient(client, now);
 		}
 		return true;
 	}
@@ -278,23 +346,27 @@ bool DemoStream::readAuth(Client& client) {
 	}
 
 	std::string attempt((const char*)client.authBuf.data() + 4, len);
-	bool correct;
+	client.authBuf.clear();
+
+	bool correct, checkToken;
 	{
 		std::lock_guard<std::mutex> guard(infoMutex);
 		correct = attempt == password;
-	}
-	client.authBuf.clear();
-
-	if (correct) {
-		client.authed = true;
-		if (sessionActive) {
-			joinSession(client);
+		checkToken = !correct && tokenLogins && !attempt.empty();
+		if (checkToken) {
+			tokenChecks.push_back({ client.id, attempt, 0 });
 		}
 	}
+
+	if (correct) {
+		acceptClient(client);
+	}
+	else if (checkToken) {
+		client.checkingToken = true;
+		client.authDeadline = now + AUTH_TIMEOUT_MS;
+	}
 	else {
-		client.rejected = true;
-		client.authDeadline = now + AUTH_FAIL_DELAY_MS;
-		ALERT(at_console, "HLTV stream: wrong password from %s\n", client.address.c_str());
+		rejectClient(client, now);
 	}
 
 	return true;
@@ -395,6 +467,7 @@ void DemoStream::think() {
 		setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&noDelay, sizeof(noDelay));
 
 		Client client;
+		client.id = nextClientId++;
 		client.sock = sock;
 		client.address = std::string(inet_ntoa(addr.sin_addr)) + ":" + std::to_string(ntohs(addr.sin_port));
 		client.connectTime = getEpochMillis();
@@ -408,6 +481,8 @@ void DemoStream::think() {
 		clients.push_back(client);
 		ALERT(at_console, "HLTV stream: %s connected (%d total)\n", client.address.c_str(), (int)clients.size());
 	}
+
+	applyTokenResults();
 
 	clients.erase(std::remove_if(clients.begin(), clients.end(), [this](Client& client) {
 		if (!flushClient(client)) {

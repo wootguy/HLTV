@@ -13,7 +13,9 @@
 //
 // Wire format:
 //   "HLTVLIVE" + uint32 version (sent once, on connect)
-//   the client then sends uint32 size + password, even if the password is empty
+//   the client then sends uint32 size + password, even if the password is empty. Instead of the
+//   password, the client can send the session token from logging in to the website (see
+//   StreamTokenCheck), which the hlcoop_webserver plugin validates.
 //   then packets of [uint8 type][uint32 payload size][payload]
 //     STREAM_PKT_HEADER: uint64 backlog bytes that follow + demo header, string pool, model and sound lists
 //     STREAM_PKT_FRAME:  one demo frame, same bytes as in a demo file
@@ -34,9 +36,20 @@ enum stream_packet_types {
 struct StreamClientInfo {
 	std::string address;
 	const char* state;
+	bool authed; // gave the password or a valid token, so watching or waiting for the next session
 	uint32_t seconds; // time connected
 	uint64_t bytesSent;
 	uint64_t behind; // packets waiting to be sent
+	uint64_t steamid64; // logged in with a website session token. 0 if they used the password.
+};
+
+// A password that didn't match the stream password, which might be a website session token. Only
+// the main thread may call other plugins, so it takes these with takeTokenChecks(), looks the
+// tokens up and returns them through finishTokenChecks().
+struct StreamTokenCheck {
+	uint64_t clientId;
+	std::string token;
+	uint64_t steamid64; // set by the main thread. 0 if the token isn't valid.
 };
 
 class DemoStream {
@@ -61,14 +74,18 @@ public:
 	// accepts clients and sends pending data. Never blocks.
 	void think();
 
-	// these two are safe to call from any thread
+	// these are safe to call from any thread
 	void setPassword(const char* newPassword); // empty allows anyone to connect
+	void setTokenLogins(bool enable); // accept website session tokens in place of the password
 	std::vector<StreamClientInfo> getClients();
+	std::vector<StreamTokenCheck> takeTokenChecks();
+	void finishTokenChecks(const std::vector<StreamTokenCheck>& results);
 
 private:
 	typedef std::shared_ptr<std::vector<uint8_t>> Segment;
 
 	struct Client {
+		uint64_t id = 0;
 		intptr_t sock = -1;
 		std::vector<uint8_t> prefix; // hello and header, not shared with other clients
 		size_t prefixSent = 0;
@@ -82,6 +99,8 @@ private:
 		std::vector<uint8_t> authBuf; // password received so far
 		uint64_t authDeadline = 0; // drop if not authed by now. For a rejected client, when to reply.
 		bool authed = false;
+		bool checkingToken = false; // waiting for the main thread to validate a session token
+		uint64_t steamid64 = 0; // logged in with a session token
 		bool rejected = false; // wrong password, waiting out the delay
 		bool closing = false; // disconnect once the prefix is sent
 	};
@@ -94,9 +113,13 @@ private:
 	intptr_t listenSock = -1;
 	uint64_t nextListenAttempt = 0;
 	std::vector<Client> clients;
+	uint64_t nextClientId = 1;
 
-	std::mutex infoMutex; // guards password and clientInfo
+	std::mutex infoMutex; // guards password, token logins and clientInfo
 	std::string password;
+	bool tokenLogins = false;
+	std::vector<StreamTokenCheck> tokenChecks; // waiting for the main thread
+	std::vector<StreamTokenCheck> tokenResults; // checked by the main thread
 	std::vector<StreamClientInfo> clientInfo; // copy of the client states for other threads
 
 	bool sessionActive = false;
@@ -114,5 +137,8 @@ private:
 	void closeClient(Client& client);
 	bool flushClient(Client& client); // false if the client should be dropped
 	bool readAuth(Client& client); // false if the client should be dropped
+	void acceptClient(Client& client);
+	void rejectClient(Client& client, uint64_t now);
+	void applyTokenResults();
 	void updateClientInfo();
 };

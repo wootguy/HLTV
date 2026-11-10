@@ -151,6 +151,18 @@ void SvenTV::setStreamPassword(const char* password) {
 	demoWriter->stream.setPassword(password);
 }
 
+void SvenTV::setStreamTokenLogins(bool enable) {
+	demoWriter->stream.setTokenLogins(enable);
+}
+
+std::vector<StreamTokenCheck> SvenTV::takeStreamTokenChecks() {
+	return demoWriter->stream.takeTokenChecks();
+}
+
+void SvenTV::finishStreamTokenChecks(const std::vector<StreamTokenCheck>& results) {
+	demoWriter->stream.finishTokenChecks(results);
+}
+
 std::vector<StreamClientInfo> SvenTV::getStreamClients() {
 	return demoWriter->stream.getClients();
 }

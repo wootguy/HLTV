@@ -87,6 +87,51 @@ cvar_t* g_stream = NULL; // stream demo frames to clients over TCP, without need
 cvar_t* g_stream_port = NULL;
 cvar_t* g_stream_frames = NULL; // recent frames to keep for clients that join late
 cvar_t* g_stream_password = NULL; // required to connect to the stream, if not empty
+cvar_t* g_stream_web_logins = NULL; // also accept website session tokens from the WebServer plugin
+
+#ifdef HLCOOP_BUILD
+#include "PluginManager.h"
+PluginFuncHandle<uint64_t, const char*> g_func_web_token_steamid("WebServer", "get_session_token_steamid");
+
+// Viewers can send the session token from logging in to the website (its "token" cookie) instead
+// of the stream password. The stream's thread can't call other plugins, so this checks them for it.
+static void checkStreamTokens() {
+	bool enabled = g_stream_web_logins->value > 0 && g_stream_password->string[0];
+	g_sventv->setStreamTokenLogins(enabled);
+
+	std::vector<StreamTokenCheck> checks = g_sventv->takeStreamTokenChecks();
+	if (checks.empty()) {
+		return;
+	}
+
+	for (StreamTokenCheck& check : checks) {
+		check.steamid64 = enabled ? g_func_web_token_steamid.call(check.token.c_str()) : 0;
+	}
+	g_sventv->finishStreamTokenChecks(checks);
+}
+
+// Lets other plugins (WebServer) see who is watching the live stream. Fills steamids with the
+// Steam ID of each viewer who logged in with a website token, or 0 for viewers who used the stream
+// password, and returns the number of viewers, which can be more than maxIds. Viewers between maps
+// still count. Call from the main thread.
+APIFUNC int get_stream_viewers(uint64_t* steamids, int maxIds) {
+	if (!g_sventv) {
+		return 0;
+	}
+
+	int count = 0;
+	for (const StreamClientInfo& client : g_sventv->getStreamClients()) {
+		if (!client.authed) {
+			continue;
+		}
+		if (count < maxIds) {
+			steamids[count] = client.steamid64;
+		}
+		count++;
+	}
+	return count;
+}
+#endif
 
 DemoStats g_stats;
 bool demoStatPlayers[33] = { false };
@@ -290,6 +335,9 @@ HOOK_RET_VOID StartFrameHook() {
 
 	g_sventv->enableStream = g_stream && g_stream->value > 0 && gpGlobals->time > 1.0f;
 	g_sventv->setStreamPassword(g_stream_password->string);
+#ifdef HLCOOP_BUILD
+	checkStreamTokens();
+#endif
 
 	static float lastStats = 0;
 
@@ -590,11 +638,19 @@ bool list_stream_clients(CBasePlayer* plr, const CommandArgs& args) {
 		return true;
 	}
 
-	printStreamInfo(plr, UTIL_VarArgs("    %-22s %-11s %8s %10s %7s\n", "Address", "State", "Time", "Sent (MB)", "Behind"));
+	printStreamInfo(plr, UTIL_VarArgs("    %-22s %-11s %8s %10s %7s  %s\n", "Address", "State", "Time", "Sent (MB)", "Behind", "Login"));
 	for (int i = 0; i < (int)clients.size(); i++) {
 		const StreamClientInfo& c = clients[i];
-		printStreamInfo(plr, UTIL_VarArgs("%2d) %-22s %-11s %5d:%02d %10.1f %7d\n", i + 1, c.address.c_str(), c.state,
-			(int)(c.seconds / 60), (int)(c.seconds % 60), c.bytesSent / (1024.0f * 1024.0f), (int)c.behind));
+		std::string login = "password";
+		if (c.steamid64) {
+#ifdef HLCOOP_BUILD
+			login = steamid64_to_steamid(c.steamid64);
+#else
+			login = std::to_string(c.steamid64);
+#endif
+		}
+		printStreamInfo(plr, UTIL_VarArgs("%2d) %-22s %-11s %5d:%02d %10.1f %7d  %s\n", i + 1, c.address.c_str(), c.state,
+			(int)(c.seconds / 60), (int)(c.seconds % 60), c.bytesSent / (1024.0f * 1024.0f), (int)c.behind, login.c_str()));
 	}
 	return true;
 }
@@ -1002,6 +1058,7 @@ extern "C" int DLLEXPORT PluginInit() {
 	g_stream_port = RegisterPluginCVar("hltv.stream_port", "28015", 28015, 0);
 	g_stream_frames = RegisterPluginCVar("hltv.stream_frames", "7200", 7200, 0);
 	g_stream_password = RegisterPluginCVar("hltv.stream_password", "", 0, 0);
+	g_stream_web_logins = RegisterPluginCVar("hltv.stream_web_logins", "1", 1, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 
