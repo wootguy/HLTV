@@ -955,6 +955,10 @@ HOOK_RETURN_DATA SendVoiceData(int senderidx, int receiveridx, uint8_t* data, in
 		return HOOK_CONTINUE;
 	}
 
+	if (receiveridx < 1 || receiveridx > gpGlobals->maxClients) {
+		return HOOK_CONTINUE; // not sent to a player (MSG_SPEC is recorded by SendBigMessage)
+	}
+
 	if (!Voice_GetClientListening(receiveridx, senderidx)) {
 		return HOOK_CONTINUE; // mod will not send the voice packet to this player
 	}
@@ -983,6 +987,23 @@ HOOK_RETURN_DATA SendVoiceData(int senderidx, int receiveridx, uint8_t* data, in
 }
 
 HOOK_RETURN_DATA SendBigMessage(int msgMode, int msgType, void* data, int sz, int playerindex) {
+	if (msgMode == MSG_SPEC) {
+		// Only for HLTV spectators, like the MicSounds plugin's copy of each chat sound without any
+		// player's volume or mutes applied. No player is sent these, so stop rehlds_SendBigMessage from
+		// handling it as voice sent to a player.
+		if (sz >= MAX_NETMSG_DATA) {
+			ALERT(at_error, "Dropped huge spectator packet (%d bytes)\n", sz);
+		}
+		else {
+			MessageBegin(MSG_SPEC, msgType, NULL, NULL);
+			for (int i = 0; i < sz; i++) {
+				WriteByte(((uint8_t*)data)[i]);
+			}
+			MessageEnd();
+		}
+		return HOOK_HANDLED_OVERRIDE(0);
+	}
+
 	if (sz >= MAX_NETMSG_DATA) {
 		ALERT(at_error, "Dropped huge packet (%d bytes)\n", sz);
 		return HOOK_CONTINUE;
