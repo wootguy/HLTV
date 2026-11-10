@@ -12,6 +12,7 @@ bool isSpecCamera(const edict_t& ed) {
 #include "PluginManager.h"
 #include "playerdb.h"
 #include <unordered_set>
+#include <unordered_map>
 
 #define WEB_SPEC_TEAM "Web Spectators"
 #define WEB_SPEC_STATUS 2 // shown as SPEC on the SevenKewp scoreboard
@@ -20,6 +21,7 @@ bool isSpecCamera(const edict_t& ed) {
 #define MAX_SLOT_NAME 31
 #define MIN_CAMERA_LERP 0.02f // seconds to move a camera to a new view, if updates come quicker
 #define MAX_CAMERA_LERP 0.2f // ...or if they come slower
+#define WATCH_END_MS (30 * 1000) // a viewer gone this long has stopped watching, not just reconnecting
 
 #ifndef DEFAULT_TEAM_NAME
 #define DEFAULT_TEAM_NAME "Team"
@@ -32,6 +34,9 @@ extern SvenTV* g_sventv;
 extern bool g_pause_message_logging;
 
 PluginFuncHandle<const char*, uint64_t> g_func_web_name("HLCoop", "get_web_name_for_id");
+PluginFuncHandle<void, void*, uint64_t, const char*, const char*, uint8_t> g_func_web_chat("HLCoop", "send_webserver_chat");
+
+#define WEBMSG_CHAT_TYPE_WEB_USER 2 // from HLCoop's web_util.h
 
 class CHltvCamera : public CBaseEntity {
 public:
@@ -84,8 +89,18 @@ static int g_receiverUserIds[MAX_PLAYERS + 1];
 static bool g_sentTeamNames[MAX_PLAYERS + 1]; // renamed the green team for the receiver
 static float g_lastScoreboardUpdate = 0;
 
+// Website users watching the stream, by Steam ID, for the chat announcements. A user with the
+// stream open in several tabs is announced once. Kept through map changes, while viewers reconnect.
+struct Watcher {
+	std::string name;
+	uint64_t lastSeen; // epoch ms
+};
+static std::unordered_map<uint64_t, Watcher> g_watchers;
+static uint64_t g_mapStartTime = 0; // epoch ms
+
 void streamViewersMapInit() {
 	UTIL_PrecacheOther(SPEC_CAMERA_CLASS);
+	g_mapStartTime = getEpochMillis();
 	g_viewers.clear();
 	g_sentViewers.clear();
 	g_lastScoreboardUpdate = 0;
@@ -337,6 +352,65 @@ static void updateScoreboard() {
 	}
 }
 
+// Says in the game's chat and the website's chat that someone started or stopped watching, like
+// the game's own spectating messages: "(WEB) <name> is now spectating" / "... stopped spectating".
+static void announceWatcher(uint64_t steamid64, const std::string& name, bool started) {
+	if (!g_stream_announce || g_stream_announce->value <= 0) {
+		return;
+	}
+
+	const char* action = started ? "is now spectating" : "stopped spectating";
+
+	// The name is green, like chat sent from the website. Like HLCoop's web chat relay, this
+	// briefly gives a player the viewer's name and team color, so the message needs a player
+	// to send it, and there's nobody to tell if there isn't one.
+	CBasePlayer* anyPlayer = NULL;
+	for (int i = 1; i <= gpGlobals->maxClients && !anyPlayer; i++) {
+		anyPlayer = UTIL_PlayerByIndex(i);
+	}
+	if (anyPlayer) {
+		std::string prefix = "(WEB) " + name + " ";
+		UTIL_ClientSay(anyPlayer, action, prefix.c_str(), false, NULL, 0, FRIEND_TEAM_COLOR, name.c_str());
+	}
+
+	// The website shows web users' names as a green "(WEB) <name>" in place of ;name;
+	std::string webmsg = std::string(";name; ") + action;
+	g_func_web_chat.call(NULL, steamid64, name.c_str(), webmsg.c_str(), WEBMSG_CHAT_TYPE_WEB_USER);
+}
+
+static void updateWatchers() {
+	uint64_t now = getEpochMillis();
+
+	for (const WebViewer& viewer : g_viewers) {
+		auto it = g_watchers.find(viewer.steamid64);
+		if (it == g_watchers.end()) {
+			Watcher watcher;
+			watcher.name = viewer.name;
+			watcher.lastSeen = now;
+			g_watchers[viewer.steamid64] = watcher;
+			announceWatcher(viewer.steamid64, viewer.name, true);
+		}
+		else {
+			it->second.lastSeen = now;
+		}
+	}
+
+	// Viewers can't reconnect until the new map has started, however long the map change took
+	if (now - g_mapStartTime < WATCH_END_MS) {
+		return;
+	}
+
+	for (auto it = g_watchers.begin(); it != g_watchers.end();) {
+		if (now - it->second.lastSeen >= WATCH_END_MS) {
+			announceWatcher(it->first, it->second.name, false);
+			it = g_watchers.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
+}
+
 void updateStreamViewers() {
 	std::vector<StreamClientInfo> clients;
 	if (g_sventv && g_sventv->enableStream) {
@@ -404,6 +478,8 @@ void updateStreamViewers() {
 		g_sventv->setStreamViewers(list);
 		g_sentViewers = list;
 	}
+
+	updateWatchers();
 
 	if (gpGlobals->time - g_lastScoreboardUpdate >= SCOREBOARD_UPDATE_SECONDS || g_lastScoreboardUpdate > gpGlobals->time) {
 		g_lastScoreboardUpdate = gpGlobals->time;

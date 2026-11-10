@@ -86,6 +86,7 @@ extern cvar_t* g_stream_port;
 extern cvar_t* g_stream_frames;
 extern cvar_t* g_stream_password;
 extern cvar_t* g_stream_web_logins;
+extern cvar_t* g_stream_announce;
 extern cvar_t* g_write_debug_info;
 
 extern int g_copyTime;

@@ -89,6 +89,7 @@ cvar_t* g_stream_port = NULL;
 cvar_t* g_stream_frames = NULL; // recent frames to keep for clients that join late
 cvar_t* g_stream_password = NULL; // required to connect to the stream, if not empty
 cvar_t* g_stream_web_logins = NULL; // also accept website session tokens from the WebServer plugin
+cvar_t* g_stream_announce = NULL; // say in chat when website users start or stop watching the stream
 
 #ifdef HLCOOP_BUILD
 #include "PluginManager.h"
@@ -1070,6 +1071,7 @@ extern "C" int DLLEXPORT PluginInit() {
 	g_stream_frames = RegisterPluginCVar("hltv.stream_frames", "7200", 7200, 0);
 	g_stream_password = RegisterPluginCVar("hltv.stream_password", "", 0, 0);
 	g_stream_web_logins = RegisterPluginCVar("hltv.stream_web_logins", "1", 1, 0);
+	g_stream_announce = RegisterPluginCVar("hltv.stream_announce", "1", 1, 0);
 #else
 	g_main_thread_id = std::this_thread::get_id();
 

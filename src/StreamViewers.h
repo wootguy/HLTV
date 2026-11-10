@@ -10,6 +10,10 @@
 // The scoreboard of players lists the viewers in empty player slots, under a "Web Spectators" team.
 // When there aren't enough slots, the last one says how many more viewers there are. Viewers who
 // used the stream password aren't shown anywhere, since their names aren't known.
+//
+// When a viewer starts or stops watching, the game chat and the website's chat say so
+// (hltv.stream_announce). Viewers reconnect after every map change, so they only count as stopped
+// once they've been gone for a while.
 
 #define SPEC_CAMERA_CLASS "hltv_camera"
 #define SPEC_CAMERA_MODEL "models/hlcoop_v2/camera_v2.mdl"
