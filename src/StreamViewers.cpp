@@ -21,7 +21,10 @@ bool isSpecCamera(const edict_t& ed) {
 #define MAX_SLOT_NAME 31
 #define MIN_CAMERA_LERP 0.02f // seconds to move a camera to a new view, if updates come quicker
 #define MAX_CAMERA_LERP 0.2f // ...or if they come slower
-#define WATCH_END_MS (30 * 1000) // a viewer gone this long has stopped watching, not just reconnecting
+// How long a viewer must be gone to count as stopped, rather than reconnecting. Viewers reconnect
+// after every map change, which can take a while, so ones from the last map get longer.
+#define WATCH_END_MS (5 * 1000) // left during the map (reloading the page takes a few seconds)
+#define WATCH_END_MAP_CHANGE_MS (30 * 1000) // from the start of the new map
 
 #ifndef DEFAULT_TEAM_NAME
 #define DEFAULT_TEAM_NAME "Team"
@@ -395,13 +398,18 @@ static void updateWatchers() {
 		}
 	}
 
-	// Viewers can't reconnect until the new map has started, however long the map change took
-	if (now - g_mapStartTime < WATCH_END_MS) {
-		return;
-	}
-
 	for (auto it = g_watchers.begin(); it != g_watchers.end();) {
-		if (now - it->second.lastSeen >= WATCH_END_MS) {
+		bool stopped;
+		if (it->second.lastSeen >= g_mapStartTime) {
+			stopped = now - it->second.lastSeen >= WATCH_END_MS;
+		}
+		else {
+			// last seen on the previous map. They can't reconnect until this one has started,
+			// however long the map change took.
+			stopped = now - g_mapStartTime >= WATCH_END_MAP_CHANGE_MS;
+		}
+
+		if (stopped) {
 			announceWatcher(it->first, it->second.name, false);
 			it = g_watchers.erase(it);
 		}

@@ -13,7 +13,7 @@
 //
 // When a viewer starts or stops watching, the game chat and the website's chat say so
 // (hltv.stream_announce). Viewers reconnect after every map change, so they only count as stopped
-// once they've been gone for a while.
+// once they've been gone for a few seconds, or for longer after a map change.
 
 #define SPEC_CAMERA_CLASS "hltv_camera"
 #define SPEC_CAMERA_MODEL "models/hlcoop_v2/camera_v2.mdl"
