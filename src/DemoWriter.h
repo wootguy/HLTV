@@ -47,6 +47,14 @@ private:
 	mstream writeEvtDeltas(FrameData& frame);
 	mstream writeUserCmdDeltas(FrameData& frame);
 
+	// Each player's latest ScoreInfo and TeamInfo, repeated in keyframes. Stream viewers start at a
+	// keyframe, and they're only sent when something changes, so without this anyone who joined
+	// later wouldn't know the players' team colors.
+	void rememberTeamMessages(FrameData& frame);
+	void repeatTeamMessages(FrameData& frame);
+	std::vector<NetMessageData> lastTeamMsgs; // [player * 2 + (0 = ScoreInfo, 1 = TeamInfo)]
+	bool hasTeamMsg[33 * 2] = { false };
+
 	// vars for writing a demo file
 	uint64_t nextDemoUpdate = 0;
 	float demoFileFps = 60;

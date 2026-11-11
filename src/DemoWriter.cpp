@@ -123,6 +123,7 @@ void DemoWriter::beginSession(bool wantFile, bool wantStream) {
 
 	warnedStreamDeferred = false;
 
+	memset(hasTeamMsg, 0, sizeof(hasTeamMsg)); // everyone gets sent again on a new map
 	memset(fileedicts, 0, MAX_DEMO_EDICTS * sizeof(netedict));
 	memset(usrstates, 0, MAX_PLAYERS * sizeof(DemoUserCmdData));
 	memset(g_userInfoDirty, 1, sizeof(bool) * 33);
@@ -430,6 +431,48 @@ void DemoWriter::compressNetMessage(FrameData& frame, NetMessageData& msg) {
 #endif
 	default:
 		break;
+	}
+}
+
+void DemoWriter::rememberTeamMessages(FrameData& frame) {
+	if (lastTeamMsgs.empty()) {
+		lastTeamMsgs.resize(33 * 2);
+	}
+
+	uint32_t count = V_min(frame.netmessage_count, (uint32_t)MAX_NETMSG_FRAME);
+	for (uint32_t i = 0; i < count; i++) {
+		NetMessageData& msg = frame.netmessages[i];
+		bool isScore = msg.type == g_umsg.ScoreInfo;
+		if ((!isScore && msg.type != g_umsg.TeamInfo) || msg.sz < 1) {
+			continue;
+		}
+		// Ones sent to a single player can be temporary, like the colors in CBasePlayer::m_tempTeam,
+		// or repeats for a player who just joined.
+		if (msg.dest != MSG_ALL && msg.dest != MSG_BROADCAST) {
+			continue;
+		}
+		int player = msg.data[0];
+		if (player < 1 || player > 32) {
+			continue;
+		}
+		int slot = player * 2 + (isScore ? 0 : 1);
+		lastTeamMsgs[slot] = msg;
+		hasTeamMsg[slot] = true;
+	}
+}
+
+void DemoWriter::repeatTeamMessages(FrameData& frame) {
+	for (int player = 1; player <= 32; player++) {
+		if (!UTIL_PlayerByIndex(player)) {
+			hasTeamMsg[player * 2] = hasTeamMsg[player * 2 + 1] = false; // left
+			continue;
+		}
+		for (int k = 0; k < 2; k++) {
+			int slot = player * 2 + k;
+			if (hasTeamMsg[slot] && frame.netmessage_count < MAX_NETMSG_FRAME) {
+				frame.netmessages[frame.netmessage_count++] = lastTeamMsgs[slot];
+			}
+		}
 	}
 }
 
@@ -914,6 +957,10 @@ bool DemoWriter::writeDemoFile(FrameData& frame, bool wantFile, bool wantStream)
 	}
 
 	mstream entbuffer = writeEntDeltas(frame, numEntDeltas, testData);
+	rememberTeamMessages(frame);
+	if (isKeyframe) {
+		repeatTeamMessages(frame);
+	}
 	mstream msgbuffer = writeMsgDeltas(frame, testData);
 	mstream cmdbuffer = writeCmdDeltas(frame);
 	mstream evtbuffer = writeEvtDeltas(frame);
