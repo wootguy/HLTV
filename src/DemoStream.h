@@ -25,11 +25,17 @@
 //       who logged in with a website token: uint16 camera entity (0 = none), uint8 top color,
 //       uint8 bottom color, uint8 VIEWER_FL_* flags, uint32 seconds behind live (rounded, 0 = live),
 //       uint8 name length, name. Viewers who used the stream password aren't listed.
+//       After the last viewer, the same viewers again in the same order, with what they're watching:
+//       uint8 VIEW_INFO_* flags, uint8 player being spectated (entity index, 0 = none), uint8 VIEW_CAM_*
+//       camera mode, uint8 VIEW_DIRECTOR_* mode, float chasecam distance. Older clients stop reading
+//       after the names, so this was added without changing the version.
 //       Sent when it changes, and after STREAM_PKT_HEADER.
 // After logging in, clients can send packets of the same form:
 //     CLIENT_PKT_VIEW: float origin[3] + float view angles[3] (pitch, yaw, roll) + uint32 millis
 //       behind live (0 = live). Where the viewer is looking from. The server makes a camera entity
-//       there for viewers with a token login.
+//       there for viewers with a token login. Newer clients add uint8 player being spectated
+//       (0 = none), uint8 VIEW_CAM_* camera mode, uint8 VIEW_DIRECTOR_* mode and float chasecam
+//       distance, which the server uses to keep the camera on the player and passes on to others.
 // Older clients and servers skip packet types they don't know, so new types don't change the version.
 // The server closes the connection when the session ends (map change, new recording).
 
@@ -50,6 +56,40 @@ enum stream_client_packet_types {
 
 #define VIEWER_FL_YOU 1 // the viewer this packet was sent to
 
+#define VIEW_INFO_KNOWN 1 // the client sent what it's watching. Older clients don't.
+
+// camera modes of the demo player (camera_modes in bspguy's DemoViewer.h)
+enum view_camera_modes {
+	VIEW_CAM_FREE, // flying around
+	VIEW_CAM_FIRST_PERSON, // through the player's eyes
+	VIEW_CAM_CHASE, // orbiting the player
+	VIEW_CAM_CHASE_LOCKED, // orbiting the player, turning with them
+	VIEW_CAM_COUNT
+};
+
+enum view_director_modes {
+	VIEW_DIRECTOR_OFF,
+	VIEW_DIRECTOR_ACTION, // picks the player seeing the most action
+	VIEW_DIRECTOR_CROWD, // picks the player who can see the most players
+	VIEW_DIRECTOR_COUNT
+};
+
+#define MAX_CHASE_DIST 4096.0f
+
+// what a viewer is watching, from CLIENT_PKT_VIEW
+struct StreamViewInfo {
+	bool known = false; // the client sent it
+	uint8_t target = 0; // player entity index, 0 = none
+	uint8_t camMode = VIEW_CAM_FREE;
+	uint8_t director = VIEW_DIRECTOR_OFF;
+	float chaseDist = 0;
+
+	bool operator==(const StreamViewInfo& o) const {
+		return known == o.known && target == o.target && camMode == o.camMode
+			&& director == o.director && chaseDist == o.chaseDist;
+	}
+};
+
 struct StreamClientInfo {
 	uint64_t id; // unique for each connection
 	std::string address;
@@ -64,6 +104,7 @@ struct StreamClientInfo {
 	float camOrigin[3];
 	float camAngles[3]; // view angles
 	uint32_t delayMs; // how far behind live the client is watching
+	StreamViewInfo view;
 };
 
 // a viewer who logged in with a website token
@@ -74,10 +115,11 @@ struct StreamViewer {
 	uint8_t bottomColor;
 	uint32_t delaySec; // rounded, so this doesn't change constantly
 	std::string name;
+	StreamViewInfo view;
 
 	bool operator==(const StreamViewer& o) const {
 		return clientId == o.clientId && entindex == o.entindex && topColor == o.topColor
-			&& bottomColor == o.bottomColor && delaySec == o.delaySec && name == o.name;
+			&& bottomColor == o.bottomColor && delaySec == o.delaySec && name == o.name && view == o.view;
 	}
 };
 
@@ -148,6 +190,7 @@ private:
 		float camOrigin[3] = { 0, 0, 0 };
 		float camAngles[3] = { 0, 0, 0 };
 		uint32_t delayMs = 0;
+		StreamViewInfo view;
 		uint64_t viewersSent = 0; // version of the viewer list this client was sent
 	};
 

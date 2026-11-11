@@ -5,11 +5,13 @@
 //
 // Viewers who logged in with a website token get a camera entity in the game, placed where they're
 // looking from. The demo stream always includes the cameras, so viewers can see each other.
-// Players only see them after turning them on with .showspecs.
+// Players only see them after turning them on with .showspecs. A viewer watching live who is
+// spectating a player has their camera kept on that player, rather than trailing behind it.
 //
 // The scoreboard of players lists the viewers in empty player slots, under a "Web Spectators" team.
-// When there aren't enough slots, the last one says how many more viewers there are. Viewers who
-// used the stream password aren't shown anywhere, since their names aren't known.
+// When there aren't enough slots, the last one says how many more viewers there are. A player sees
+// " (on you)" after the viewers spectating them live. Viewers who used the stream password aren't
+// shown anywhere, since their names aren't known.
 //
 // When a viewer starts or stops watching, the game chat and the website's chat say so
 // (hltv.stream_announce). Viewers reconnect after every map change, so they only count as stopped

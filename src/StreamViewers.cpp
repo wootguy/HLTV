@@ -67,6 +67,7 @@ struct WebViewer {
 	uint8_t topColor = 0;
 	uint8_t bottomColor = 0;
 	uint32_t delaySec = 0;
+	StreamViewInfo view; // what they're watching
 	EHANDLE h_camera;
 
 	// The camera glides from where it was to the latest view the viewer sent, over about as long
@@ -160,6 +161,53 @@ static void loadViewerInfo(WebViewer& viewer) {
 	}
 }
 
+// The views a viewer sends are a little old by the time they arrive, and they come a few times a
+// second, so a camera placed from them trails behind the player being spectated. A viewer watching
+// live sees the players where they are now, give or take the stream delay, so their camera is put
+// where the player is: in their eyes for first person, or behind them at the chasecam distance and
+// the viewer's rotation (the player's yaw when locked). Watching the past, the views are used as is.
+static bool isWatchingLive(const StreamClientInfo& client) {
+	const StreamViewInfo& view = client.view;
+	return view.known && !client.delayMs && view.target && view.camMode != VIEW_CAM_FREE;
+}
+
+static void snapCamera(const StreamClientInfo& client, Vector& origin, Vector& angles) {
+	const StreamViewInfo& view = client.view;
+	if (!isWatchingLive(client)) {
+		return;
+	}
+
+	CBasePlayer* plr = UTIL_PlayerByIndex(view.target);
+	if (!plr) {
+		return;
+	}
+
+	Vector eye = plr->pev->origin + plr->pev->view_ofs;
+
+	// model pitch is the opposite of view pitch
+	if (view.camMode == VIEW_CAM_FIRST_PERSON) {
+		origin = eye;
+		angles = Vector(-plr->pev->v_angle.x, plr->pev->v_angle.y, 0);
+		return;
+	}
+
+	if (view.camMode == VIEW_CAM_CHASE_LOCKED) {
+		angles.y = plr->pev->v_angle.y;
+	}
+
+	// same as DemoViewer::updateCamera in bspguy
+	Vector forward;
+	UTIL_MakeVectorsPrivate(Vector(-angles.x, angles.y, 0), forward, NULL, NULL);
+	Vector desired = eye - forward * view.chaseDist;
+
+	TraceResult tr;
+	UTIL_TraceLine(eye, desired, ignore_monsters, plr->edict(), &tr);
+	if (tr.flFraction < 1.0f) {
+		desired = eye + (desired - eye) * V_max(0.0f, tr.flFraction - 0.05f);
+	}
+	origin = desired;
+}
+
 static void updateCamera(WebViewer& viewer, const StreamClientInfo& client, uint32_t showMask) {
 	CBaseEntity* cam = viewer.h_camera.GetEntity();
 
@@ -210,11 +258,16 @@ static void updateCamera(WebViewer& viewer, const StreamClientInfo& client, uint
 		float delta = UTIL_AngleDiff(viewer.viewAngles[i], viewer.startAngles[i]); // shortest way round
 		camAngles[i] = viewer.startAngles[i] + delta * t;
 	}
-	UTIL_SetOrigin(cam->pev, viewer.startOrigin + (viewer.viewOrigin - viewer.startOrigin) * t);
+	Vector camOrigin = viewer.startOrigin + (viewer.viewOrigin - viewer.startOrigin) * t;
+	snapCamera(client, camOrigin, camAngles);
+	UTIL_SetOrigin(cam->pev, camOrigin);
 	cam->pev->angles = camAngles;
 
-	// nobody sees EF_NODRAW entities, but the demo writer records cameras anyway
-	if (showMask) {
+	// Nobody sees EF_NODRAW entities, but the demo writer records cameras anyway. A camera in first
+	// person would be inside the player's head, so it's hidden. The demo player shows those viewers'
+	// names above the player's instead.
+	bool inHead = isWatchingLive(client) && client.view.camMode == VIEW_CAM_FIRST_PERSON;
+	if (showMask && !inHead) {
 		cam->pev->effects &= ~EF_NODRAW;
 	}
 	else {
@@ -236,14 +289,80 @@ static bool isSlotEmpty(int idx) {
 	return !info || !info[0];
 }
 
-static std::string slotName(std::string name) {
+// Arial advance widths of ' ' to '~', in 1/1000 of the font size. Arial is the scoreboard's font.
+static const uint16_t g_arialWidths[95] = {
+	278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+	556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+	1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+	667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+	333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+	556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+};
+#define OTHER_CHAR_WIDTH 600 // for characters outside the table
+
+// How much text fits in the scoreboard's name column, in the units of g_arialWidths. The column is
+// 140 px wide at 640x480 (vgui_ScorePanel.cpp) and scales with the screen width, and so does the
+// font ("Scoreboard Text" in the *_textscheme.txt files, 12 px at 640x480). The scoreboard adds two
+// spaces after the name.
+#define SCOREBOARD_NAME_WIDTH 11500
+
+static int nameWidth(const std::string& s) {
+	int w = 0;
+	for (unsigned char c : s) {
+		if (c >= 32 && c <= 126) {
+			w += g_arialWidths[c - 32];
+		}
+		else if (c >= 0xC0) {
+			w += OTHER_CHAR_WIDTH; // first byte of a UTF-8 character
+		}
+	}
+	return w;
+}
+
+// removes the last character, which can be several bytes in UTF-8
+static void popChar(std::string& s) {
+	while (!s.empty()) {
+		unsigned char c = s.back();
+		s.pop_back();
+		if (c < 0x80 || c >= 0xC0) {
+			break;
+		}
+	}
+}
+
+// A name for a scoreboard slot. The suffix is always shown in full, so the name is shortened if
+// there isn't room for both.
+static std::string slotName(std::string name, const std::string& suffix = "") {
 	// these would break the userinfo string
 	std::replace(name.begin(), name.end(), '\\', '/');
 	std::replace(name.begin(), name.end(), '"', '\'');
-	if (name.size() > MAX_SLOT_NAME) {
-		name = name.substr(0, MAX_SLOT_NAME);
+
+	while (!name.empty() && name.size() + suffix.size() > MAX_SLOT_NAME) {
+		popChar(name);
 	}
-	return name;
+	if (!suffix.empty()) {
+		while (!name.empty() && nameWidth(name + suffix) > SCOREBOARD_NAME_WIDTH) {
+			popChar(name);
+		}
+		while (!name.empty() && name.back() == ' ') {
+			name.pop_back();
+		}
+	}
+	return name + suffix;
+}
+
+// The viewer is watching the receiver live, so the receiver's scoreboard says they're on them
+static bool isSpectating(const WebViewer& viewer, int playerIdx) {
+	const StreamViewInfo& view = viewer.view;
+	return view.known && view.target == playerIdx && view.camMode != VIEW_CAM_FREE && !viewer.delaySec;
+}
+
+static std::string viewerSlotName(const WebViewer& viewer, int receiver) {
+	std::string suffix = delaySuffix(viewer.delaySec);
+	if (isSpectating(viewer, receiver)) {
+		suffix += " (on you)";
+	}
+	return slotName(viewer.name, suffix);
 }
 
 // shows a fake player in an empty slot on a player's scoreboard, or removes it if name is empty
@@ -297,14 +416,12 @@ static void updateScoreboard() {
 		}
 	}
 
-	std::vector<std::string> names;
-	for (const WebViewer& viewer : g_viewers) {
-		names.push_back(viewer.name + delaySuffix(viewer.delaySec));
-	}
-
-	std::string wanted[MAX_PLAYERS + 1];
+	// which viewer goes in each slot. The names can differ for each player, who sees " (on you)"
+	// after the viewers spectating them.
+	const WebViewer* slotViewers[MAX_PLAYERS + 1] = { NULL };
+	std::string moreName[MAX_PLAYERS + 1]; // "(+N more viewers)" when they don't all fit
 	int numSlots = emptySlots.size();
-	int numNamed = names.size();
+	int numNamed = g_viewers.size();
 
 	if (numSlots && numNamed) {
 		int shown = numNamed <= numSlots ? numNamed : numSlots - 1;
@@ -312,10 +429,10 @@ static void updateScoreboard() {
 		int first = numSlots - (shown + (more > 0 ? 1 : 0));
 
 		for (int i = 0; i < shown; i++) {
-			wanted[emptySlots[first + i]] = slotName(names[i]);
+			slotViewers[emptySlots[first + i]] = &g_viewers[i];
 		}
 		if (more > 0) {
-			wanted[emptySlots[first + shown]] = UTIL_VarArgs("(+%d more viewer%s)", more, more == 1 ? "" : "s");
+			moreName[emptySlots[first + shown]] = UTIL_VarArgs("(+%d more viewer%s)", more, more == 1 ? "" : "s");
 		}
 	}
 
@@ -347,9 +464,10 @@ static void updateScoreboard() {
 				sent.clear(); // a player took the slot, and the engine sent their info
 				continue;
 			}
-			if (sent != wanted[s]) {
-				sendSlot(plr, s, wanted[s]);
-				sent = wanted[s];
+			std::string wanted = slotViewers[s] ? viewerSlotName(*slotViewers[s], r) : moreName[s];
+			if (sent != wanted) {
+				sendSlot(plr, s, wanted);
+				sent = wanted;
 			}
 		}
 	}
@@ -467,6 +585,7 @@ void updateStreamViewers() {
 		}
 
 		viewer->delaySec = client.hasCamera ? roundDelay(client.delayMs) : 0;
+		viewer->view = client.joined ? client.view : StreamViewInfo();
 		updateCamera(*viewer, client, showMask);
 	}
 
@@ -480,6 +599,7 @@ void updateStreamViewers() {
 		sv.bottomColor = viewer.bottomColor;
 		sv.delaySec = viewer.delaySec;
 		sv.name = viewer.name;
+		sv.view = viewer.view;
 		list.push_back(sv);
 	}
 	if (g_sventv && list != g_sentViewers) {

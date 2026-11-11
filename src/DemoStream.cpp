@@ -33,6 +33,7 @@
 #define AUTH_FAIL_DELAY_MS 2000 // with the client limit, this caps how fast passwords can be guessed
 #define MAX_CLIENT_PACKET 1024
 #define MAX_COORD 131072.0f
+#define MAX_VIEW_TARGET 32 // highest player entity index
 
 static void setNonBlocking(intptr_t sock) {
 #ifdef WIN32
@@ -268,6 +269,17 @@ void DemoStream::sendViewers(Client& client) {
 			payload.insert(payload.end(), viewer.name.begin(), viewer.name.begin() + nameLen);
 			count++;
 		}
+
+		// what each viewer is watching, after the list so older clients don't read it
+		for (const StreamViewer& viewer : viewers) {
+			uint8_t entry[8];
+			entry[0] = viewer.view.known ? VIEW_INFO_KNOWN : 0;
+			entry[1] = viewer.view.target;
+			entry[2] = viewer.view.camMode;
+			entry[3] = viewer.view.director;
+			memcpy(entry + 4, &viewer.view.chaseDist, 4);
+			payload.insert(payload.end(), entry, entry + 8);
+		}
 	}
 	memcpy(payload.data(), &count, 2);
 
@@ -313,6 +325,22 @@ bool DemoStream::readClientPackets(Client& client) {
 				memcpy(client.camAngles, vals + 3, 12);
 				memcpy(&client.delayMs, payload + 24, 4);
 				client.hasCamera = true;
+			}
+
+			// what it's watching, from newer clients
+			if (valid && sz >= 35) {
+				StreamViewInfo view;
+				float chaseDist;
+				memcpy(&chaseDist, payload + 31, 4);
+				view.known = true;
+				view.target = payload[28] <= MAX_VIEW_TARGET ? payload[28] : 0;
+				view.camMode = payload[29] < VIEW_CAM_COUNT ? payload[29] : VIEW_CAM_FREE;
+				view.director = payload[30] < VIEW_DIRECTOR_COUNT ? payload[30] : VIEW_DIRECTOR_OFF;
+				view.chaseDist = chaseDist == chaseDist ? (std::max)(0.0f, (std::min)(chaseDist, MAX_CHASE_DIST)) : 0;
+				if (!view.target) {
+					view.camMode = VIEW_CAM_FREE;
+				}
+				client.view = view;
 			}
 		}
 
@@ -388,6 +416,7 @@ void DemoStream::updateClientInfo() {
 		memcpy(info.camOrigin, client.camOrigin, sizeof(info.camOrigin));
 		memcpy(info.camAngles, client.camAngles, sizeof(info.camAngles));
 		info.delayMs = client.delayMs;
+		info.view = client.view;
 		clientInfo.push_back(info);
 	}
 }
