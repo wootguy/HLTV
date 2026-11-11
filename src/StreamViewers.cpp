@@ -68,6 +68,7 @@ struct WebViewer {
 	uint8_t bottomColor = 0;
 	uint32_t delaySec = 0;
 	StreamViewInfo view; // what they're watching
+	uint8_t loadState = VIEW_LOAD_MAP; // VIEW_LOAD_*
 	EHANDLE h_camera;
 
 	// The camera glides from where it was to the latest view the viewer sent, over about as long
@@ -405,8 +406,16 @@ static void sendTeamNames(CBasePlayer* to) {
 }
 
 // Lists the viewers in empty player slots. The highest slots are used so that the team sorts below
-// the players when scores are tied. If the server is full, nothing is shown.
+// the players when scores are tied. If the server is full, nothing is shown. Viewers who are still
+// loading the map aren't shown, because they can't see the game yet.
 static void updateScoreboard() {
+	std::vector<const WebViewer*> viewers;
+	for (const WebViewer& viewer : g_viewers) {
+		if (viewer.loadState != VIEW_LOAD_MAP) {
+			viewers.push_back(&viewer);
+		}
+	}
+
 	bool empty[MAX_PLAYERS + 1] = { false };
 	std::vector<int> emptySlots;
 	for (int i = 1; i <= gpGlobals->maxClients && i <= MAX_PLAYERS; i++) {
@@ -421,7 +430,7 @@ static void updateScoreboard() {
 	const WebViewer* slotViewers[MAX_PLAYERS + 1] = { NULL };
 	std::string moreName[MAX_PLAYERS + 1]; // "(+N more viewers)" when they don't all fit
 	int numSlots = emptySlots.size();
-	int numNamed = g_viewers.size();
+	int numNamed = viewers.size();
 
 	if (numSlots && numNamed) {
 		int shown = numNamed <= numSlots ? numNamed : numSlots - 1;
@@ -429,7 +438,7 @@ static void updateScoreboard() {
 		int first = numSlots - (shown + (more > 0 ? 1 : 0));
 
 		for (int i = 0; i < shown; i++) {
-			slotViewers[emptySlots[first + i]] = &g_viewers[i];
+			slotViewers[emptySlots[first + i]] = viewers[i];
 		}
 		if (more > 0) {
 			moreName[emptySlots[first + shown]] = UTIL_VarArgs("(+%d more viewer%s)", more, more == 1 ? "" : "s");
@@ -586,6 +595,7 @@ void updateStreamViewers() {
 
 		viewer->delaySec = client.hasCamera ? roundDelay(client.delayMs) : 0;
 		viewer->view = client.joined ? client.view : StreamViewInfo();
+		viewer->loadState = client.loadState;
 		updateCamera(*viewer, client, showMask);
 	}
 

@@ -133,6 +133,27 @@ APIFUNC int get_stream_viewers(uint64_t* steamids, int maxIds) {
 	}
 	return count;
 }
+
+// Like get_stream_viewers, and also fills loadStates with what each viewer has loaded (VIEW_LOAD_*
+// in DemoStream.h): 0 = ready, 1 = can't spectate properly yet, 2 = still loading in the background.
+APIFUNC int get_stream_viewer_states(uint64_t* steamids, uint8_t* loadStates, int maxIds) {
+	if (!g_sventv) {
+		return 0;
+	}
+
+	int count = 0;
+	for (const StreamClientInfo& client : g_sventv->getStreamClients()) {
+		if (!client.authed) {
+			continue;
+		}
+		if (count < maxIds) {
+			steamids[count] = client.steamid64;
+			loadStates[count] = client.loadState;
+		}
+		count++;
+	}
+	return count;
+}
 #endif
 
 DemoStats g_stats;

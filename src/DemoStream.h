@@ -36,6 +36,7 @@
 //       there for viewers with a token login. Newer clients add uint8 player being spectated
 //       (0 = none), uint8 VIEW_CAM_* camera mode, uint8 VIEW_DIRECTOR_* mode and float chasecam
 //       distance, which the server uses to keep the camera on the player and passes on to others.
+//       Then uint8 VIEW_LOAD_* state, which the website shows next to the viewer.
 // Older clients and servers skip packet types they don't know, so new types don't change the version.
 // The server closes the connection when the session ends (map change, new recording).
 
@@ -76,6 +77,15 @@ enum view_director_modes {
 
 #define MAX_CHASE_DIST 4096.0f
 
+// what the viewer has loaded (CLIENT_PKT_VIEW, VIEW_LOAD_* in bspguy's DemoFile.h). Clients that
+// don't send it count as ready once they send a view, and as loading until then.
+enum view_load_states {
+	VIEW_LOAD_READY, // everything it needs right now is loaded
+	VIEW_LOAD_MAP, // missing the map or player model, so it can't spectate properly yet
+	VIEW_LOAD_BACKGROUND, // can spectate, but still loading other models, sounds or textures
+	VIEW_LOAD_COUNT
+};
+
 // what a viewer is watching, from CLIENT_PKT_VIEW
 struct StreamViewInfo {
 	bool known = false; // the client sent it
@@ -105,6 +115,7 @@ struct StreamClientInfo {
 	float camAngles[3]; // view angles
 	uint32_t delayMs; // how far behind live the client is watching
 	StreamViewInfo view;
+	uint8_t loadState; // VIEW_LOAD_*. VIEW_LOAD_MAP until the client has joined and sent a view.
 };
 
 // a viewer who logged in with a website token
@@ -191,6 +202,7 @@ private:
 		float camAngles[3] = { 0, 0, 0 };
 		uint32_t delayMs = 0;
 		StreamViewInfo view;
+		uint8_t loadState = VIEW_LOAD_READY; // sent by newer clients
 		uint64_t viewersSent = 0; // version of the viewer list this client was sent
 	};
 

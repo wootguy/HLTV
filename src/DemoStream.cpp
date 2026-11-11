@@ -342,6 +342,9 @@ bool DemoStream::readClientPackets(Client& client) {
 				}
 				client.view = view;
 			}
+			if (valid && sz >= 36) {
+				client.loadState = payload[35] < VIEW_LOAD_COUNT ? payload[35] : VIEW_LOAD_READY;
+			}
 		}
 
 		pos += 5 + sz;
@@ -417,6 +420,7 @@ void DemoStream::updateClientInfo() {
 		memcpy(info.camAngles, client.camAngles, sizeof(info.camAngles));
 		info.delayMs = client.delayMs;
 		info.view = client.view;
+		info.loadState = client.joined && client.hasCamera ? client.loadState : VIEW_LOAD_MAP;
 		clientInfo.push_back(info);
 	}
 }
