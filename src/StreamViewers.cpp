@@ -96,6 +96,7 @@ static std::string g_sentSlotNames[MAX_PLAYERS + 1][MAX_PLAYERS + 1];
 static int g_receiverUserIds[MAX_PLAYERS + 1];
 static bool g_sentTeamNames[MAX_PLAYERS + 1]; // renamed the green team for the receiver
 static float g_lastScoreboardUpdate = 0;
+static uint64_t g_slotViewerIds[MAX_PLAYERS + 1]; // steam ID of the viewer shown in each slot, 0 = none
 
 // Website users watching the stream, by Steam ID, for the chat announcements. A user with the
 // stream open in several tabs is announced once. Kept through map changes, while viewers reconnect.
@@ -112,6 +113,7 @@ void streamViewersMapInit() {
 	g_viewers.clear();
 	g_sentViewers.clear();
 	g_lastScoreboardUpdate = 0;
+	memset(g_slotViewerIds, 0, sizeof(g_slotViewerIds));
 
 	// clients forget all player info when the map changes
 	for (int i = 0; i <= MAX_PLAYERS; i++) {
@@ -124,6 +126,7 @@ void streamViewersMapInit() {
 
 void streamViewersMapEnd() {
 	g_viewers.clear();
+	memset(g_slotViewerIds, 0, sizeof(g_slotViewerIds));
 }
 
 // rounded, so names that include it don't change constantly
@@ -475,6 +478,9 @@ static void updateScoreboard() {
 			moreName[emptySlots[first + shown]] = UTIL_VarArgs("(+%d more viewer%s)", more, more == 1 ? "" : "s");
 		}
 	}
+	for (int s = 0; s <= MAX_PLAYERS; s++) {
+		g_slotViewerIds[s] = slotViewers[s] ? slotViewers[s]->steamid64 : 0;
+	}
 
 	for (int r = 1; r <= gpGlobals->maxClients && r <= MAX_PLAYERS; r++) {
 		CBasePlayer* plr = UTIL_PlayerByIndex(r);
@@ -523,6 +529,26 @@ uint64_t getStreamViewerSlots() {
 		}
 	}
 	return slots;
+}
+
+int getStreamViewerSoundSource(uint64_t steamid64, int& cameraEnt) {
+	cameraEnt = 0;
+	int slot = 0;
+	for (int s = 1; s <= gpGlobals->maxClients && s <= MAX_PLAYERS && !slot; s++) {
+		if (g_slotViewerIds[s] == steamid64 && isSlotEmpty(s)) {
+			slot = s;
+		}
+	}
+
+	// the same user can watch in several tabs, each with a camera. Any of them will do.
+	for (WebViewer& viewer : g_viewers) {
+		CBaseEntity* cam = viewer.h_camera.GetEntity();
+		if (slot && viewer.steamid64 == steamid64 && cam) {
+			cameraEnt = cam->entindex();
+			return slot;
+		}
+	}
+	return 0;
 }
 
 // Says in the game's chat and the website's chat that someone started or stopped watching, like
@@ -651,6 +677,7 @@ void updateStreamViewers() {
 		CBaseEntity* cam = viewer.h_camera.GetEntity();
 		StreamViewer sv;
 		sv.clientId = viewer.clientId;
+		sv.steamid64 = viewer.steamid64;
 		sv.entindex = cam ? cam->entindex() : 0;
 		sv.topColor = viewer.topColor;
 		sv.bottomColor = viewer.bottomColor;

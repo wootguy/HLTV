@@ -29,6 +29,9 @@
 //       uint8 VIEW_INFO_* flags, uint8 player being spectated (entity index, 0 = none), uint8 VIEW_CAM_*
 //       camera mode, uint8 VIEW_DIRECTOR_* mode, float chasecam distance. Older clients stop reading
 //       after the names, so this was added without changing the version.
+//       Then the same viewers again with their uint64 Steam ID, which the spectator copies of their
+//       chat sounds are sent with (MicSounds), so the demo player can fade them from the viewer's
+//       camera and apply mutes.
 //       Sent when it changes, and after STREAM_PKT_HEADER.
 //     STREAM_PKT_REPLACED: no payload. A newer connection replaced this one: the same Steam ID logged
 //       in again, or too many connections from this IP used the stream password. The server will
@@ -37,6 +40,8 @@
 //       ID isn't signed in on the website, so it wouldn't be in the website's list of who's watching.
 //       Sent after waiting a while for it to sign in, at login or after it signed out. The server
 //       will disconnect.
+//     STREAM_PKT_MESSAGE: uint8 STREAM_MSG_* type + text. A message for this viewer from the server,
+//       like a chat sound's cooldown when they chatted from the website.
 // After logging in, clients can send packets of the same form:
 //     CLIENT_PKT_VIEW: float origin[3] + float view angles[3] (pitch, yaw, roll) + uint32 millis
 //       behind live (0 = live). Where the viewer is looking from. The server makes a camera entity
@@ -58,6 +63,12 @@ enum stream_packet_types {
 	STREAM_PKT_VIEWERS = 5,
 	STREAM_PKT_REPLACED = 6,
 	STREAM_PKT_WEB_SIGN_IN = 7,
+	STREAM_PKT_MESSAGE = 8,
+};
+
+// how a STREAM_PKT_MESSAGE is shown
+enum stream_message_types {
+	STREAM_MSG_CENTER, // in the middle of the screen, like print_center
 };
 
 enum stream_client_packet_types {
@@ -130,6 +141,7 @@ struct StreamClientInfo {
 // a viewer who logged in with a website token
 struct StreamViewer {
 	uint64_t clientId;
+	uint64_t steamid64;
 	uint16_t entindex; // camera entity, or 0
 	uint8_t topColor;
 	uint8_t bottomColor;
@@ -138,7 +150,7 @@ struct StreamViewer {
 	StreamViewInfo view;
 
 	bool operator==(const StreamViewer& o) const {
-		return clientId == o.clientId && entindex == o.entindex && topColor == o.topColor
+		return clientId == o.clientId && steamid64 == o.steamid64 && entindex == o.entindex && topColor == o.topColor
 			&& bottomColor == o.bottomColor && delaySec == o.delaySec && name == o.name && view == o.view;
 	}
 };
@@ -185,6 +197,8 @@ public:
 	// Steam IDs signed in on the website. Token logins are only accepted while their Steam ID is
 	// signed in, so that everyone watching that way is listed on the website.
 	void setWebSignedIn(const std::vector<uint64_t>& steamids);
+	// sends a STREAM_PKT_MESSAGE to every connection that logged in with this Steam ID
+	void sendMessage(uint64_t steamid64, uint8_t type, const std::string& text);
 
 private:
 	typedef std::shared_ptr<std::vector<uint8_t>> Segment;
@@ -242,6 +256,11 @@ private:
 	std::vector<StreamViewer> viewers;
 	uint64_t viewersVersion = 1;
 	std::vector<uint64_t> webSignedIn;
+	struct ViewerMessage {
+		uint64_t steamid64;
+		Segment packet;
+	};
+	std::vector<ViewerMessage> messages; // waiting for think() to queue them for the clients
 
 	bool sessionActive = false;
 	std::vector<uint8_t> header; // kept up to date with the string pool for late joiners

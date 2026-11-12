@@ -186,6 +186,29 @@ APIFUNC int get_stream_viewer_states(uint64_t* steamids, uint8_t* loadStates, in
 APIFUNC uint64_t get_stream_viewer_slots() {
 	return getStreamViewerSlots();
 }
+
+// Lets chatsounds_hl play a web viewer's chat sounds. Returns the scoreboard slot showing the viewer
+// with this Steam ID, which the sound plays through, and sets cameraEnt to their camera entity,
+// which it fades out from. Returns 0 if the viewer isn't in a slot or has no camera.
+// Lets other plugins (chatsounds_hl) tell a viewer who logged in with a website token something, in
+// the middle of the screen like print_center. Every stream connection with that Steam ID gets it.
+// Returns false if the stream isn't running.
+APIFUNC bool print_stream_viewer_center(uint64_t steamid64, const char* msg) {
+	if (!g_sventv || !g_sventv->enableStream || !steamid64 || !msg) {
+		return false;
+	}
+	g_sventv->sendStreamMessage(steamid64, STREAM_MSG_CENTER, msg);
+	return true;
+}
+
+APIFUNC int get_stream_viewer_sound_source(uint64_t steamid64, int* cameraEnt) {
+	int ent = 0;
+	int slot = getStreamViewerSoundSource(steamid64, ent);
+	if (cameraEnt) {
+		*cameraEnt = ent;
+	}
+	return slot;
+}
 #endif
 
 DemoStats g_stats;

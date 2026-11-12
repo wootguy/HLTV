@@ -60,6 +60,7 @@ public:
 	void setStreamWebSignedIn(const std::vector<uint64_t>& steamids);
 	std::vector<StreamClientInfo> getStreamClients();
 	void setStreamViewers(const std::vector<StreamViewer>& viewers);
+	void sendStreamMessage(uint64_t steamid64, uint8_t type, const std::string& text);
 
 private:
 	// main thread vars

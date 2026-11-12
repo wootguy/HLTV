@@ -175,6 +175,10 @@ void SvenTV::setStreamViewers(const std::vector<StreamViewer>& viewers) {
 	demoWriter->stream.setViewers(viewers);
 }
 
+void SvenTV::sendStreamMessage(uint64_t steamid64, uint8_t type, const std::string& text) {
+	demoWriter->stream.sendMessage(steamid64, type, text);
+}
+
 void SvenTV::updateStreamSocket() {
 	if (g_stream && g_stream->value > 0) {
 		demoWriter->stream.listen((uint16_t)g_stream_port->value);

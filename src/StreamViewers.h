@@ -32,4 +32,9 @@ bool cmd_showspecs(CBasePlayer* plr, const CommandArgs& args);
 // Bit N is set if player slot N shows a viewer on someone's scoreboard, so a sound played from that
 // slot would look like it came from the viewer.
 uint64_t getStreamViewerSlots();
+
+// Where a viewer's chat sounds play from: the scoreboard slot that shows them, which is their voice
+// channel, and their camera entity, which is where the sound fades out from. Returns the slot, or 0
+// if the viewer isn't shown in a slot or has no camera (still loading, or not enough empty slots).
+int getStreamViewerSoundSource(uint64_t steamid64, int& cameraEnt);
 #endif

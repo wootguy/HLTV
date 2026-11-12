@@ -258,6 +258,19 @@ void DemoStream::setWebSignedIn(const std::vector<uint64_t>& steamids) {
 	webSignedIn = steamids;
 }
 
+void DemoStream::sendMessage(uint64_t steamid64, uint8_t type, const std::string& text) {
+	std::vector<uint8_t> payload;
+	payload.push_back(type);
+	payload.insert(payload.end(), text.begin(), text.end());
+
+	ViewerMessage msg;
+	msg.steamid64 = steamid64;
+	msg.packet = makeSegment(STREAM_PKT_MESSAGE, NULL, 0, payload.data(), payload.size());
+
+	std::lock_guard<std::mutex> guard(infoMutex);
+	messages.push_back(msg);
+}
+
 void DemoStream::checkWebSignIns(uint64_t now) {
 	std::vector<uint64_t> signedIn;
 	{
@@ -327,6 +340,11 @@ void DemoStream::sendViewers(Client& client) {
 			entry[3] = viewer.view.director;
 			memcpy(entry + 4, &viewer.view.chaseDist, 4);
 			payload.insert(payload.end(), entry, entry + 8);
+		}
+
+		// Steam IDs, after that for the same reason
+		for (const StreamViewer& viewer : viewers) {
+			payload.insert(payload.end(), (const uint8_t*)&viewer.steamid64, (const uint8_t*)&viewer.steamid64 + 8);
 		}
 	}
 	memcpy(payload.data(), &count, 2);
@@ -715,6 +733,19 @@ void DemoStream::think() {
 
 	applyTokenResults();
 	checkWebSignIns(getEpochMillis());
+
+	std::vector<ViewerMessage> newMessages;
+	{
+		std::lock_guard<std::mutex> guard(infoMutex);
+		newMessages.swap(messages);
+	}
+	for (const ViewerMessage& msg : newMessages) {
+		for (Client& client : clients) {
+			if (client.joined && !client.closing && msg.steamid64 && client.steamid64 == msg.steamid64) {
+				client.prefix.insert(client.prefix.end(), msg.packet->begin(), msg.packet->end());
+			}
+		}
+	}
 
 	clients.erase(std::remove_if(clients.begin(), clients.end(), [this](Client& client) {
 		if (!flushClient(client)) {
