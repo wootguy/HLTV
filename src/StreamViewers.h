@@ -35,6 +35,7 @@ uint64_t getStreamViewerSlots();
 
 // Where a viewer's chat sounds play from: the scoreboard slot that shows them, which is their voice
 // channel, and their camera entity, which is where the sound fades out from. Returns the slot, or 0
-// if the viewer isn't shown in a slot or has no camera (still loading, or not enough empty slots).
+// if the viewer isn't shown in a slot or has no camera (still loading, or not enough empty slots),
+// or is in the last slot, which players can't hear voice from.
 int getStreamViewerSoundSource(uint64_t steamid64, int& cameraEnt);
 #endif

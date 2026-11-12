@@ -427,7 +427,7 @@ static void sendTeamNames(CBasePlayer* to) {
 }
 
 // Lists the viewers in empty player slots. The highest slots are used so that the team sorts below
-// the players when scores are tied. If the server is full, nothing is shown. Viewers who are still
+// the players when scores are tied, except the last one (see below). If the server is full, nothing is shown. Viewers who are still
 // loading the map aren't shown, because they can't see the game yet.
 //
 // One empty slot is left out for the chatsounds_hl plugin. When a player's voice is playing, it
@@ -465,6 +465,15 @@ static void updateScoreboard() {
 	std::string moreName[MAX_PLAYERS + 1]; // "(+N more viewers)" when they don't all fit
 	int numSlots = emptySlots.size();
 	int numNamed = viewers.size();
+
+	// Players hear no voice from the last slot (maxClients): the label flickers with no sound, which
+	// is why chatsounds_hl never plays from it. Web viewers' chat sounds play through their slot, so
+	// they get it last. The "(+N more viewers)" entry never talks, so when there is one, it gets it.
+	// Viewers are placed from the end of emptySlots, so it goes to the front.
+	if (numNamed <= numSlots && numSlots > 1 && emptySlots.back() == gpGlobals->maxClients) {
+		emptySlots.pop_back();
+		emptySlots.insert(emptySlots.begin(), gpGlobals->maxClients);
+	}
 
 	if (numSlots && numNamed) {
 		int shown = numNamed <= numSlots ? numNamed : numSlots - 1;
@@ -534,7 +543,9 @@ uint64_t getStreamViewerSlots() {
 int getStreamViewerSoundSource(uint64_t steamid64, int& cameraEnt) {
 	cameraEnt = 0;
 	int slot = 0;
-	for (int s = 1; s <= gpGlobals->maxClients && s <= MAX_PLAYERS && !slot; s++) {
+	// no voice plays from the last slot (see updateScoreboard). A viewer only gets it when every
+	// other slot is taken.
+	for (int s = 1; s < gpGlobals->maxClients && s <= MAX_PLAYERS && !slot; s++) {
 		if (g_slotViewerIds[s] == steamid64 && isSlotEmpty(s)) {
 			slot = s;
 		}
