@@ -44,7 +44,8 @@ uint64_t getStreamViewerSlots();
 int getStreamViewerSoundSource(uint64_t steamid64, int& cameraEnt);
 
 // While a viewer's chat sound plays, their cameras are shown to these players (PLRBIT mask) with a
-// mic icon above them, even if the players didn't turn the cameras on. Lasts this many seconds, or
-// stops now if seconds or players is 0.
+// mic icon above them, even if the players didn't turn the cameras on. Lasts this many seconds
+// plus TALK_LINGER_SECONDS. seconds = 0 means the sound stopped early, so it ends after the linger;
+// players = 0 ends it now.
 void setStreamViewerTalking(uint64_t steamid64, uint32_t players, float seconds);
 #endif

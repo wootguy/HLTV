@@ -27,6 +27,7 @@ bool isSpecCamera(const edict_t& ed) {
 #define WATCH_END_MS (5 * 1000) // left during the map (reloading the page takes a few seconds)
 #define WATCH_END_MAP_CHANGE_MS (30 * 1000) // from the start of the new map
 #define MAX_TALK_SECONDS 60.0f // longest a chat sound can keep a camera shown
+#define TALK_LINGER_SECONDS 0.2f // the camera and mic icon stay this long after the sound ends
 
 #ifndef DEFAULT_TEAM_NAME
 #define DEFAULT_TEAM_NAME "Team"
@@ -647,13 +648,24 @@ void setStreamViewerTalking(uint64_t steamid64, uint32_t players, float seconds)
 	if (!steamid64) {
 		return;
 	}
-	if (!players || seconds <= 0) {
+	if (!players) {
 		g_talking.erase(steamid64);
 		return;
 	}
+
+	float endTime = gpGlobals->time + V_min(V_max(seconds, 0.0f), MAX_TALK_SECONDS) + TALK_LINGER_SECONDS;
+	auto it = g_talking.find(steamid64);
+	if (seconds <= 0) {
+		// the sound was stopped early. It still lingers, but never past when it would have ended.
+		if (it != g_talking.end()) {
+			it->second.endTime = V_min(it->second.endTime, endTime);
+		}
+		return;
+	}
+
 	TalkingViewer& talking = g_talking[steamid64];
 	talking.players = players;
-	talking.endTime = gpGlobals->time + V_min(seconds, MAX_TALK_SECONDS);
+	talking.endTime = endTime;
 }
 
 // Says in the game's chat and the website's chat that someone started or stopped watching, like
@@ -756,7 +768,7 @@ void updateStreamViewers() {
 
 	for (auto it = g_talking.begin(); it != g_talking.end();) {
 		float left = it->second.endTime - gpGlobals->time;
-		if (left <= 0 || left > MAX_TALK_SECONDS) {
+		if (left <= 0 || left > MAX_TALK_SECONDS + TALK_LINGER_SECONDS) {
 			it = g_talking.erase(it); // finished, or the clock went backwards
 		}
 		else {
