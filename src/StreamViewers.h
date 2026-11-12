@@ -5,8 +5,10 @@
 //
 // Viewers who logged in with a website token get a camera entity in the game, placed where they're
 // looking from. The demo stream always includes the cameras, so viewers can see each other.
-// Players only see them after turning them on with .showspecs. A viewer watching live who is
-// spectating a player has their camera kept on that player, rather than trailing behind it.
+// Players only see them after turning them on with .showspecs, or while the viewer's chat sound
+// plays, when the camera also has a mic icon above it (not for players who muted the viewer's
+// voice and text). A viewer watching live who is spectating a player has their camera kept on
+// that player, rather than trailing behind it.
 //
 // The scoreboard of players lists the viewers in empty player slots, under a "Web Spectators" team.
 // When there aren't enough slots, the last one says how many more viewers there are. A player sees
@@ -19,6 +21,8 @@
 
 #define SPEC_CAMERA_CLASS "hltv_camera"
 #define SPEC_CAMERA_MODEL "models/hlcoop_v2/camera_v2.mdl"
+#define SPEC_CAMERA_MIC_CLASS "hltv_camera_mic"
+#define SPEC_CAMERA_MIC_MODEL "sprites/voiceicon.spr" // the icon the client shows above talking players
 
 // true for camera entities, which are recorded even though they're hidden from most players
 bool isSpecCamera(const edict_t& ed);
@@ -38,4 +42,9 @@ uint64_t getStreamViewerSlots();
 // if the viewer isn't shown in a slot or has no camera (still loading, or not enough empty slots),
 // or is in the last slot, which players can't hear voice from.
 int getStreamViewerSoundSource(uint64_t steamid64, int& cameraEnt);
+
+// While a viewer's chat sound plays, their cameras are shown to these players (PLRBIT mask) with a
+// mic icon above them, even if the players didn't turn the cameras on. Lasts this many seconds, or
+// stops now if seconds or players is 0.
+void setStreamViewerTalking(uint64_t steamid64, uint32_t players, float seconds);
 #endif

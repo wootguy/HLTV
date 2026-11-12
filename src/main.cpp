@@ -209,6 +209,12 @@ APIFUNC int get_stream_viewer_sound_source(uint64_t steamid64, int* cameraEnt) {
 	}
 	return slot;
 }
+
+// Lets chatsounds_hl show a web viewer's camera, with a mic icon above it, to the players who can
+// hear their chat sound (PLRBIT mask), for as long as it plays. seconds = 0 stops it early.
+APIFUNC void set_stream_viewer_talking(uint64_t steamid64, uint32_t players, float seconds) {
+	setStreamViewerTalking(steamid64, players, seconds);
+}
 #endif
 
 DemoStats g_stats;

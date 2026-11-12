@@ -26,6 +26,7 @@ bool isSpecCamera(const edict_t& ed) {
 // after every map change, which can take a while, so ones from the last map get longer.
 #define WATCH_END_MS (5 * 1000) // left during the map (reloading the page takes a few seconds)
 #define WATCH_END_MAP_CHANGE_MS (30 * 1000) // from the start of the new map
+#define MAX_TALK_SECONDS 60.0f // longest a chat sound can keep a camera shown
 
 #ifndef DEFAULT_TEAM_NAME
 #define DEFAULT_TEAM_NAME "Team"
@@ -60,6 +61,33 @@ public:
 
 LINK_ENTITY_TO_CLASS(hltv_camera, CHltvCamera)
 
+// The icon above a camera while its viewer's chat sound plays. It looks like the one the client
+// draws above players who are talking (CVoiceStatus::CreateEntities), which it can't draw for a
+// camera because cameras aren't players.
+class CHltvCameraMic : public CBaseEntity {
+public:
+	void Precache() {
+		PRECACHE_MODEL(SPEC_CAMERA_MIC_MODEL);
+	}
+
+	void Spawn() {
+		Precache();
+		pev->solid = SOLID_NOT;
+		pev->movetype = MOVETYPE_NOCLIP; // interpolated, like the camera
+		pev->rendermode = kRenderTransAdd;
+		pev->renderamt = 255;
+		pev->renderfx = kRenderFxNoDissipation;
+		pev->scale = 0.5f;
+		pev->effects |= EF_NODRAW;
+		SET_MODEL(edict(), SPEC_CAMERA_MIC_MODEL);
+		UTIL_SetSize(pev, g_vecZero, g_vecZero);
+	}
+};
+
+LINK_ENTITY_TO_CLASS(hltv_camera_mic, CHltvCameraMic)
+
+#define MIC_HEIGHT 20 // above the camera's center. The client puts it 45 above a player's.
+
 // a stream viewer who logged in with a website token
 struct WebViewer {
 	uint64_t clientId; // stream client
@@ -73,6 +101,7 @@ struct WebViewer {
 	StreamViewInfo view; // what they're watching
 	uint8_t loadState = VIEW_LOAD_MAP; // VIEW_LOAD_*
 	EHANDLE h_camera;
+	EHANDLE h_mic; // the icon above the camera while their chat sound plays
 
 	// The camera glides from where it was to the latest view the viewer sent, over about as long
 	// as it took for that view to arrive. Views come in a few times a second, so jumping straight
@@ -90,6 +119,14 @@ static std::vector<StreamViewer> g_sentViewers; // last list given to the stream
 
 // players who turned the cameras on, by Steam ID so it lasts through map changes
 static std::unordered_set<uint64_t> g_showSpecs;
+
+// Viewers whose chat sound is playing, by Steam ID. Their cameras are shown to these players, with
+// the mic icon above them, whether or not they turned the cameras on.
+struct TalkingViewer {
+	uint32_t players; // PLRBIT mask
+	float endTime;
+};
+static std::unordered_map<uint64_t, TalkingViewer> g_talking;
 
 // scoreboard names sent to each player for each empty slot. [receiver][slot], "" = nothing sent
 static std::string g_sentSlotNames[MAX_PLAYERS + 1][MAX_PLAYERS + 1];
@@ -109,8 +146,10 @@ static uint64_t g_mapStartTime = 0; // epoch ms
 
 void streamViewersMapInit() {
 	UTIL_PrecacheOther(SPEC_CAMERA_CLASS);
+	UTIL_PrecacheOther(SPEC_CAMERA_MIC_CLASS);
 	g_mapStartTime = getEpochMillis();
 	g_viewers.clear();
+	g_talking.clear();
 	g_sentViewers.clear();
 	g_lastScoreboardUpdate = 0;
 	memset(g_slotViewerIds, 0, sizeof(g_slotViewerIds));
@@ -126,6 +165,7 @@ void streamViewersMapInit() {
 
 void streamViewersMapEnd() {
 	g_viewers.clear();
+	g_talking.clear();
 	memset(g_slotViewerIds, 0, sizeof(g_slotViewerIds));
 }
 
@@ -240,15 +280,45 @@ static void snapCamera(const StreamClientInfo& client, Vector& origin, Vector& a
 	origin = desired;
 }
 
-static void updateCamera(WebViewer& viewer, const StreamClientInfo& client, uint32_t showMask) {
+static void removeEntity(EHANDLE& h) {
+	CBaseEntity* ent = h.GetEntity();
+	if (ent) {
+		UTIL_Remove(ent);
+	}
+	h = NULL;
+}
+
+// Shows the mic icon above the camera to these players, or removes it if there are none
+static void updateMic(WebViewer& viewer, CBaseEntity* cam, uint32_t players) {
+	if (!players || !cam) {
+		removeEntity(viewer.h_mic);
+		return;
+	}
+
+	CBaseEntity* mic = viewer.h_mic.GetEntity();
+	if (!mic) {
+		mic = CBaseEntity::Create(SPEC_CAMERA_MIC_CLASS, cam->pev->origin + Vector(0, 0, MIC_HEIGHT), g_vecZero);
+		if (!mic) {
+			ALERT(at_error, "HLTV: failed to create a spectator camera's mic icon\n");
+			return;
+		}
+		viewer.h_mic = mic;
+	}
+
+	UTIL_SetOrigin(mic->pev, cam->pev->origin + Vector(0, 0, MIC_HEIGHT));
+	mic->pev->effects &= ~EF_NODRAW;
+	mic->m_hidePlayers = ~players;
+}
+
+// showMask: players who turned the cameras on. talkMask: players who are shown this camera and its
+// mic icon because the viewer's chat sound is playing.
+static void updateCamera(WebViewer& viewer, const StreamClientInfo& client, uint32_t showMask, uint32_t talkMask) {
 	CBaseEntity* cam = viewer.h_camera.GetEntity();
 
 	// viewers whose player hasn't sent where it's looking from don't get a camera
 	if (!client.joined || !client.hasCamera) {
-		if (cam) {
-			UTIL_Remove(cam);
-			viewer.h_camera = NULL;
-		}
+		removeEntity(viewer.h_camera);
+		removeEntity(viewer.h_mic);
 		return;
 	}
 
@@ -297,15 +367,26 @@ static void updateCamera(WebViewer& viewer, const StreamClientInfo& client, uint
 
 	// Nobody sees EF_NODRAW entities, but the demo writer records cameras anyway. A camera in first
 	// person would be inside the player's head, so it's hidden. The demo player shows those viewers'
-	// names above the player's instead.
+	// names above the player's instead. While their chat sound plays, it's shown anyway, so players
+	// can tell who it's from, except to the player it's inside.
 	bool inHead = isWatchingLive(client) && client.view.camMode == VIEW_CAM_FIRST_PERSON;
-	if (showMask && !inHead) {
+	uint32_t visMask = inHead ? 0 : showMask;
+	if (talkMask) {
+		if (inHead) {
+			talkMask &= ~PLRBIT((uint32_t)client.view.target);
+		}
+		visMask |= talkMask;
+	}
+
+	if (visMask) {
 		cam->pev->effects &= ~EF_NODRAW;
 	}
 	else {
 		cam->pev->effects |= EF_NODRAW;
 	}
-	cam->m_hidePlayers = ~showMask;
+	cam->m_hidePlayers = ~visMask;
+
+	updateMic(viewer, cam, talkMask);
 }
 
 static bool isSlotEmpty(int idx) {
@@ -562,6 +643,19 @@ int getStreamViewerSoundSource(uint64_t steamid64, int& cameraEnt) {
 	return 0;
 }
 
+void setStreamViewerTalking(uint64_t steamid64, uint32_t players, float seconds) {
+	if (!steamid64) {
+		return;
+	}
+	if (!players || seconds <= 0) {
+		g_talking.erase(steamid64);
+		return;
+	}
+	TalkingViewer& talking = g_talking[steamid64];
+	talking.players = players;
+	talking.endTime = gpGlobals->time + V_min(seconds, MAX_TALK_SECONDS);
+}
+
 // Says in the game's chat and the website's chat that someone started or stopped watching, like
 // the game's own spectating messages: "(WEB) <name> is now spectating" / "... stopped spectating".
 static void announceWatcher(uint64_t steamid64, const std::string& name, bool started) {
@@ -642,16 +736,31 @@ void updateStreamViewers() {
 			return c.id == viewer.clientId;
 		});
 		if (!watching) {
-			UTIL_Remove(viewer.h_camera.GetEntity());
+			removeEntity(viewer.h_camera);
+			removeEntity(viewer.h_mic);
 		}
 		return !watching;
 	}), g_viewers.end());
 
 	uint32_t showMask = 0;
+	uint32_t playerMask = 0;
 	for (int i = 1; i <= gpGlobals->maxClients; i++) {
 		CBasePlayer* plr = UTIL_PlayerByIndex(i);
+		if (plr) {
+			playerMask |= PLRBIT(i);
+		}
 		if (plr && g_showSpecs.count(plr->GetSteamID64())) {
 			showMask |= PLRBIT(i);
+		}
+	}
+
+	for (auto it = g_talking.begin(); it != g_talking.end();) {
+		float left = it->second.endTime - gpGlobals->time;
+		if (left <= 0 || left > MAX_TALK_SECONDS) {
+			it = g_talking.erase(it); // finished, or the clock went backwards
+		}
+		else {
+			++it;
 		}
 	}
 
@@ -680,7 +789,9 @@ void updateStreamViewers() {
 		viewer->delaySec = client.hasCamera ? roundDelay(client.delayMs) : 0;
 		viewer->view = client.joined ? client.view : StreamViewInfo();
 		viewer->loadState = client.loadState;
-		updateCamera(*viewer, client, showMask);
+		auto talking = g_talking.find(viewer->steamid64);
+		uint32_t talkMask = talking != g_talking.end() ? talking->second.players & playerMask : 0;
+		updateCamera(*viewer, client, showMask, talkMask);
 	}
 
 	std::vector<StreamViewer> list;
