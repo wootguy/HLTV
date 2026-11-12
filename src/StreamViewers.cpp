@@ -382,7 +382,7 @@ static bool isSpectating(const WebViewer& viewer, int playerIdx) {
 static std::string viewerSlotName(const WebViewer& viewer, int receiver) {
 	std::string suffix = delaySuffix(viewer.delaySec);
 	if (isSpectating(viewer, receiver)) {
-		suffix += " (on you)";
+		suffix += viewer.view.camMode == VIEW_CAM_FIRST_PERSON ? " (in you)" : " (on you)";
 	}
 	return slotName(viewer.name, suffix);
 }
@@ -460,7 +460,7 @@ static void updateScoreboard() {
 	}
 
 	// which viewer goes in each slot. The names can differ for each player, who sees " (on you)"
-	// after the viewers spectating them.
+	// (or " (in you)" in first person) after the viewers spectating them.
 	const WebViewer* slotViewers[MAX_PLAYERS + 1] = { NULL };
 	std::string moreName[MAX_PLAYERS + 1]; // "(+N more viewers)" when they don't all fit
 	int numSlots = emptySlots.size();
