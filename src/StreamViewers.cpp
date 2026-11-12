@@ -408,6 +408,12 @@ static void sendTeamNames(CBasePlayer* to) {
 // Lists the viewers in empty player slots. The highest slots are used so that the team sorts below
 // the players when scores are tied. If the server is full, nothing is shown. Viewers who are still
 // loading the map aren't shown, because they can't see the game yet.
+//
+// One empty slot is left out for the chatsounds_hl plugin. When a player's voice is playing, it
+// plays their chat sound from the highest empty slot below maxClients that isn't showing a viewer
+// (get_stream_viewer_slots), so that the two streams don't interrupt each other. A viewer's name
+// there would make it look like the viewer made the sound. If only one slot is empty, the viewers
+// get it, and chat sounds play from the player's own slot.
 static void updateScoreboard() {
 	std::vector<const WebViewer*> viewers;
 	for (const WebViewer& viewer : g_viewers) {
@@ -422,6 +428,13 @@ static void updateScoreboard() {
 		empty[i] = isSlotEmpty(i);
 		if (empty[i]) {
 			emptySlots.push_back(i);
+		}
+	}
+
+	for (int i = (int)emptySlots.size() - 1; i >= 0 && emptySlots.size() > 1; i--) {
+		if (emptySlots[i] < gpGlobals->maxClients) {
+			emptySlots.erase(emptySlots.begin() + i); // the chat sound slot
+			break;
 		}
 	}
 
@@ -480,6 +493,18 @@ static void updateScoreboard() {
 			}
 		}
 	}
+}
+
+uint64_t getStreamViewerSlots() {
+	uint64_t slots = 0;
+	for (int r = 1; r <= MAX_PLAYERS; r++) {
+		for (int s = 1; s <= MAX_PLAYERS; s++) {
+			if (!g_sentSlotNames[r][s].empty()) {
+				slots |= 1ULL << s;
+			}
+		}
+	}
+	return slots;
 }
 
 // Says in the game's chat and the website's chat that someone started or stopped watching, like

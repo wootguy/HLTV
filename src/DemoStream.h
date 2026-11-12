@@ -30,6 +30,9 @@
 //       camera mode, uint8 VIEW_DIRECTOR_* mode, float chasecam distance. Older clients stop reading
 //       after the names, so this was added without changing the version.
 //       Sent when it changes, and after STREAM_PKT_HEADER.
+//     STREAM_PKT_REPLACED: no payload. A newer connection replaced this one: the same Steam ID logged
+//       in again, or too many connections from this IP used the stream password. The server will
+//       disconnect, and the client shouldn't reconnect.
 // After logging in, clients can send packets of the same form:
 //     CLIENT_PKT_VIEW: float origin[3] + float view angles[3] (pitch, yaw, roll) + uint32 millis
 //       behind live (0 = live). Where the viewer is looking from. The server makes a camera entity
@@ -49,6 +52,7 @@ enum stream_packet_types {
 	STREAM_PKT_POOL = 3,
 	STREAM_PKT_AUTH_FAILED = 4,
 	STREAM_PKT_VIEWERS = 5,
+	STREAM_PKT_REPLACED = 6,
 };
 
 enum stream_client_packet_types {
@@ -146,6 +150,7 @@ struct StreamTokenCheck {
 class DemoStream {
 public:
 	int maxFrames = 7200; // minimum number of recent frames to keep for clients that join late
+	int maxClients = 128; // new connections are refused at this many. Lowering it doesn't drop anyone.
 
 	DemoStream();
 	~DemoStream();
@@ -186,6 +191,7 @@ private:
 		size_t segmentSent = 0; // bytes of that segment already sent
 
 		std::string address;
+		std::string ip; // address without the port
 		uint64_t connectTime = 0;
 		uint64_t bytesSent = 0;
 		std::vector<uint8_t> authBuf; // password received so far
@@ -195,6 +201,7 @@ private:
 		uint64_t steamid64 = 0; // logged in with a session token
 		bool rejected = false; // wrong password, waiting out the delay
 		bool closing = false; // disconnect once the prefix is sent
+		uint64_t closeDeadline = 0; // when closing, disconnect by now even if the prefix wasn't sent
 
 		std::vector<uint8_t> inBuf; // client packets received after logging in
 		bool hasCamera = false;
@@ -244,6 +251,8 @@ private:
 	void sendViewers(Client& client);
 	void acceptClient(Client& client);
 	void rejectClient(Client& client, uint64_t now);
+	void replaceClient(Client& client, uint64_t now, const char* reason);
+	void limitPasswordConnections(const Client& client, uint64_t now);
 	void applyTokenResults();
 	void updateClientInfo();
 };

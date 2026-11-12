@@ -84,6 +84,7 @@ extern cvar_t* g_validate_output;
 extern cvar_t* g_stream;
 extern cvar_t* g_stream_port;
 extern cvar_t* g_stream_frames;
+extern cvar_t* g_stream_max_clients;
 extern cvar_t* g_stream_password;
 extern cvar_t* g_stream_web_logins;
 extern cvar_t* g_stream_announce;

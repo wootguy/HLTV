@@ -87,6 +87,7 @@ cvar_t* g_write_user_cmds; // write user commands (movement, buttons, etc.)
 cvar_t* g_stream = NULL; // stream demo frames to clients over TCP, without needing a demo file
 cvar_t* g_stream_port = NULL;
 cvar_t* g_stream_frames = NULL; // recent frames to keep for clients that join late
+cvar_t* g_stream_max_clients = NULL; // connections allowed at once, including ones still logging in
 cvar_t* g_stream_password = NULL; // required to connect to the stream, if not empty
 cvar_t* g_stream_web_logins = NULL; // also accept website session tokens from the WebServer plugin
 cvar_t* g_stream_announce = NULL; // say in chat when website users start or stop watching the stream
@@ -153,6 +154,13 @@ APIFUNC int get_stream_viewer_states(uint64_t* steamids, uint8_t* loadStates, in
 		count++;
 	}
 	return count;
+}
+
+// Lets other plugins (chatsounds_hl) avoid playing sounds from player slots that show a viewer on
+// the scoreboard. Bit N is set for slot N. One empty slot is left without a viewer, unless
+// it's the only one.
+APIFUNC uint64_t get_stream_viewer_slots() {
+	return getStreamViewerSlots();
 }
 #endif
 
@@ -1111,6 +1119,7 @@ extern "C" int DLLEXPORT PluginInit() {
 	g_stream = RegisterPluginCVar("hltv.stream", "0", 0, 0);
 	g_stream_port = RegisterPluginCVar("hltv.stream_port", "28015", 28015, 0);
 	g_stream_frames = RegisterPluginCVar("hltv.stream_frames", "7200", 7200, 0);
+	g_stream_max_clients = RegisterPluginCVar("hltv.stream_max_clients", "128", 128, 0);
 	g_stream_password = RegisterPluginCVar("hltv.stream_password", "", 0, 0);
 	g_stream_web_logins = RegisterPluginCVar("hltv.stream_web_logins", "1", 1, 0);
 	g_stream_announce = RegisterPluginCVar("hltv.stream_announce", "1", 1, 0);

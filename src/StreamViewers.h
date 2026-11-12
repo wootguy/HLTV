@@ -28,4 +28,8 @@ void streamViewersMapInit(); // precaches the camera model
 void streamViewersMapEnd(); // the entities are about to be removed
 void updateStreamViewers(); // call every frame
 bool cmd_showspecs(CBasePlayer* plr, const CommandArgs& args);
+
+// Bit N is set if player slot N shows a viewer on someone's scoreboard, so a sound played from that
+// slot would look like it came from the viewer.
+uint64_t getStreamViewerSlots();
 #endif

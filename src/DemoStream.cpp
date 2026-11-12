@@ -26,11 +26,12 @@
 #include <algorithm>
 #include <string>
 
-#define MAX_STREAM_CLIENTS 16
 #define MAX_SEND_PER_THINK (1024 * 256) // per client, to keep a backlog from stalling the server frame
 #define MAX_PASSWORD_LEN 256 // website session tokens are 172 characters
 #define AUTH_TIMEOUT_MS 5000
 #define AUTH_FAIL_DELAY_MS 2000 // with the client limit, this caps how fast passwords can be guessed
+#define CLOSE_TIMEOUT_MS 5000 // how long a closing client gets to receive its last packet
+#define MAX_PASSWORD_CLIENTS_PER_IP 3 // connections that logged in with the stream password, not a token
 #define MAX_CLIENT_PACKET 1024
 #define MAX_COORD 131072.0f
 #define MAX_VIEW_TARGET 32 // highest player entity index
@@ -122,7 +123,7 @@ void DemoStream::beginSession(const std::vector<uint8_t>& headerBlock, size_t st
 	sessionActive = true;
 
 	for (Client& client : clients) {
-		if (client.authed) {
+		if (client.authed && !client.closing) {
 			joinSession(client);
 		}
 	}
@@ -372,6 +373,15 @@ void DemoStream::applyTokenResults() {
 				client.steamid64 = result.steamid64;
 				ALERT(at_console, "HLTV stream: %s logged in with a website token (steam ID %llu)\n",
 					client.address.c_str(), (unsigned long long)result.steamid64);
+
+				// one connection per Steam ID. The newest one wins, because an older one may be a
+				// page that was reloaded or a connection that died without closing.
+				for (Client& other : clients) {
+					if (&other != &client && other.steamid64 == result.steamid64 && !other.closing) {
+						replaceClient(other, now, "a newer connection from the same steam ID");
+					}
+				}
+
 				acceptClient(client);
 			}
 			else {
@@ -394,6 +404,36 @@ void DemoStream::rejectClient(Client& client, uint64_t now) {
 	ALERT(at_console, "HLTV stream: wrong password from %s\n", client.address.c_str());
 }
 
+void DemoStream::replaceClient(Client& client, uint64_t now, const char* reason) {
+	Segment seg = makeSegment(STREAM_PKT_REPLACED, NULL, 0, "", 0);
+	client.prefix.insert(client.prefix.end(), seg->begin(), seg->end());
+	client.closing = true;
+	client.closeDeadline = now + CLOSE_TIMEOUT_MS;
+	ALERT(at_console, "HLTV stream: %s was replaced by %s\n", client.address.c_str(), reason);
+}
+
+// Called before a client that gave the stream password is accepted. Closes the oldest password
+// connections from its IP so there are at most MAX_PASSWORD_CLIENTS_PER_IP, counting the new one.
+// Like a Steam ID login, the newest wins, because the old ones may be reloaded pages.
+void DemoStream::limitPasswordConnections(const Client& client, uint64_t now) {
+	int count = 1;
+	for (const Client& other : clients) {
+		if (&other != &client && other.ip == client.ip && other.authed && !other.steamid64 && !other.closing) {
+			count++;
+		}
+	}
+
+	for (Client& other : clients) { // oldest first
+		if (count <= MAX_PASSWORD_CLIENTS_PER_IP) {
+			break;
+		}
+		if (&other != &client && other.ip == client.ip && other.authed && !other.steamid64 && !other.closing) {
+			replaceClient(other, now, "a newer password connection from the same IP");
+			count--;
+		}
+	}
+}
+
 std::vector<StreamClientInfo> DemoStream::getClients() {
 	std::lock_guard<std::mutex> guard(infoMutex);
 	return clientInfo;
@@ -408,13 +448,14 @@ void DemoStream::updateClientInfo() {
 		StreamClientInfo info;
 		info.id = client.id;
 		info.address = client.address;
-		info.state = client.joined ? "watching" : (client.authed ? "waiting" : "logging in");
+		info.state = client.closing ? "disconnecting"
+			: (client.joined ? "watching" : (client.authed ? "waiting" : "logging in"));
 		info.steamid64 = client.steamid64;
-		info.authed = client.authed;
+		info.authed = client.authed && !client.closing;
 		info.seconds = (uint32_t)((now - client.connectTime) / 1000);
 		info.bytesSent = client.bytesSent;
 		info.behind = client.joined ? (firstSeq + ring.size()) - client.nextSeq : 0;
-		info.joined = client.joined;
+		info.joined = client.joined && !client.closing;
 		info.hasCamera = client.hasCamera;
 		memcpy(info.camOrigin, client.camOrigin, sizeof(info.camOrigin));
 		memcpy(info.camAngles, client.camAngles, sizeof(info.camAngles));
@@ -433,6 +474,7 @@ bool DemoStream::readAuth(Client& client) {
 			Segment seg = makeSegment(STREAM_PKT_AUTH_FAILED, NULL, 0, "", 0);
 			client.prefix.insert(client.prefix.end(), seg->begin(), seg->end());
 			client.closing = true;
+			client.closeDeadline = now + CLOSE_TIMEOUT_MS;
 		}
 		return true;
 	}
@@ -486,6 +528,7 @@ bool DemoStream::readAuth(Client& client) {
 	}
 
 	if (correct) {
+		limitPasswordConnections(client, now);
 		acceptClient(client);
 	}
 	else if (checkToken) {
@@ -500,6 +543,10 @@ bool DemoStream::readAuth(Client& client) {
 }
 
 bool DemoStream::flushClient(Client& client) {
+	if (client.closing && getEpochMillis() >= client.closeDeadline) {
+		return false; // not reading what's sent to it
+	}
+
 	if (!client.authed) {
 		if (!readAuth(client)) {
 			return false;
@@ -509,7 +556,7 @@ bool DemoStream::flushClient(Client& client) {
 		return false;
 	}
 
-	if (client.joined) {
+	if (client.joined && !client.closing) {
 		sendViewers(client);
 	}
 
@@ -530,7 +577,8 @@ bool DemoStream::flushClient(Client& client) {
 			data = client.prefix.data() + client.prefixSent;
 			remaining = client.prefix.size() - client.prefixSent;
 		}
-		else if (client.joined && client.nextSeq < firstSeq + ring.size()) {
+		else if (client.joined && client.nextSeq < firstSeq + ring.size()
+			&& (!client.closing || client.segmentSent > 0)) { // a closing client only finishes its frame
 			const std::vector<uint8_t>& seg = *ring[client.nextSeq - firstSeq];
 			data = seg.data() + client.segmentSent;
 			remaining = seg.size() - client.segmentSent;
@@ -585,7 +633,7 @@ void DemoStream::think() {
 			break;
 		}
 
-		if (clients.size() >= MAX_STREAM_CLIENTS) {
+		if (clients.size() >= (size_t)maxClients) {
 			closesock(sock);
 			continue;
 		}
@@ -597,7 +645,8 @@ void DemoStream::think() {
 		Client client;
 		client.id = nextClientId++;
 		client.sock = sock;
-		client.address = std::string(inet_ntoa(addr.sin_addr)) + ":" + std::to_string(ntohs(addr.sin_port));
+		client.ip = inet_ntoa(addr.sin_addr);
+		client.address = client.ip + ":" + std::to_string(ntohs(addr.sin_port));
 		client.connectTime = getEpochMillis();
 		client.authDeadline = client.connectTime + AUTH_TIMEOUT_MS;
 

@@ -175,6 +175,7 @@ void SvenTV::updateStreamSocket() {
 	if (g_stream && g_stream->value > 0) {
 		demoWriter->stream.listen((uint16_t)g_stream_port->value);
 		demoWriter->stream.maxFrames = V_max((int)g_stream_frames->value, 1);
+		demoWriter->stream.maxClients = V_max((int)g_stream_max_clients->value, 0);
 	}
 	else if (demoWriter->stream.isListening()) {
 		demoWriter->stream.stopListening();
