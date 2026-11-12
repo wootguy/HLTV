@@ -163,6 +163,10 @@ void SvenTV::finishStreamTokenChecks(const std::vector<StreamTokenCheck>& result
 	demoWriter->stream.finishTokenChecks(results);
 }
 
+void SvenTV::setStreamWebSignedIn(const std::vector<uint64_t>& steamids) {
+	demoWriter->stream.setWebSignedIn(steamids);
+}
+
 std::vector<StreamClientInfo> SvenTV::getStreamClients() {
 	return demoWriter->stream.getClients();
 }

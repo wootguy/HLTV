@@ -33,6 +33,10 @@
 //     STREAM_PKT_REPLACED: no payload. A newer connection replaced this one: the same Steam ID logged
 //       in again, or too many connections from this IP used the stream password. The server will
 //       disconnect, and the client shouldn't reconnect.
+//     STREAM_PKT_WEB_SIGN_IN: no payload. The client logged in with a website token, but that Steam
+//       ID isn't signed in on the website, so it wouldn't be in the website's list of who's watching.
+//       Sent after waiting a while for it to sign in, at login or after it signed out. The server
+//       will disconnect.
 // After logging in, clients can send packets of the same form:
 //     CLIENT_PKT_VIEW: float origin[3] + float view angles[3] (pitch, yaw, roll) + uint32 millis
 //       behind live (0 = live). Where the viewer is looking from. The server makes a camera entity
@@ -53,6 +57,7 @@ enum stream_packet_types {
 	STREAM_PKT_AUTH_FAILED = 4,
 	STREAM_PKT_VIEWERS = 5,
 	STREAM_PKT_REPLACED = 6,
+	STREAM_PKT_WEB_SIGN_IN = 7,
 };
 
 enum stream_client_packet_types {
@@ -177,6 +182,9 @@ public:
 	std::vector<StreamTokenCheck> takeTokenChecks();
 	void finishTokenChecks(const std::vector<StreamTokenCheck>& results);
 	void setViewers(const std::vector<StreamViewer>& viewers); // sent to clients when they change
+	// Steam IDs signed in on the website. Token logins are only accepted while their Steam ID is
+	// signed in, so that everyone watching that way is listed on the website.
+	void setWebSignedIn(const std::vector<uint64_t>& steamids);
 
 private:
 	typedef std::shared_ptr<std::vector<uint8_t>> Segment;
@@ -199,6 +207,8 @@ private:
 		bool authed = false;
 		bool checkingToken = false; // waiting for the main thread to validate a session token
 		uint64_t steamid64 = 0; // logged in with a session token
+		bool waitingForWeb = false; // valid token, waiting for its Steam ID to sign in on the website
+		uint64_t webMissingSince = 0; // when the Steam ID was last seen not signed in. 0 = signed in
 		bool rejected = false; // wrong password, waiting out the delay
 		bool closing = false; // disconnect once the prefix is sent
 		uint64_t closeDeadline = 0; // when closing, disconnect by now even if the prefix wasn't sent
@@ -231,6 +241,7 @@ private:
 	std::vector<StreamClientInfo> clientInfo; // copy of the client states for other threads
 	std::vector<StreamViewer> viewers;
 	uint64_t viewersVersion = 1;
+	std::vector<uint64_t> webSignedIn;
 
 	bool sessionActive = false;
 	std::vector<uint8_t> header; // kept up to date with the string pool for late joiners
@@ -254,5 +265,6 @@ private:
 	void replaceClient(Client& client, uint64_t now, const char* reason);
 	void limitPasswordConnections(const Client& client, uint64_t now);
 	void applyTokenResults();
+	void checkWebSignIns(uint64_t now);
 	void updateClientInfo();
 };

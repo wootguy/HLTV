@@ -57,6 +57,7 @@ public:
 	void setStreamTokenLogins(bool enable);
 	std::vector<StreamTokenCheck> takeStreamTokenChecks();
 	void finishStreamTokenChecks(const std::vector<StreamTokenCheck>& results);
+	void setStreamWebSignedIn(const std::vector<uint64_t>& steamids);
 	std::vector<StreamClientInfo> getStreamClients();
 	void setStreamViewers(const std::vector<StreamViewer>& viewers);
 

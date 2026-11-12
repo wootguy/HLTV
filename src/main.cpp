@@ -102,6 +102,30 @@ static void checkStreamTokens() {
 	bool enabled = g_stream_web_logins->value > 0 && g_stream_password->string[0];
 	g_sventv->setStreamTokenLogins(enabled);
 
+	// Token viewers must be signed in on the website too, so they're in its list of web clients and
+	// no one can watch unseen without the stream password. Looked up quietly, because PluginFuncHandle
+	// logs an error on every call while it's missing. Without it, token viewers are never accepted.
+	static void* listedFunc = NULL;
+	static int listedPluginId = -1;
+	static int listedLoadCounter = -1;
+	static bool warnedMissing = false;
+	static float lastListed = 0;
+	if (enabled && (gpGlobals->time - lastListed >= 0.25f || lastListed > gpGlobals->time)) {
+		lastListed = gpGlobals->time;
+
+		const int maxIds = 256;
+		uint64_t ids[maxIds];
+		int count = 0;
+		if (CrossPluginFunctionHandle_internal("HLCoop", "get_listed_web_clients", listedFunc, listedPluginId, listedLoadCounter)) {
+			count = ((int(*)(uint64_t*, int))listedFunc)(ids, maxIds);
+		}
+		else if (!warnedMissing) {
+			warnedMissing = true;
+			ALERT(at_error, "HLTV: HLCoop has no get_listed_web_clients, so website logins can't watch the stream. Update HLCoop.\n");
+		}
+		g_sventv->setStreamWebSignedIn(std::vector<uint64_t>(ids, ids + (count < maxIds ? count : maxIds)));
+	}
+
 	std::vector<StreamTokenCheck> checks = g_sventv->takeStreamTokenChecks();
 	if (checks.empty()) {
 		return;

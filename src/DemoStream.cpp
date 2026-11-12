@@ -35,6 +35,12 @@
 #define MAX_CLIENT_PACKET 1024
 #define MAX_COORD 131072.0f
 #define MAX_VIEW_TARGET 32 // highest player entity index
+// How long a token login waits for its Steam ID to sign in on the website. After a server restart,
+// the live view usually reconnects before the website does.
+#define WEB_SIGN_IN_WAIT_MS 30000
+// how long a token viewer can stay signed out of the website before it's disconnected. The website
+// reconnects within a few seconds when its connection drops.
+#define WEB_SIGN_OUT_GRACE_MS 20000
 
 static void setNonBlocking(intptr_t sock) {
 #ifdef WIN32
@@ -247,6 +253,47 @@ void DemoStream::setViewers(const std::vector<StreamViewer>& newViewers) {
 	viewersVersion++;
 }
 
+void DemoStream::setWebSignedIn(const std::vector<uint64_t>& steamids) {
+	std::lock_guard<std::mutex> guard(infoMutex);
+	webSignedIn = steamids;
+}
+
+void DemoStream::checkWebSignIns(uint64_t now) {
+	std::vector<uint64_t> signedIn;
+	{
+		std::lock_guard<std::mutex> guard(infoMutex);
+		signedIn = webSignedIn;
+	}
+
+	for (Client& client : clients) {
+		if (!client.steamid64 || client.closing) {
+			continue; // password login, or already leaving
+		}
+
+		if (std::find(signedIn.begin(), signedIn.end(), client.steamid64) != signedIn.end()) {
+			client.webMissingSince = 0;
+			if (client.waitingForWeb) {
+				client.waitingForWeb = false;
+				acceptClient(client);
+			}
+			continue;
+		}
+
+		if (!client.webMissingSince) {
+			client.webMissingSince = now;
+		}
+		uint64_t limit = client.waitingForWeb ? WEB_SIGN_IN_WAIT_MS : WEB_SIGN_OUT_GRACE_MS;
+		if (now - client.webMissingSince >= limit) {
+			Segment seg = makeSegment(STREAM_PKT_WEB_SIGN_IN, NULL, 0, "", 0);
+			client.prefix.insert(client.prefix.end(), seg->begin(), seg->end());
+			client.closing = true;
+			client.closeDeadline = now + CLOSE_TIMEOUT_MS;
+			ALERT(at_console, "HLTV stream: %s (steam ID %llu) isn't signed in on the website\n",
+				client.address.c_str(), (unsigned long long)client.steamid64);
+		}
+	}
+}
+
 void DemoStream::sendViewers(Client& client) {
 	std::vector<uint8_t> payload(2);
 	uint16_t count = 0;
@@ -382,7 +429,9 @@ void DemoStream::applyTokenResults() {
 					}
 				}
 
-				acceptClient(client);
+				// accepted by checkWebSignIns once the Steam ID is signed in on the website
+				client.waitingForWeb = true;
+				client.webMissingSince = 0;
 			}
 			else {
 				rejectClient(client, now);
@@ -449,7 +498,8 @@ void DemoStream::updateClientInfo() {
 		info.id = client.id;
 		info.address = client.address;
 		info.state = client.closing ? "disconnecting"
-			: (client.joined ? "watching" : (client.authed ? "waiting" : "logging in"));
+			: (client.joined ? "watching" : (client.authed ? "waiting"
+			: (client.waitingForWeb ? "waiting for website sign-in" : "logging in")));
 		info.steamid64 = client.steamid64;
 		info.authed = client.authed && !client.closing;
 		info.seconds = (uint32_t)((now - client.connectTime) / 1000);
@@ -477,6 +527,10 @@ bool DemoStream::readAuth(Client& client) {
 			client.closeDeadline = now + CLOSE_TIMEOUT_MS;
 		}
 		return true;
+	}
+
+	if (client.waitingForWeb) {
+		return true; // checkWebSignIns accepts or drops it
 	}
 
 	if (client.checkingToken) {
@@ -660,6 +714,7 @@ void DemoStream::think() {
 	}
 
 	applyTokenResults();
+	checkWebSignIns(getEpochMillis());
 
 	clients.erase(std::remove_if(clients.begin(), clients.end(), [this](Client& client) {
 		if (!flushClient(client)) {
