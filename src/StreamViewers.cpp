@@ -19,6 +19,7 @@ bool isSpecCamera(const edict_t& ed) {
 #define WEB_SPEC_COLOR 4 // green on the scoreboard (FRIEND_TEAM_COLOR)
 #define SCOREBOARD_UPDATE_SECONDS 1.0f
 #define MAX_SLOT_NAME 31
+#define MAX_PLAYER_NAME 31 // bytes in a player name, not counting the terminator (32 with it)
 #define MIN_CAMERA_LERP 0.02f // seconds to move a camera to a new view, if updates come quicker
 #define MAX_CAMERA_LERP 0.2f // ...or if they come slower
 // How long a viewer must be gone to count as stopped, rather than reconnecting. Viewers reconnect
@@ -64,6 +65,8 @@ struct WebViewer {
 	uint64_t clientId; // stream client
 	uint64_t steamid64;
 	std::string name;
+	bool nameKnown = false; // false if name is the Steam ID (see loadViewerInfo)
+	float lastInfoLoad = 0;
 	uint8_t topColor = 0;
 	uint8_t bottomColor = 0;
 	uint32_t delaySec = 0;
@@ -151,11 +154,36 @@ static std::string delaySuffix(uint32_t delaySec) {
 	return UTIL_VarArgs(" (%uh ago)", delaySec / (60 * 60));
 }
 
-static void loadViewerInfo(WebViewer& viewer) {
-	const char* name = g_func_web_name.call(viewer.steamid64);
-	viewer.name = name && name[0] ? name : steamid64_to_steamid(viewer.steamid64);
+// removes the last UTF-8 character
+static void popChar(std::string& s) {
+	while (!s.empty()) {
+		unsigned char c = s.back();
+		s.pop_back();
+		if (c < 0x80 || c >= 0xC0) {
+			break;
+		}
+	}
+}
 
+// The name the website shows for the viewer: their in-game name, or their Steam name if they've never
+// joined the server. The Steam name is fetched when they sign in on the website, so it may not be
+// known yet when they start watching. Until it is, the Steam ID is shown and nameKnown stays false.
+static void loadViewerInfo(WebViewer& viewer) {
 	player_data_t* data = playerdb_load_state(viewer.steamid64);
+	const char* webName = g_func_web_name.call(viewer.steamid64);
+	std::string name = webName ? webName : "";
+	if (name.empty() && data && data->steamname[0]) {
+		// Steam names can be longer than the game allows, so shorten it to fit like an in-game name
+		name = data->steamname;
+		while (name.size() > MAX_PLAYER_NAME) {
+			popChar(name);
+		}
+	}
+
+	viewer.nameKnown = !name.empty();
+	viewer.name = viewer.nameKnown ? name : steamid64_to_steamid(viewer.steamid64);
+	viewer.lastInfoLoad = gpGlobals->time;
+
 	if (data) {
 		viewer.topColor = data->topcolor;
 		viewer.bottomColor = data->bottomcolor;
@@ -321,16 +349,6 @@ static int nameWidth(const std::string& s) {
 }
 
 // removes the last character, which can be several bytes in UTF-8
-static void popChar(std::string& s) {
-	while (!s.empty()) {
-		unsigned char c = s.back();
-		s.pop_back();
-		if (c < 0x80 || c >= 0xC0) {
-			break;
-		}
-	}
-}
-
 // A name for a scoreboard slot. The suffix is always shown in full, so the name is shortened if
 // there isn't room for both.
 static std::string slotName(std::string name, const std::string& suffix = "") {
@@ -616,6 +634,10 @@ void updateStreamViewers() {
 			loadViewerInfo(newViewer);
 			g_viewers.push_back(newViewer);
 			viewer = &g_viewers.back();
+		}
+		else if (!viewer->nameKnown && (gpGlobals->time - viewer->lastInfoLoad >= 1.0f
+			|| viewer->lastInfoLoad > gpGlobals->time)) {
+			loadViewerInfo(*viewer);
 		}
 
 		viewer->delaySec = client.hasCamera ? roundDelay(client.delayMs) : 0;
