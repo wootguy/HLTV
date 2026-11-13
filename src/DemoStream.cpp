@@ -301,7 +301,7 @@ void DemoStream::checkWebSignIns(uint64_t now) {
 			client.prefix.insert(client.prefix.end(), seg->begin(), seg->end());
 			client.closing = true;
 			client.closeDeadline = now + CLOSE_TIMEOUT_MS;
-			ALERT(at_console, "HLTV stream: %s (steam ID %llu) isn't signed in on the website\n",
+			ALERT(at_logged, "HLTV stream: %s (steam ID %llu) isn't signed in on the website\n",
 				client.address.c_str(), (unsigned long long)client.steamid64);
 		}
 	}
@@ -464,7 +464,7 @@ void DemoStream::applyTokenResults() {
 			client.checkingToken = false;
 			if (result.steamid64) {
 				client.steamid64 = result.steamid64;
-				ALERT(at_console, "HLTV stream: %s logged in with a website token (steam ID %llu)\n",
+				ALERT(at_logged, "HLTV stream: %s logged in with a website token (steam ID %llu)\n",
 					client.address.c_str(), (unsigned long long)result.steamid64);
 
 				// one connection per Steam ID. The newest one wins, because an older one may be a
@@ -496,7 +496,7 @@ void DemoStream::acceptClient(Client& client) {
 void DemoStream::rejectClient(Client& client, uint64_t now) {
 	client.rejected = true;
 	client.authDeadline = now + AUTH_FAIL_DELAY_MS;
-	ALERT(at_console, "HLTV stream: wrong password from %s\n", client.address.c_str());
+	ALERT(at_logged, "HLTV stream: wrong password from %s\n", client.address.c_str());
 }
 
 void DemoStream::replaceClient(Client& client, uint64_t now, const char* reason) {
@@ -504,7 +504,7 @@ void DemoStream::replaceClient(Client& client, uint64_t now, const char* reason)
 	client.prefix.insert(client.prefix.end(), seg->begin(), seg->end());
 	client.closing = true;
 	client.closeDeadline = now + CLOSE_TIMEOUT_MS;
-	ALERT(at_console, "HLTV stream: %s was replaced by %s\n", client.address.c_str(), reason);
+	ALERT(at_logged, "HLTV stream: %s was replaced by %s\n", client.address.c_str(), reason);
 }
 
 // Called before a client that gave the stream password is accepted. Closes the oldest password
@@ -617,10 +617,11 @@ bool DemoStream::readAuth(Client& client) {
 	std::string attempt((const char*)client.authBuf.data() + 4, len);
 	client.authBuf.clear();
 
-	bool correct, checkToken;
+	bool correct, checkToken, noPassword;
 	{
 		std::lock_guard<std::mutex> guard(infoMutex);
 		correct = attempt == password;
+		noPassword = password.empty();
 		checkToken = !correct && tokenLogins && !attempt.empty();
 		if (checkToken) {
 			tokenChecks.push_back({ client.id, attempt, 0 });
@@ -628,6 +629,8 @@ bool DemoStream::readAuth(Client& client) {
 	}
 
 	if (correct) {
+		ALERT(at_logged, "HLTV stream: %s logged in %s\n", client.address.c_str(),
+			noPassword ? "(the stream has no password)" : "with the stream password");
 		limitPasswordConnections(client, now);
 		acceptClient(client);
 	}
@@ -661,7 +664,7 @@ bool DemoStream::flushClient(Client& client) {
 	}
 
 	if (client.joined && client.nextSeq < firstSeq) {
-		ALERT(at_console, "HLTV stream: dropping a client that fell too far behind\n");
+		ALERT(at_logged, "HLTV stream: dropping %s, which fell too far behind\n", client.address.c_str());
 		return false;
 	}
 
@@ -756,7 +759,7 @@ void DemoStream::think() {
 		memcpy(client.prefix.data() + 8, &version, 4);
 
 		clients.push_back(client);
-		ALERT(at_console, "HLTV stream: %s connected (%d total)\n", client.address.c_str(), (int)clients.size());
+		ALERT(at_logged, "HLTV stream: %s connected (%d total)\n", client.address.c_str(), (int)clients.size());
 	}
 
 	applyTokenResults();
