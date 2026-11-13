@@ -307,47 +307,75 @@ void DemoStream::checkWebSignIns(uint64_t now) {
 	}
 }
 
-void DemoStream::sendViewers(Client& client) {
+uint64_t DemoStream::getViewers(std::vector<StreamViewer>& out) {
+	std::lock_guard<std::mutex> guard(infoMutex);
+	out = viewers;
+	return viewersVersion;
+}
+
+std::vector<uint8_t> DemoStream::encodeViewers(const std::vector<StreamViewer>& viewers, uint64_t youClientId,
+	size_t maxSize) {
+	// each viewer takes 10 bytes + name in the first section, then 8 in each of the others
+	size_t count = 0;
+	size_t total = 2;
+	for (const StreamViewer& viewer : viewers) {
+		size_t sz = 10 + (std::min)(viewer.name.size(), (size_t)255) + 8 + 8;
+		if (total + sz > maxSize || count >= UINT16_MAX) {
+			break;
+		}
+		total += sz;
+		count++;
+	}
+
 	std::vector<uint8_t> payload(2);
-	uint16_t count = 0;
+	uint16_t count16 = (uint16_t)count;
+	memcpy(payload.data(), &count16, 2);
+
+	for (size_t i = 0; i < count; i++) {
+		const StreamViewer& viewer = viewers[i];
+		uint8_t nameLen = (uint8_t)(std::min)(viewer.name.size(), (size_t)255);
+		uint8_t entry[10];
+		memcpy(entry, &viewer.entindex, 2);
+		entry[2] = viewer.topColor;
+		entry[3] = viewer.bottomColor;
+		entry[4] = youClientId && viewer.clientId == youClientId ? VIEWER_FL_YOU : 0;
+		memcpy(entry + 5, &viewer.delaySec, 4);
+		entry[9] = nameLen;
+		payload.insert(payload.end(), entry, entry + 10);
+		payload.insert(payload.end(), viewer.name.begin(), viewer.name.begin() + nameLen);
+	}
+
+	// what each viewer is watching, after the list so older clients don't read it
+	for (size_t i = 0; i < count; i++) {
+		const StreamViewer& viewer = viewers[i];
+		uint8_t entry[8];
+		entry[0] = viewer.view.known ? VIEW_INFO_KNOWN : 0;
+		entry[1] = viewer.view.target;
+		entry[2] = viewer.view.camMode;
+		entry[3] = viewer.view.director;
+		memcpy(entry + 4, &viewer.view.chaseDist, 4);
+		payload.insert(payload.end(), entry, entry + 8);
+	}
+
+	// Steam IDs, after that for the same reason
+	for (size_t i = 0; i < count; i++) {
+		const StreamViewer& viewer = viewers[i];
+		payload.insert(payload.end(), (const uint8_t*)&viewer.steamid64, (const uint8_t*)&viewer.steamid64 + 8);
+	}
+
+	return payload;
+}
+
+void DemoStream::sendViewers(Client& client) {
+	std::vector<uint8_t> payload;
 	{
 		std::lock_guard<std::mutex> guard(infoMutex);
 		if (client.viewersSent == viewersVersion) {
 			return;
 		}
 		client.viewersSent = viewersVersion;
-
-		for (const StreamViewer& viewer : viewers) {
-			uint8_t nameLen = (uint8_t)(std::min)(viewer.name.size(), (size_t)255);
-			uint8_t entry[10];
-			memcpy(entry, &viewer.entindex, 2);
-			entry[2] = viewer.topColor;
-			entry[3] = viewer.bottomColor;
-			entry[4] = viewer.clientId == client.id ? VIEWER_FL_YOU : 0;
-			memcpy(entry + 5, &viewer.delaySec, 4);
-			entry[9] = nameLen;
-			payload.insert(payload.end(), entry, entry + 10);
-			payload.insert(payload.end(), viewer.name.begin(), viewer.name.begin() + nameLen);
-			count++;
-		}
-
-		// what each viewer is watching, after the list so older clients don't read it
-		for (const StreamViewer& viewer : viewers) {
-			uint8_t entry[8];
-			entry[0] = viewer.view.known ? VIEW_INFO_KNOWN : 0;
-			entry[1] = viewer.view.target;
-			entry[2] = viewer.view.camMode;
-			entry[3] = viewer.view.director;
-			memcpy(entry + 4, &viewer.view.chaseDist, 4);
-			payload.insert(payload.end(), entry, entry + 8);
-		}
-
-		// Steam IDs, after that for the same reason
-		for (const StreamViewer& viewer : viewers) {
-			payload.insert(payload.end(), (const uint8_t*)&viewer.steamid64, (const uint8_t*)&viewer.steamid64 + 8);
-		}
+		payload = encodeViewers(viewers, client.id);
 	}
-	memcpy(payload.data(), &count, 2);
 
 	Segment seg = makeSegment(STREAM_PKT_VIEWERS, NULL, 0, payload.data(), payload.size());
 	client.prefix.insert(client.prefix.end(), seg->begin(), seg->end());

@@ -11,6 +11,13 @@
 #define MAX_USERCMD_FRAME 1024 // max user cmds per frame (should be high for speedhackers)
 #define KEYFRAME_INTERVAL 60ULL // seconds between keyframes in demo files
 
+// A network message that only exists in demos: the live stream's web viewers, with the same payload
+// as STREAM_PKT_VIEWERS (DemoStream.h) but no VIEWER_FL_YOU. DemoWriter adds it when the list
+// changes and in every keyframe. Game clients are never sent it (they'd disconnect on a type they
+// don't know), and players that don't know it skip it. It's the highest type number so that it stays
+// clear of user messages the mod adds later, which are numbered up from 64.
+#define DEMO_MSG_VIEWERS 255
+
 #define DEMO_VERSION 1 // version number written to demo files for compatibility check (0-65535)
 
 #define FL_ENTIDX_LONG 1 // ent index is further than 127 from the last idx

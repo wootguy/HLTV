@@ -32,7 +32,8 @@
 //       Then the same viewers again with their uint64 Steam ID, which the spectator copies of their
 //       chat sounds are sent with (MicSounds), so the demo player can fade them from the viewer's
 //       camera and apply mutes.
-//       Sent when it changes, and after STREAM_PKT_HEADER.
+//       Sent when it changes, and after STREAM_PKT_HEADER. Demo frames have the same list in
+//       DEMO_MSG_VIEWERS messages (DemoFile.h).
 //     STREAM_PKT_REPLACED: no payload. A newer connection replaced this one: the same Steam ID logged
 //       in again, or too many connections from this IP used the stream password. The server will
 //       disconnect, and the client shouldn't reconnect.
@@ -194,6 +195,12 @@ public:
 	std::vector<StreamTokenCheck> takeTokenChecks();
 	void finishTokenChecks(const std::vector<StreamTokenCheck>& results);
 	void setViewers(const std::vector<StreamViewer>& viewers); // sent to clients when they change
+	// the latest viewer list. Returns its version, which changes whenever the list does.
+	uint64_t getViewers(std::vector<StreamViewer>& out);
+	// the STREAM_PKT_VIEWERS payload. Viewers that don't fit in maxSize bytes are left out.
+	// youClientId is the connection that gets VIEWER_FL_YOU, or 0 for none.
+	static std::vector<uint8_t> encodeViewers(const std::vector<StreamViewer>& viewers, uint64_t youClientId,
+		size_t maxSize = SIZE_MAX);
 	// Steam IDs signed in on the website. Token logins are only accepted while their Steam ID is
 	// signed in, so that everyone watching that way is listed on the website.
 	void setWebSignedIn(const std::vector<uint64_t>& steamids);

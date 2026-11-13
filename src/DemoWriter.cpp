@@ -124,6 +124,7 @@ void DemoWriter::beginSession(bool wantFile, bool wantStream) {
 	warnedStreamDeferred = false;
 
 	memset(hasTeamMsg, 0, sizeof(hasTeamMsg)); // everyone gets sent again on a new map
+	recordedViewersVersion = 0; // the first frame is a keyframe, which writes the list anyway
 	memset(fileedicts, 0, MAX_DEMO_EDICTS * sizeof(netedict));
 	memset(usrstates, 0, MAX_PLAYERS * sizeof(DemoUserCmdData));
 	memset(g_userInfoDirty, 1, sizeof(bool) * 33);
@@ -474,6 +475,39 @@ void DemoWriter::repeatTeamMessages(FrameData& frame) {
 			}
 		}
 	}
+}
+
+#define VIEWERS_MSG_INTERVAL_MS 500 // the chasecam distance can change every frame while scrolling
+
+void DemoWriter::addViewersMessage(FrameData& frame, bool isKeyframe) {
+	std::vector<StreamViewer> viewers;
+	uint64_t version = stream.getViewers(viewers);
+	uint64_t now = getEpochMillis();
+
+	bool changed = version != recordedViewersVersion;
+	if (!isKeyframe && (!changed || now - lastViewersMsgTime < VIEWERS_MSG_INTERVAL_MS)) {
+		return;
+	}
+	if (frame.netmessage_count >= MAX_NETMSG_FRAME) {
+		return; // try again next frame
+	}
+
+	// demo players reject messages of MAX_NETMSG_DATA bytes or more
+	std::vector<uint8_t> payload = DemoStream::encodeViewers(viewers, 0, MAX_NETMSG_DATA - 1);
+
+	NetMessageData& msg = frame.netmessages[frame.netmessage_count++];
+	msg.dest = MSG_ALL;
+	msg.type = DEMO_MSG_VIEWERS;
+	msg.hasOrigin = 0;
+	msg.hasLongOrigin = 0;
+	memset(msg.origin, 0, sizeof(msg.origin));
+	msg.targets = 0;
+	msg.eidx = 0;
+	msg.sz = payload.size();
+	memcpy(msg.data, payload.data(), payload.size());
+
+	recordedViewersVersion = version;
+	lastViewersMsgTime = now;
 }
 
 mstream DemoWriter::writeMsgDeltas(FrameData& frame, DemoDataTest* testData) {
@@ -961,6 +995,7 @@ bool DemoWriter::writeDemoFile(FrameData& frame, bool wantFile, bool wantStream)
 	if (isKeyframe) {
 		repeatTeamMessages(frame);
 	}
+	addViewersMessage(frame, isKeyframe);
 	mstream msgbuffer = writeMsgDeltas(frame, testData);
 	mstream cmdbuffer = writeCmdDeltas(frame);
 	mstream evtbuffer = writeEvtDeltas(frame);

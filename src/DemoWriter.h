@@ -55,6 +55,13 @@ private:
 	std::vector<NetMessageData> lastTeamMsgs; // [player * 2 + (0 = ScoreInfo, 1 = TeamInfo)]
 	bool hasTeamMsg[33 * 2] = { false };
 
+	// Records the stream's web viewers in a DEMO_MSG_VIEWERS message when the list changes (at most
+	// every VIEWERS_MSG_INTERVAL_MS) and in keyframes, so a demo player can list them like the live
+	// stream does, and seeking or joining a stream mid-session still finds the list.
+	void addViewersMessage(FrameData& frame, bool isKeyframe);
+	uint64_t recordedViewersVersion = 0; // version of the stream's viewer list last written
+	uint64_t lastViewersMsgTime = 0;
+
 	// vars for writing a demo file
 	uint64_t nextDemoUpdate = 0;
 	float demoFileFps = 60;
