@@ -41,7 +41,7 @@ extern bool g_pause_message_logging;
 
 PluginFuncHandle<const char*, uint64_t> g_func_web_name("HLCoop", "get_web_name_for_id");
 PluginFuncHandle<void, void*, uint64_t, const char*, const char*, uint8_t> g_func_web_chat("HLCoop", "send_webserver_chat");
-PluginFuncHandle<void, std::string> g_func_write_log("HLCoop", "writeLog"); // HLCoop's log of important events
+PluginFuncHandle<void, std::string> g_func_write_log("HLCoop", "writeLog");
 
 #define WEBMSG_CHAT_TYPE_WEB_USER 2 // from HLCoop's web_util.h
 
@@ -137,18 +137,13 @@ static bool g_sentTeamNames[MAX_PLAYERS + 1]; // renamed the green team for the 
 static float g_lastScoreboardUpdate = 0;
 static uint64_t g_slotViewerIds[MAX_PLAYERS + 1]; // steam ID of the viewer shown in each slot, 0 = none
 
-// Website users watching the stream, by Steam ID, for the chat announcements and HLCoop's log. A
-// user with the stream open in several tabs counts once. Kept through map changes, while viewers
-// reconnect.
+// Website users watching the stream, by Steam ID, for the chat announcements. A user with the
+// stream open in several tabs is announced once. Kept through map changes, while viewers reconnect.
 struct Watcher {
 	std::string name;
-	uint64_t startTime; // epoch ms
 	uint64_t lastSeen; // epoch ms
 };
 static std::unordered_map<uint64_t, Watcher> g_watchers;
-// Viewers who used the stream password, by IP, for HLCoop's log. They have no other identity, so
-// several connections from one IP count as one viewer.
-static std::unordered_map<std::string, Watcher> g_passwordWatchers;
 static uint64_t g_mapStartTime = 0; // epoch ms
 
 void streamViewersMapInit() {
@@ -698,36 +693,12 @@ static void announceWatcher(uint64_t steamid64, const std::string& name, bool st
 	// The website shows web users' names as a green "(WEB) <name>" in place of ;name;
 	std::string webmsg = std::string(";name; ") + action;
 	g_func_web_chat.call(NULL, steamid64, name.c_str(), webmsg.c_str(), WEBMSG_CHAT_TYPE_WEB_USER);
+
+	// a copy in HLCoop's log of important events
+	g_func_write_log.call(UTIL_VarArgs("!HLTV:(WEB) %s %s", name.c_str(), action));
 }
 
-static bool isWatchStopped(const Watcher& watcher, uint64_t now) {
-	if (watcher.lastSeen >= g_mapStartTime) {
-		return now - watcher.lastSeen >= WATCH_END_MS;
-	}
-	// last seen on the previous map. They can't reconnect until this one has started, however long
-	// the map change took.
-	return now - g_mapStartTime >= WATCH_END_MAP_CHANGE_MS;
-}
-
-static std::string watchDuration(const Watcher& watcher) {
-	uint64_t sec = (watcher.lastSeen - watcher.startTime) / 1000;
-	if (sec < 60) {
-		return UTIL_VarArgs("%d sec", (int)sec);
-	}
-	if (sec < 60 * 60) {
-		return UTIL_VarArgs("%d min", (int)(sec / 60));
-	}
-	return UTIL_VarArgs("%dh %02dm", (int)(sec / 3600), (int)(sec / 60 % 60));
-}
-
-// "1.2.3.4:27015" -> "1.2.3.4"
-static std::string addressIp(const std::string& address) {
-	size_t colon = address.rfind(':');
-	return colon == std::string::npos ? address : address.substr(0, colon);
-}
-
-// passwordClients: connections that logged in with the stream password
-static void updateWatchers(const std::vector<StreamClientInfo>& passwordClients) {
+static void updateWatchers() {
 	uint64_t now = getEpochMillis();
 
 	for (const WebViewer& viewer : g_viewers) {
@@ -735,11 +706,9 @@ static void updateWatchers(const std::vector<StreamClientInfo>& passwordClients)
 		if (it == g_watchers.end()) {
 			Watcher watcher;
 			watcher.name = viewer.name;
-			watcher.startTime = watcher.lastSeen = now;
+			watcher.lastSeen = now;
 			g_watchers[viewer.steamid64] = watcher;
 			announceWatcher(viewer.steamid64, viewer.name, true);
-			g_func_write_log.call(UTIL_VarArgs("!HLTV:`%s` (%s) started watching the stream", viewer.name.c_str(),
-				steamid64_to_steamid(viewer.steamid64).c_str()));
 		}
 		else {
 			it->second.lastSeen = now;
@@ -747,37 +716,19 @@ static void updateWatchers(const std::vector<StreamClientInfo>& passwordClients)
 	}
 
 	for (auto it = g_watchers.begin(); it != g_watchers.end();) {
-		if (isWatchStopped(it->second, now)) {
+		bool stopped;
+		if (it->second.lastSeen >= g_mapStartTime) {
+			stopped = now - it->second.lastSeen >= WATCH_END_MS;
+		}
+		else {
+			// last seen on the previous map. They can't reconnect until this one has started,
+			// however long the map change took.
+			stopped = now - g_mapStartTime >= WATCH_END_MAP_CHANGE_MS;
+		}
+
+		if (stopped) {
 			announceWatcher(it->first, it->second.name, false);
-			g_func_write_log.call(UTIL_VarArgs("!HLTV:`%s` (%s) stopped watching the stream after %s",
-				it->second.name.c_str(), steamid64_to_steamid(it->first).c_str(), watchDuration(it->second).c_str()));
 			it = g_watchers.erase(it);
-		}
-		else {
-			++it;
-		}
-	}
-
-	for (const StreamClientInfo& client : passwordClients) {
-		std::string ip = addressIp(client.address);
-		auto it = g_passwordWatchers.find(ip);
-		if (it == g_passwordWatchers.end()) {
-			Watcher watcher;
-			watcher.name = ip;
-			watcher.startTime = watcher.lastSeen = now;
-			g_passwordWatchers[ip] = watcher;
-			g_func_write_log.call(UTIL_VarArgs("!HLTV:%s started watching the stream with the stream password", ip.c_str()));
-		}
-		else {
-			it->second.lastSeen = now;
-		}
-	}
-
-	for (auto it = g_passwordWatchers.begin(); it != g_passwordWatchers.end();) {
-		if (isWatchStopped(it->second, now)) {
-			g_func_write_log.call(UTIL_VarArgs("!HLTV:%s stopped watching the stream with the stream password after %s",
-				it->first.c_str(), watchDuration(it->second).c_str()));
-			it = g_passwordWatchers.erase(it);
 		}
 		else {
 			++it;
@@ -791,13 +742,7 @@ void updateStreamViewers() {
 		clients = g_sventv->getStreamClients();
 	}
 
-	// viewers who used the stream password have no Steam ID, and aren't shown. They're only logged.
-	std::vector<StreamClientInfo> passwordClients;
-	for (const StreamClientInfo& c : clients) {
-		if (c.authed && !c.steamid64) {
-			passwordClients.push_back(c);
-		}
-	}
+	// viewers who used the stream password have no Steam ID, and aren't shown
 	clients.erase(std::remove_if(clients.begin(), clients.end(), [](const StreamClientInfo& c) {
 		return !c.authed || !c.steamid64;
 	}), clients.end());
@@ -884,7 +829,7 @@ void updateStreamViewers() {
 		g_sentViewers = list;
 	}
 
-	updateWatchers(passwordClients);
+	updateWatchers();
 
 	if (gpGlobals->time - g_lastScoreboardUpdate >= SCOREBOARD_UPDATE_SECONDS || g_lastScoreboardUpdate > gpGlobals->time) {
 		g_lastScoreboardUpdate = gpGlobals->time;
