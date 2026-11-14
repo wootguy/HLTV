@@ -16,6 +16,9 @@
 //   the client then sends uint32 size + password, even if the password is empty. Instead of the
 //   password, the client can send the session token from logging in to the website (see
 //   StreamTokenCheck), which the hlcoop_webserver plugin validates.
+//   A relay on the same machine (hlcoop_webserver's /hltv WebSocket route) first sends
+//   uint32 STREAM_RELAY_MARKER + uint8 length + the browser's IP as text, so that logs and per-IP
+//   limits use the viewer's address instead of 127.0.0.1. Only accepted on loopback connections.
 //   then packets of [uint8 type][uint32 payload size][payload]
 //     STREAM_PKT_HEADER: uint64 backlog bytes that follow + demo header, string pool, model and sound lists
 //     STREAM_PKT_FRAME:  one demo frame, same bytes as in a demo file
@@ -55,6 +58,8 @@
 
 #define HLTV_STREAM_MAGIC "HLTVLIVE"
 #define HLTV_STREAM_VERSION 2
+#define STREAM_RELAY_MARKER 0xFFFFFFFFu // in place of a password size, which is never this big
+#define STREAM_RELAY_MAX_IP 64
 
 enum stream_packet_types {
 	STREAM_PKT_HEADER = 1,
@@ -221,6 +226,8 @@ private:
 
 		std::string address;
 		std::string ip; // address without the port
+		bool loopback = false; // connected from this machine, so it may be a relay
+		bool logged = false; // the "connected" line was printed. Loopback ones wait for the relay's IP.
 		uint64_t connectTime = 0;
 		uint64_t bytesSent = 0;
 		std::vector<uint8_t> authBuf; // password received so far

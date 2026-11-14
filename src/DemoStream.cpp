@@ -22,6 +22,7 @@
 #include "main.h"
 #include "DemoStream.h"
 #include <string.h>
+#include <ctype.h>
 #include <math.h>
 #include <algorithm>
 #include <string>
@@ -607,6 +608,41 @@ bool DemoStream::readAuth(Client& client) {
 
 	uint32_t len = 0;
 	memcpy(&len, client.authBuf.data(), 4);
+
+	if (len == STREAM_RELAY_MARKER && client.loopback && !client.logged) {
+		// a relay on this machine says which address it's relaying for
+		if (client.authBuf.size() < 5) {
+			return true;
+		}
+		size_t ipLen = client.authBuf[4];
+		if (ipLen == 0 || ipLen > STREAM_RELAY_MAX_IP) {
+			return false;
+		}
+		if (client.authBuf.size() < 5 + ipLen) {
+			return true;
+		}
+
+		std::string ip((const char*)client.authBuf.data() + 5, ipLen);
+		for (char c : ip) {
+			if (!isxdigit((unsigned char)c) && c != '.' && c != ':') {
+				return false; // not an IPv4 or IPv6 address
+			}
+		}
+
+		ALERT(at_logged, "HLTV stream: %s (web) connected through %s (%d total)\n", ip.c_str(),
+			client.address.c_str(), (int)clients.size());
+		client.ip = ip;
+		client.address = ip + " (web)";
+		client.logged = true;
+		client.authBuf.erase(client.authBuf.begin(), client.authBuf.begin() + 5 + ipLen);
+		return readAuth(client); // the password may have arrived with it
+	}
+
+	if (!client.logged) {
+		client.logged = true;
+		ALERT(at_logged, "HLTV stream: %s connected (%d total)\n", client.address.c_str(), (int)clients.size());
+	}
+
 	if (len > MAX_PASSWORD_LEN) {
 		return false;
 	}
@@ -750,6 +786,7 @@ void DemoStream::think() {
 		client.sock = sock;
 		client.ip = inet_ntoa(addr.sin_addr);
 		client.address = client.ip + ":" + std::to_string(ntohs(addr.sin_port));
+		client.loopback = ntohl(addr.sin_addr.s_addr) == INADDR_LOOPBACK;
 		client.connectTime = getEpochMillis();
 		client.authDeadline = client.connectTime + AUTH_TIMEOUT_MS;
 
@@ -758,8 +795,12 @@ void DemoStream::think() {
 		memcpy(client.prefix.data(), HLTV_STREAM_MAGIC, 8);
 		memcpy(client.prefix.data() + 8, &version, 4);
 
+		// a loopback connection is logged once it says whether it's a relay, with the relayed address
+		client.logged = !client.loopback;
 		clients.push_back(client);
-		ALERT(at_logged, "HLTV stream: %s connected (%d total)\n", client.address.c_str(), (int)clients.size());
+		if (client.logged) {
+			ALERT(at_logged, "HLTV stream: %s connected (%d total)\n", client.address.c_str(), (int)clients.size());
+		}
 	}
 
 	applyTokenResults();
